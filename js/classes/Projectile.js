@@ -1,1 +1,158 @@
+class Projectile {
+    constructor(owner, x, y, angle, speed, radius, damage, color, type, bounces) {
+        this.owner = owner; this.x = x; this.y = y; this.angle = angle;
+        this.vx = Math.cos(angle)*speed; this.vy = Math.sin(angle)*speed;
+        this.speed = speed; this.radius = radius; this.damage = damage; 
+        this.color = color; this.type = type; this.bounces = bounces;
+        this.life = type === 'missile' ? 70 : (type === 'arrow' ? 45 : 999); 
+        this.dead = false;
+        this.isFifth = false; 
 
+        // Non-MG bullets have 3 HP to withstand exactly 3 MG bullets
+        this.projectileHp = type === 'mg' ? 1 : 3;
+    }
+
+    update() {
+        if (this.type === 'swarm') {
+            this.timer++;
+            if (this.timer % 6 === 0) this.targetAngle = this.baseAngle + (Math.random() - 0.5) * 1.5;
+            if(this.targetAngle) this.angle += (this.targetAngle - this.angle) * 0.25;
+            this.vx = Math.cos(this.angle) * this.speed; this.vy = Math.sin(this.angle) * this.speed;
+        }
+
+        this.lastX = this.x; this.lastY = this.y;
+        this.x += this.vx; this.y += this.vy; this.life--;
+
+        if (this.type === 'seraph_c' || this.type === 'seraph_x' || this.type === 'seraph_spark') {
+            createParticles(this.x + (Math.random()-0.5)*15, this.y + (Math.random()-0.5)*15, 1, '#00ffff', 1.5, 0.3);
+            if (Math.random() > 0.5) {
+                createParticles(this.x, this.y, 1, '#fff', 2, 0.2);
+            }
+        } else if (this.type === 'toxic_bullet') {
+            createParticles(this.x, this.y, 1, 'rgba(0, 255, 102, 0.5)', 2, 0.2); 
+        } else if (this.type === 'dread_c') {
+            createParticles(this.x, this.y, 2, '#ff4500', 3, 0.4);
+        } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
+            createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
+        }
+
+        let collided = false;
+        if (this.x - this.radius < 0) { this.x = this.radius; this.vx *= -1; collided = true; } 
+        else if (this.x + this.radius > canvas.width) { this.x = canvas.width - this.radius; this.vx *= -1; collided = true; }
+        if (this.y - this.radius < 0) { this.y = this.radius; this.vy *= -1; collided = true; } 
+        else if (this.y + this.radius > canvas.height) { this.y = canvas.height - this.radius; this.vy *= -1; collided = true; }
+
+        if (!collided) {
+            for (let w of currentMap.walls) {
+                if (this.x + this.radius > w.x && this.x - this.radius < w.x + w.w &&
+                    this.y + this.radius > w.y && this.y - this.radius < w.y + w.h) {
+                    let hitHoriz = this.lastX + this.radius <= w.x || this.lastX - this.radius >= w.x + w.w;
+                    let hitVert = this.lastY + this.radius <= w.y || this.lastY - this.radius >= w.y + w.h;
+                    if (hitHoriz) { this.vx *= -1; this.x = this.lastX < w.x ? w.x - this.radius : w.x + w.w + this.radius; }
+                    if (hitVert) { this.vy *= -1; this.y = this.lastY < w.y ? w.y - this.radius : w.y + w.h + this.radius; }
+                    if (!hitHoriz && !hitVert) { this.vx *= -1; this.vy *= -1; }
+                    collided = true; break;
+                }
+            }
+        }
+        
+        if (!collided) {
+            for (let r of currentMap.rocks) {
+                let dx = this.x - r.x; let dy = this.y - r.y;
+                let dist = Math.hypot(dx, dy);
+                if (dist < this.radius + r.r) {
+                    let nx = dx / dist; let ny = dy / dist;
+                    let dot = this.vx * nx + this.vy * ny;
+                    this.vx = this.vx - 2 * dot * nx;
+                    this.vy = this.vy - 2 * dot * ny;
+                    this.x += nx * ((this.radius + r.r) - dist);
+                    this.y += ny * ((this.radius + r.r) - dist);
+                    collided = true; break;
+                }
+            }
+        }
+
+        if (collided) {
+            if (this.bounces > 0) { this.angle = Math.atan2(this.vy, this.vx); this.bounces--; } 
+            else { this.triggerExplosion(); }
+        } else if (this.life <= 0 && !this.dead) { this.triggerExplosion(); }
+    }
+
+    triggerExplosion() {
+        this.dead = true;
+        if (this.type === 'arrow') {
+            let ownerTank = players.find(p => p.owner === this.owner);
+            if (ownerTank && ownerTank.hookState === 'fired') {
+                ownerTank.hookState = 'ready';
+                ownerTank.cooldowns.x = Date.now() + ownerTank.maxCooldowns.x;
+            }
+        }
+
+        if (this.type === 'mg' || this.type === 'bullet') {
+            createParticles(this.x, this.y, 4, '#fff', 1, 0.3);
+        } else if (this.type === 'toxic_bullet' || this.type === 'arrow') {
+            createParticles(this.x, this.y, 8, '#00ff66', 1.5, 0.5); 
+        } else if (this.type === 'seraph_c') {
+            createParticles(this.x, this.y, 8, '#00ffff', 1.5, 0.5);
+            if (this.isFifth) {
+                hazards.push({ owner: this.owner, type: 'seraph_aoe', x: this.x, y: this.y, radius: 140, life: 360 });
+            }
+        } else if (this.type === 'seraph_x') {
+            createParticles(this.x, this.y, 15, '#00ffff', 2.0, 0.5);
+            hazards.push({ owner: this.owner, type: 'seraph_emitter', x: this.x, y: this.y, radius: 10, life: 240 });
+        } else if (this.type === 'seraph_spark') {
+            createParticles(this.x, this.y, 5, '#00ffff', 1, 0.4);
+        } else {
+            createKaboom(this.x, this.y, this.type === 'missile' ? 1.5 : 1.0);
+        }
+        
+        if (this.type === 'missile') {
+            for (let j = 0; j < 5; j++) {
+                let crAngle = this.angle - 0.4 + (0.8 / 4) * j;
+                projectiles.push(new Projectile(this.owner, this.x, this.y, crAngle, 7, 4, 5, '#ff6600', 'rocket', 1));
+            }
+        }
+    }
+
+    draw() {
+        ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.angle);
+        if (this.type === 'missile') {
+            const w = images.missile.width * 0.15; const h = images.missile.height * 0.15;
+            ctx.shadowBlur = 15; ctx.shadowColor = this.color; ctx.drawImage(images.missile, -w/2, -h/2, w, h);
+        } else if (this.type === 'swarm' || this.type === 'rocket') {
+            const scale = 0.07; const w = images.cluster.width * scale; const h = images.cluster.height * scale;
+            ctx.shadowBlur = 10; ctx.shadowColor = this.color; ctx.drawImage(images.cluster, -w/2, -h/2, w, h);
+        } else if (this.type === 'arrow') {
+            const scale = 0.12; const w = images.arrow.width * scale; const h = images.arrow.height * scale;
+            ctx.shadowBlur = 15; ctx.shadowColor = this.color; ctx.drawImage(images.arrow, -w/2, -h/2, w, h);
+        } else if (this.type === 'dread_c') {
+            ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
+            ctx.fillStyle = '#ff6600'; ctx.shadowBlur = 15; ctx.shadowColor = '#ff3300'; ctx.fill();
+            ctx.beginPath(); ctx.arc(0, 0, this.radius * 0.6, 0, Math.PI*2);
+            ctx.fillStyle = '#ffeeaa'; ctx.fill();
+        } else if (this.type === 'mg') {
+            ctx.beginPath(); ctx.rect(-3, -1, 6, 2); 
+            ctx.fillStyle = this.color; ctx.shadowBlur = 5; ctx.shadowColor = this.color; ctx.fill();
+        } else if (this.type === 'seraph_c') {
+            if (images.lightning.complete) {
+                const scale = 0.15;
+                const w = images.lightning.width * scale;
+                const h = images.lightning.height * scale;
+                ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff'; 
+                ctx.drawImage(images.lightning, -w/2, -h/2, w, h);
+            }
+        } else if (this.type === 'seraph_spark' || this.type === 'seraph_x') {
+            if (images.static.complete) {
+                const scale = 0.15;
+                const w = images.static.width * scale;
+                const h = images.static.height * scale;
+                ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff'; 
+                ctx.drawImage(images.static, -w/2, -h/2, w, h);
+            }
+        } else {
+            ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
+            ctx.fillStyle = this.color; ctx.shadowBlur = 10; ctx.shadowColor = this.color; ctx.fill();
+        }
+        ctx.restore();
+    }
+}
