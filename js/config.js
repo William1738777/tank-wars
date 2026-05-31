@@ -17,19 +17,19 @@ function onAssetLoad() {
 }
 
 // Ensure you move your .png files to the assets/images/ folder!
-images.grizzly.onload = onAssetLoad; images.grizzly.src = 'assets/images/GrizzlyTank.png';
-images.pyro.onload = onAssetLoad; images.pyro.src = 'assets/images/PyroTank.png';
-images.scorpion.onload = onAssetLoad; images.scorpion.src = 'assets/images/ScorpionTank.png';
-images.dreadnaught.onload = onAssetLoad; images.dreadnaught.src = 'assets/images/DreadnaughtTank.png';
-images.seraph.onload = onAssetLoad; images.seraph.src = 'assets/images/SeraphTank.png'; 
-images.missile.onload = onAssetLoad; images.missile.src = 'assets/images/Missile.png';
-images.cluster.onload = onAssetLoad; images.cluster.src = 'assets/images/ClusterRocket.png';
-images.arrow.onload = onAssetLoad; images.arrow.src = 'assets/images/CorrosiveArrow.png';
-images.bg1.onload = onAssetLoad; images.bg1.src = 'assets/images/BGbattle.png';
-images.bg2.onload = onAssetLoad; images.bg2.src = 'assets/images/BGbattle2.png';
-images.goo.onload = onAssetLoad; images.goo.src = 'assets/images/GreenGoo.png';
-images.lightning.onload = onAssetLoad; images.lightning.src = 'assets/images/Lightning.png';
-images.static.onload = onAssetLoad; images.static.src = 'assets/images/Static.png';
+images.grizzly.onload = onAssetLoad; images.grizzly.src = 'assets/GrizzlyTank.png';
+images.pyro.onload = onAssetLoad; images.pyro.src = 'assets/PyroTank.png';
+images.scorpion.onload = onAssetLoad; images.scorpion.src = 'assets/ScorpionTank.png';
+images.dreadnaught.onload = onAssetLoad; images.dreadnaught.src = 'assets/DreadnaughtTank.png';
+images.seraph.onload = onAssetLoad; images.seraph.src = 'assets/SeraphTank.png'; 
+images.missile.onload = onAssetLoad; images.missile.src = 'assets/Missile.png';
+images.cluster.onload = onAssetLoad; images.cluster.src = 'assets/ClusterRocket.png';
+images.arrow.onload = onAssetLoad; images.arrow.src = 'assets/CorrosiveArrow.png';
+images.bg1.onload = onAssetLoad; images.bg1.src = 'assets/BGBattle.png'; // Make sure the caps match!
+images.bg2.onload = onAssetLoad; images.bg2.src = 'assets/BGBattle2.png';
+images.goo.onload = onAssetLoad; images.goo.src = 'assets/GreenGoo.png';
+images.lightning.onload = onAssetLoad; images.lightning.src = 'assets/Lightning.png';
+images.static.onload = onAssetLoad; images.static.src = 'assets/Static.png';
 
 // --- GAME CONFIG & DATA ---
 const tanksData = [
