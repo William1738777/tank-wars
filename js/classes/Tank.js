@@ -22,19 +22,36 @@ class Tank {
 
         this.maxCooldowns = { 
             c: config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500), 
-            x: config.id === 'seraph' ? 14000 : (config.id === 'scorpion' ? 9000 : 8000), 
-            z: 10000 
+            x: config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : 8000), 
+            z: config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000)
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
         this.hookState = 'ready'; this.hookTarget = null; this.hookTimer = 0; this.activeArrow = null; 
         this.mgMaxAmmo = config.id === 'dreadnaught' ? 150 : 100; this.mgAmmo = this.mgMaxAmmo; this.mgReloading = false;
 
+        // Pyro Passive & Shields variables
+        this.dashCount = 0;
+        this.fireShieldActive = false;
+        this.fireShieldHp = 0;
+        this.fireShieldTimer = 0;
+        this.isGhosting = false;
+        this.ghostHitTanks = [];
+        this.fireTrailTicks = 0; 
+        this.inFireTrail = false;
+
         this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
         this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
     }
 
     addPoison(dps, durationFrames) { this.poisons.push({ dps: dps, life: durationFrames }); }
+
+    activateFireShield() {
+        this.fireShieldActive = true;
+        this.fireShieldHp = 20;
+        this.fireShieldTimer = 300; 
+        floatingTexts.push({x: this.x, y: this.y - 40, text: "SHIELD UP!", life: 60, color: '#ffaa00'});
+    }
 
     think() {
         if (!players[0] || players[0].isDead || this.stunTimer > 0 || this.dashState === 2) return;
@@ -135,8 +152,33 @@ class Tank {
         if (this.stunTimer <= 0 && this.afterStunSlow > 0) { this.afterStunSlow--; currentSpeed *= 0.1; }
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
 
+        // Pyro Fire Shield Processing
+        if (this.fireShieldActive) {
+            this.fireShieldTimer--;
+            if (this.fireShieldHp <= 0 || this.fireShieldTimer <= 0) {
+                this.fireShieldActive = false;
+            } else {
+                // Total Debuff Immunity
+                this.stunTimer = 0; this.kbTimer = 0; this.kbX = 0; this.kbY = 0;
+                this.poisons = []; this.isSlowed = false; this.electrocutedTimer = 0;
+                if (this.hookState === 'pulled') this.hookState = 'ready';
+                
+                // Aura Damage
+                players.forEach(enemy => {
+                    if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                        if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius + 45) {
+                            enemy.hp -= 3 / 60;
+                            if (Math.random() > 0.8) createParticles(enemy.x, enemy.y, 1, '#ffaa00', 1, 0.2);
+                            if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Pyro Z Flamethrower Buff
         if (this.flameTimer > 0) {
-            this.flameTimer--; currentSpeed *= 1.3; const tip = this.getTip();
+            this.flameTimer--; currentSpeed *= 1.4; const tip = this.getTip();
             if (this.flameTimer % 2 === 0) {
                 for(let i=0; i<3; i++) {
                     let pAngle = this.angle + (Math.random() - 0.5) * 0.7; let pSpeed = Math.random() * 6 + 3;
@@ -224,6 +266,43 @@ class Tank {
             }
         }
 
+        // Pyro X Skill - Instant Dash & Fire Trail
+        if (this.dashState === 3 && this.stunTimer <= 0) {
+            currentSpeed = 16; 
+            this.dashTimer--;
+            
+            // Drop fire trail
+            if (frameCount % 3 === 0) {
+                hazards.push({
+                    owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, 
+                    radius: 30, life: 300, maxLife: 300 
+                });
+            }
+            
+            // Ghosting collision check
+            players.forEach(enemy => {
+                if (enemy.owner !== this.owner && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
+                    if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
+                        enemy.hp -= 15;
+                        this.ghostHitTanks.push(enemy.owner);
+                        createParticles(enemy.x, enemy.y, 10, '#ff4500', 2, 0.5);
+                        floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-15 BURN!", life: 40, color: '#ff3300'});
+                        if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; handleDeath(enemy.owner === 1 ? 0 : 1); }
+                    }
+                }
+            });
+            
+            this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
+
+            if (this.dashTimer <= 0) { this.dashState = 0; this.isGhosting = false; }
+            
+            this.checkWallCollisions();
+            this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+            this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+            return; 
+        }
+
+        // Normal Z Dash Logic
         if (this.dashState === 1 && this.stunTimer <= 0) {
             this.dashTimer--; createParticles(this.x - Math.cos(this.angle)*20, this.y - Math.sin(this.angle)*20, 2, this.config.color, 1, 0.5);
             if (this.dashTimer <= 0) { this.dashState = 2; this.dashTimer = 15; createKaboom(this.x - Math.cos(this.angle)*25, this.y - Math.sin(this.angle)*25, 0.5); }
@@ -232,10 +311,10 @@ class Tank {
         
         if (this.dashState === 2 && this.stunTimer <= 0) {
             currentSpeed = 12; this.dashTimer--; createParticles(this.x, this.y, 1, '#fff', 3, 0.4); 
-            if (this.dashTimer <= 0) { this.dashState = 0; if (this.config.id === 'pyro') this.flameTimer = 180; }
+            if (this.dashTimer <= 0) { this.dashState = 0; if (this.config.id === 'pyro') this.flameTimer = 300; }
         }
 
-        if (this.dashState !== 2 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
+        if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
             if (keys[this.controls.left]) this.angle -= this.rotSpeed;
             if (keys[this.controls.right]) this.angle += this.rotSpeed;
 
@@ -325,7 +404,7 @@ class Tank {
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
             }
         }
-    } // <--- THIS WAS THE MISSING BRACKET!
+    }
         
     fireMG(now) {
         this.cooldowns.x = now + 100; 
@@ -341,6 +420,18 @@ class Tank {
     }
 
     fireX(now) {
+        if (this.config.id === 'pyro') {
+            if (now < this.cooldowns.x) return;
+            this.cooldowns.x = now + this.maxCooldowns.x;
+            this.dashState = 3; 
+            this.dashTimer = 15; 
+            this.isGhosting = true;
+            this.ghostHitTanks = [];
+            this.dashCount++;
+            if (this.dashCount % 3 === 0) this.activateFireShield();
+            return; 
+        }
+
         if (this.config.id === 'scorpion') {
             if (this.hookState !== 'ready' || now < this.cooldowns.x) return;
             this.recoil = 6; this.hookState = 'fired'; const tip = this.getTip();
@@ -356,18 +447,6 @@ class Tank {
             playSound(sfx.cluster);
             const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
             for (let i = 0; i < 5; i++) projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle - 0.4 + (0.8 / 4) * i, 8, 4, 6, '#ff6600', 'rocket', 3));
-        } else if (this.config.id === 'pyro') {
-            const w = this.config.img.width * 0.12; const h = this.config.img.height * 0.12;
-            const pods = [ {x: 0.15, y: -0.38}, {x: -0.20, y: -0.38}, {x: 0.15, y: 0.38}, {x: -0.20, y: 0.38} ];
-            pods.forEach((pod, index) => {
-                const px = this.x + (pod.x * w * Math.cos(this.angle) - pod.y * h * Math.sin(this.angle));
-                const py = this.y + (pod.x * w * Math.sin(this.angle) + pod.y * h * Math.cos(this.angle));
-                createMuzzleFlash(px, py, this.angle, 1);
-                for(let i=0; i<2; i++) {
-                    let r = new Projectile(this.owner, px, py, this.angle + (Math.random()-0.5)*0.5, 7 + Math.random()*2, 3, 6, '#ff4500', 'swarm', 0);
-                    r.baseAngle = this.angle; r.timer = index * 5; projectiles.push(r);
-                }
-            });
         } else if (this.config.id === 'seraph') {
             const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 10, 6, 3, '#00ffff', 'seraph_x', 1));
@@ -386,7 +465,9 @@ class Tank {
             this.recoil = 12; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 3);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 9, 8, 15, '#8a2be2', 'missile', 0));
         } else if (this.config.id === 'pyro') {
-            this.dashState = 1; this.dashTimer = 30;
+            this.dashState = 1; this.dashTimer = 18; // 0.3s delay
+            this.dashCount++;
+            if (this.dashCount % 3 === 0) this.activateFireShield();
         } else if (this.config.id === 'scorpion') {
             hazards.push({ owner: this.owner, type: 'poison_pool', x: this.x, y: this.y, radius: 70, life: 1200 });
             createParticles(this.x, this.y, 20, '#00ff66', 2, 1.5);
@@ -401,6 +482,23 @@ class Tank {
         if (this.invulnTimer > 0 && Math.floor(this.invulnTimer / 10) % 2 === 0) return;
         
         if (this.poisons.length > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI*2); ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill(); }
+
+        // Pyro Fire Shield Rendering
+        if (this.config.id === 'pyro' && this.fireShieldActive) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius + 45, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 69, 0, 0.15)'; 
+            ctx.fill();
+            ctx.strokeStyle = '#ffaa00';
+            ctx.lineWidth = 3;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ff4500';
+            ctx.setLineDash([10, 10]);
+            ctx.lineDashOffset = -Date.now() / 20; 
+            ctx.stroke();
+            ctx.restore();
+        }
 
         if (this.config.id === 'destroyer' && this.destroAiming) {
             ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 80, 0, Math.PI*2);
@@ -434,7 +532,7 @@ class Tank {
         }
 
         ctx.rotate(this.angle);
-        ctx.shadowBlur = this.dashState === 2 ? 30 : 15;
+        ctx.shadowBlur = this.dashState === 2 || this.dashState === 3 ? 30 : 15;
         ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : this.config.color;
         const w = this.config.img.width * 0.12 * this.scaleMod; const h = this.config.img.height * 0.12 * this.scaleMod;
         ctx.drawImage(this.config.img, -w / 2, -h / 2, w, h); ctx.restore();
