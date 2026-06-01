@@ -22,7 +22,7 @@ class Tank {
 
         this.maxCooldowns = { 
             c: config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500), 
-            x: config.id === 'scorpion' ? 9000 : 8000, 
+            x: config.id === 'seraph' ? 14000 : (config.id === 'scorpion' ? 9000 : 8000), 
             z: 10000 
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
