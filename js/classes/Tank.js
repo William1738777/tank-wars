@@ -94,7 +94,11 @@ class Tank {
 
     update() {
         if (this.isDead) return;
-        if (this.isAI) this.think();
+        
+        // Safely evaluate AI parameters only when the matching player target is active on the screen
+        if (this.isAI && players[0] && !players[0].isDead) {
+            this.think();
+        }
 
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
