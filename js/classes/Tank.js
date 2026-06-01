@@ -14,7 +14,6 @@ class Tank {
         this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
         
-        // Physics & Debuffs
         this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
         this.electrocutedTimer = 0;
         this.afterStunSlow = 0;
@@ -32,8 +31,6 @@ class Tank {
         this.mgMaxAmmo = config.id === 'dreadnaught' ? 150 : 100; this.mgAmmo = this.mgMaxAmmo; this.mgReloading = false;
 
         this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
-        
-        // Destroyer Variables
         this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
     }
 
@@ -65,7 +62,6 @@ class Tank {
 
         if (Math.abs(angleDiff) < 0.3 && dist < 650) {
             keys[this.controls.c] = true; 
-            
             if (this.config.id === 'destroyer') {
                 if (this.destroAiming) {
                     keys[this.controls.x] = true;
@@ -84,7 +80,6 @@ class Tank {
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
         
-        // --- WALL SLAM KNOCKBACK LOGIC ---
         if (this.kbTimer > 0) {
             let oldX = this.x; let oldY = this.y;
             this.x += this.kbX; this.y += this.kbY;
@@ -137,7 +132,6 @@ class Tank {
 
         let currentSpeed = this.isSlowed ? this.speed * 0.5 : this.speed;
         
-        // Apply Wall Slam and Mortar Slows 
         if (this.stunTimer <= 0 && this.afterStunSlow > 0) { this.afterStunSlow--; currentSpeed *= 0.1; }
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
 
@@ -265,7 +259,6 @@ class Tank {
             const now = Date.now();
             if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) this.fireC(now);
             
-            // --- DESTROYER MORTAR STRIKE LOGIC ---
             if (this.config.id === 'destroyer') {
                 if (keys[this.controls.x] && now > this.cooldowns.x && !this.destroLocked) {
                     this.destroAiming = true;
@@ -394,7 +387,8 @@ class Tank {
             createParticles(this.x, this.y, 20, '#00ff66', 2, 1.5);
         } else if (this.config.id === 'destroyer') {
             this.recoil = 10; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 3.0);
-            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 6, 20, '#ff0000', 'destro_missile', 0));
+            // Reduced physical collision radius from 16 to 10 here!
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 10, 20, '#ff0000', 'destro_missile', 0));
         }
     }
 
