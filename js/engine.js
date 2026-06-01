@@ -65,6 +65,11 @@ function handleDeath(loserIndex) {
             loser.destroAiming = false; loser.destroLocked = false; loser.destroAimDist = 100;
             loser.afterStunSlow = 0; loser.destroSlowTimer = 0; loser.kbType = null;
             
+            // Reset Pyro specials
+            loser.fireShieldActive = false;
+            loser.isGhosting = false;
+            loser.fireTrailTicks = 0;
+            
             updateHUD();
         }, 1500); 
     }
@@ -93,14 +98,17 @@ function update() {
     if (gameState !== 'PLAYING') return;
 
     frameCount++; players.forEach(p => p.update());
+    players.forEach(p => p.inFireTrail = false); // Reset trail check
 
     if (players[0] && players[1] && !players[0].isDead && !players[1].isDead) {
-        let dx = players[1].x - players[0].x; let dy = players[1].y - players[0].y;
-        let dist = Math.hypot(dx, dy); let minDist = players[0].radius + players[1].radius;
-        if (dist < minDist) {
-            let overlap = minDist - dist; let nx = dx / dist; let ny = dy / dist;
-            players[0].x -= nx * (overlap / 2); players[0].y -= ny * (overlap / 2);
-            players[1].x += nx * (overlap / 2); players[1].y += ny * (overlap / 2);
+        if (!players[0].isGhosting && !players[1].isGhosting) {
+            let dx = players[1].x - players[0].x; let dy = players[1].y - players[0].y;
+            let dist = Math.hypot(dx, dy); let minDist = players[0].radius + players[1].radius;
+            if (dist < minDist) {
+                let overlap = minDist - dist; let nx = dx / dist; let ny = dy / dist;
+                players[0].x -= nx * (overlap / 2); players[0].y -= ny * (overlap / 2);
+                players[1].x += nx * (overlap / 2); players[1].y += ny * (overlap / 2);
+            }
         }
     }
 
@@ -108,6 +116,14 @@ function update() {
 
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
+        
+        if (h.type === 'fire_trail') {
+            players.forEach(tank => {
+                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) tank.inFireTrail = true;
+                }
+            });
+        }
         
         if (h.type === 'mine') {
             h.age++; if (h.age > 120 && !h.triggering) h.visible = false;
@@ -136,12 +152,12 @@ function update() {
             }
         }
         
-        if (h.type === 'seraph_emitter' && h.life % 36 === 0) {
+        if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
             for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) projectiles.push(new Projectile(h.owner, h.x, h.y, angle, 6, 3, 1.5, '#00ffff', 'seraph_spark', 1));
             createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
         }
 
-        // --- DESTROYER STRIKE MANAGER (Updated Timing) ---
+        // --- DESTROYER STRIKE MANAGER ---
         if (h.type === 'destro_strike_manager') {
             if (h.state === 'launching') {
                 h.timer--;
@@ -150,33 +166,29 @@ function update() {
                 else moving = true; 
 
                 if (moving) {
-                    h.state = 'falling_delay'; h.timer = 48; // Cancel remaining launches, skip to delay
+                    h.state = 'falling_delay'; h.timer = 48;
                 } else if (h.timer <= 0) {
-                    h.timer = 5; // Launch very fast (every 5 frames)
+                    h.timer = 5; 
                     if (h.targets.length > 0) {
                         let t = h.targets.pop(); h.launched.push(t);
                         projectiles.push(new Projectile(h.owner, h.tank.x, h.tank.y - 10, -Math.PI/2, 18, 2, 0, '#fff', 'destro_up', 0));
                         createMuzzleFlash(h.tank.x, h.tank.y - 10, -Math.PI/2, 1.5);
                     }
-                    if (h.targets.length === 0) {
-                        h.state = 'falling_delay'; h.timer = 48; // 0.8s wait before dropping
-                    }
+                    if (h.targets.length === 0) { h.state = 'falling_delay'; h.timer = 48; }
                 }
             } else if (h.state === 'falling_delay') {
                 h.timer--;
-                if (h.timer <= 0) {
-                    h.state = 'falling'; h.timer = 0; // Trigger first drop immediately
-                }
+                if (h.timer <= 0) { h.state = 'falling'; h.timer = 0; }
             } else if (h.state === 'falling') {
                 h.timer--;
                 if (h.timer <= 0) {
                     if (h.launched.length > 0) {
-                        let t = h.launched.shift(); // Drop them in the order they were fired
+                        let t = h.launched.shift(); 
                         let p = new Projectile(h.owner, t.x, t.y - 800, Math.PI/2, 20, 8, 12, '#ff4500', 'destro_rocket', 0);
                         p.targetY = t.y; projectiles.push(p);
-                        h.timer = Math.floor(Math.random() * 6 + 12); // 0.2s to 0.3s delay (12 to 18 frames)
+                        h.timer = Math.floor(Math.random() * 6 + 12); 
                     } else {
-                        h.life = 0; // Strike complete
+                        h.life = 0; 
                     }
                 }
             }
@@ -184,6 +196,20 @@ function update() {
         
         h.life--; if (h.life <= 0) hazards.splice(i, 1);
     }
+
+    // Apply Fire Trail Damage & Tracking
+    players.forEach((tank, tIndex) => {
+        if (tank.inFireTrail && tank.invulnTimer <= 0) {
+            tank.fireTrailTicks++;
+            let multiplier = Math.pow(1.2, Math.floor(tank.fireTrailTicks / 30));
+            tank.hp -= (1 / 60) * multiplier;
+            
+            if (Math.random() < 0.1) createParticles(tank.x, tank.y, 1, '#ff3300', 1.5, 0.3);
+            if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
+        } else {
+            tank.fireTrailTicks = 0;
+        }
+    });
 
     for (let i = 0; i < projectiles.length; i++) {
         let pA = projectiles[i]; if (pA.dead) continue;
@@ -195,28 +221,30 @@ function update() {
             if (pA.owner !== tank.owner && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
                 if (Math.hypot(pA.x - tank.x, pA.y - tank.y) < tank.radius + pA.radius) {
                     
-                    // Check who shot the projectile before playing the sound
                     let shooter = players.find(p => p.owner === pA.owner);
-                    if (shooter && shooter.config.id === 'grizzly') {
-                        playSound(sfx.tankHit);
-                    }
-                    // You can add "else if (shooter.config.id === 'pyro')" here later!
+                    if (shooter && shooter.config.id === 'grizzly') playSound(sfx.tankHit);
 
                     let startHp = tank.hp;
 
-                    if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
+                    // Pyro Shield Blocking
+                    if (tank.config.id === 'pyro' && tank.fireShieldActive) {
+                        tank.fireShieldHp -= pA.damage;
+                        floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLOCKED!", life: 20, color: '#ffaa00'});
+                    } else {
+                        if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
 
-                    if (pA.type === 'toxic_bullet') { tank.hp -= pA.damage; tank.addPoison(0.5, 300); } 
-                    else if (pA.type === 'arrow') {
-                        tank.hp -= pA.damage; tank.addPoison(1.0, 300); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "HOOKED!", life: 50, color: '#00ff66'});
-                        let ownerTank = players.find(p => p.owner === pA.owner);
-                        if (ownerTank) { ownerTank.hookState = 'pulling'; ownerTank.hookTarget = tank; ownerTank.hookTimer = 60; }
-                    } else if (pA.type === 'seraph_spark') {
-                        tank.hp -= pA.damage;
-                        if (Math.random() < 0.10) { tank.stunTimer = Math.max(tank.stunTimer, 30); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ZAPPED!", life: 40, color: '#00ffff'}); }
-                    } else if (pA.type === 'destro_missile') {
-                        tank.hp -= pA.damage; tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
-                    } else { tank.hp -= pA.damage; }
+                        if (pA.type === 'toxic_bullet') { tank.hp -= pA.damage; tank.addPoison(0.5, 300); } 
+                        else if (pA.type === 'arrow') {
+                            tank.hp -= pA.damage; tank.addPoison(1.0, 300); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "HOOKED!", life: 50, color: '#00ff66'});
+                            let ownerTank = players.find(p => p.owner === pA.owner);
+                            if (ownerTank) { ownerTank.hookState = 'pulling'; ownerTank.hookTarget = tank; ownerTank.hookTimer = 60; }
+                        } else if (pA.type === 'seraph_spark') {
+                            tank.hp -= pA.damage;
+                            if (Math.random() < 0.10) { tank.stunTimer = Math.max(tank.stunTimer, 30); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ZAPPED!", life: 40, color: '#00ffff'}); }
+                        } else if (pA.type === 'destro_missile') {
+                            tank.hp -= pA.damage; tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
+                        } else { tank.hp -= pA.damage; }
+                    }
 
                     if (tank.hp < startHp) { let ownerTank = players.find(p => p.owner === pA.owner); if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5); }
                     pA.triggerExplosion();
@@ -249,7 +277,19 @@ function draw() {
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     hazards.forEach(h => {
-        if (h.type === 'poison_pool' && images.goo.complete) {
+        if (h.type === 'fire_trail') {
+            let lifeRatio = h.life / h.maxLife; 
+            let p = 1 - lifeRatio; 
+            ctx.save(); ctx.translate(h.x, h.y); ctx.globalCompositeOperation = 'screen';
+            let scale = 1.0; let alpha = 1.0; let c1, c2, c3;
+            if (p < 0.3) { scale = 1.2 - (0.2 * (p / 0.3)); alpha = 1.0 - (0.1 * (p / 0.3)); c1 = '#ffffff'; c2 = '#ffeb3b'; c3 = '#f44336'; } 
+            else if (p < 0.7) { scale = 1.0 - (0.4 * ((p - 0.3) / 0.4)); alpha = 0.9 - (0.4 * ((p - 0.3) / 0.4)); c1 = '#ffeb3b'; c2 = '#ff9800'; c3 = '#8b0000'; } 
+            else { scale = 0.6 - (0.4 * ((p - 0.7) / 0.3)); alpha = 0.5 - (0.5 * ((p - 0.7) / 0.3)); c1 = '#f44336'; c2 = '#8b0000'; c3 = 'transparent'; }
+            ctx.globalAlpha = Math.max(0, alpha); let drawRad = h.radius * scale * 1.5; 
+            let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(1, drawRad));
+            grad.addColorStop(0, c1); grad.addColorStop(0.5, c2); grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, Math.max(1, drawRad), 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        } else if (h.type === 'poison_pool' && images.goo.complete) {
             ctx.save(); ctx.translate(h.x, h.y); ctx.globalAlpha = Math.min(h.life / 60, 0.8);
             let drawRadius = h.radius * (1 + Math.sin(h.life * 0.05) * 0.05);
             ctx.drawImage(images.goo, -drawRadius, -drawRadius, drawRadius * 2, drawRadius * 2); ctx.restore();
@@ -265,10 +305,7 @@ function draw() {
         } else if (h.type === 'seraph_emitter') {
             ctx.beginPath(); ctx.arc(h.x, h.y, h.radius, 0, Math.PI*2); ctx.fillStyle = '#fff'; ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff'; ctx.fill();
         } else if (h.type === 'destro_strike_manager' && images.target.complete) {
-            h.launched.forEach(t => {
-                let size = 30 + Math.sin(Date.now() / 100) * 5;
-                ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size);
-            });
+            h.launched.forEach(t => { let size = 30 + Math.sin(Date.now() / 100) * 5; ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size); });
         }
     });
 
