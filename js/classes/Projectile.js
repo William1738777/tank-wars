@@ -129,6 +129,9 @@ class Projectile {
                     }
                 }
             });
+        } else if (this.type === 'firebolt') {
+            createKaboom(this.x, this.y, 1.2);
+            createParticles(this.x, this.y, 10, '#ff0000', 1.5, 0.4);
         } else {
             createKaboom(this.x, this.y, this.type === 'missile' ? 1.5 : 1.0);
         }
@@ -174,7 +177,6 @@ class Projectile {
             const w = images.destroRocket.width * 0.15; const h = images.destroRocket.height * 0.15;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ffaa00'; ctx.drawImage(images.destroRocket, -w/2, -h/2, w, h);
         } else if (this.type === 'firebolt') {
-            // ---> YOUR NEW CODE IS PASTED HERE <---
             if (images.firebolt.complete) {
                 const scale = 0.15;
                 const w = images.firebolt.width * scale;
@@ -188,3 +190,4 @@ class Projectile {
         }
         ctx.restore();
     }
+}
