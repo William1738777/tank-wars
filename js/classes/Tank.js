@@ -318,11 +318,14 @@ class Tank {
             p.isFifth = (this.cShots % 5 === 0); projectiles.push(p);
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
-            if (this.config.id === 'grizzly' || this.config.id === 'destroyer') projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 10, '#b533ff', 'bullet', 0));
-            else projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
+            if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
+                if (this.config.id === 'grizzly') playSound(sfx.basicShot); // <--- ADD THIS
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 10, '#b533ff', 'bullet', 0));
+            } else {
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
+            }
         }
-    }
-
+        
     fireMG(now) {
         this.cooldowns.x = now + 100; 
         const w = this.config.img.width * 0.12 * this.scaleMod; const h = this.config.img.height * 0.12 * this.scaleMod;
@@ -349,6 +352,7 @@ class Tank {
         this.cooldowns.x = now + this.maxCooldowns.x; this.recoil = 7;
         
         if (this.config.id === 'grizzly') {
+            playSound(sfx.cluster);
             const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
             for (let i = 0; i < 5; i++) projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle - 0.4 + (0.8 / 4) * i, 8, 4, 6, '#ff6600', 'rocket', 3));
         } else if (this.config.id === 'pyro') {
