@@ -57,6 +57,71 @@ class Tank {
         this.poisons.push({ dps: dps, life: durationFrames });
     }
 
+    think() {
+        if (!players[0] || players[0].isDead || this.stunTimer > 0 || this.dashState === 2) return;
+        
+        const target = players[0];
+        const dx = target.x - this.x;
+        const dy = target.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        const targetAngle = Math.atan2(dy, dx);
+        
+        // Wipe all inputs clean for this frame
+        keys[this.controls.up] = false;
+        keys[this.controls.down] = false;
+        keys[this.controls.left] = false;
+        keys[this.controls.right] = false;
+        keys[this.controls.c] = false;
+        keys[this.controls.x] = false;
+        keys[this.controls.z] = false;
+
+        // 1. AIMING (Rotate towards the player)
+        let angleDiff = targetAngle - this.angle;
+        // Normalize angle to find the shortest turning direction (-PI to PI)
+        angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+        
+        // Turn if not facing the player directly
+        if (angleDiff > 0.1) keys[this.controls.right] = true;
+        else if (angleDiff < -0.1) keys[this.controls.left] = true;
+
+        // 2. MOVEMENT & POSITIONING
+        if (dist > 350) {
+            keys[this.controls.up] = true; // Chase if too far
+        } else if (dist < 150) {
+            keys[this.controls.down] = true; // Back up if too close (panic!)
+        } else {
+            // Strafe randomly to be a harder target
+            if (Math.random() < 0.05) keys[this.controls.up] = true;
+        }
+
+        // 3. STUCK PREVENTION (The wiggle algorithm)
+        if (this.x === this.lastX && this.y === this.lastY && keys[this.controls.up]) {
+            this.stuckTimer = (this.stuckTimer || 0) + 1;
+            if (this.stuckTimer > 20) {
+                // If stuck for 20 frames, reverse and turn sharply
+                keys[this.controls.up] = false;
+                keys[this.controls.down] = true;
+                keys[this.controls.left] = true; 
+            }
+        } else {
+            this.stuckTimer = 0;
+        }
+        this.lastX = this.x;
+        this.lastY = this.y;
+
+        // 4. COMBAT DECISIONS
+        // If roughly aiming at the player and within range
+        if (Math.abs(angleDiff) < 0.3 && dist < 650) {
+            keys[this.controls.c] = true; // Spam primary fire
+            
+            // Randomly blow cooldowns if available
+            if (Math.random() < 0.03) keys[this.controls.x] = true; 
+            
+            // Only use Ultimates if relatively close
+            if (dist < 400 && Math.random() < 0.02) keys[this.controls.z] = true;
+        }
+    }
+
     update() {
         if (this.isDead) return;
 
