@@ -319,13 +319,13 @@ class Tank {
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
             if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
-                if (this.config.id === 'grizzly') playSound(sfx.basicShot); // <--- ADD THIS
+                if (this.config.id === 'grizzly') playSound(sfx.basicShot);
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 10, '#b533ff', 'bullet', 0));
             } else {
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
             }
         }
-    }
+    } // <--- THIS WAS THE MISSING BRACKET!
         
     fireMG(now) {
         this.cooldowns.x = now + 100; 
@@ -392,7 +392,6 @@ class Tank {
             createParticles(this.x, this.y, 20, '#00ff66', 2, 1.5);
         } else if (this.config.id === 'destroyer') {
             this.recoil = 10; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 3.0);
-            // Reduced physical collision radius from 16 to 10 here!
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 10, 20, '#ff0000', 'destro_missile', 0));
         }
     }
