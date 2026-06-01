@@ -8,7 +8,7 @@ const images = {
 let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
-    if (loadedCount === 18) { // Increased by 1 to account for Firebolt
+    if (loadedCount === 18) { // Increased to 18 for Firebolt
         const btnStart = document.getElementById('btn-start');
         if (btnStart) {
             btnStart.innerText = "Single Player"; 
@@ -35,16 +35,16 @@ images.bg2.onload = onAssetLoad; images.bg2.src = 'assets/BGbattle2.png';
 images.goo.onload = onAssetLoad; images.goo.src = 'assets/GreenGoo.png';
 images.lightning.onload = onAssetLoad; images.lightning.src = 'assets/Lightning.png';
 images.static.onload = onAssetLoad; images.static.src = 'assets/Static.png';
-images.firebolt.onload = onAssetLoad; images.firebolt.src = 'assets/Firebolt.png';
 
 images.destroRocket.onload = onAssetLoad; images.destroRocket.src = 'assets/DestroRocket.png';
 images.destroMissile.onload = onAssetLoad; images.destroMissile.src = 'assets/DestroMissile.png';
 images.target.onload = onAssetLoad; images.target.src = 'assets/Target.png';
+images.firebolt.onload = onAssetLoad; images.firebolt.src = 'assets/Firebolt.png';
 
 // --- GAME CONFIG & DATA ---
 const tanksData = [
     { id: 'grizzly', name: 'GRIZZLY', img: images.grizzly, color: '#b533ff', desc: 'Normal [C | \']: Cannon (10)<br>Skill 1 [X | ;]: Cluster (6)<br>Skill 2 [Z | L]: Heavy Missile (15)' },
-    { id: 'pyro', name: 'PYRO', img: images.pyro, color: '#ff4500', desc: 'Normal [C | \']: Ricochet (7)<br>Skill 1 [X | ;]: Instant Dash (Leaves Fire Trail)<br>Skill 2 [Z | L]: Dash & Flamethrower (Passive: Shield on 3rd dash)' },
+    { id: 'pyro', name: 'PYRO', img: images.pyro, color: '#ff4500', desc: 'Normal [C | \']: Ricochet (7, 4th shot Firebolt)<br>Skill 1 [X | ;]: Instant Dash (Leaves Fire Trail)<br>Skill 2 [Z | L]: Dash & Flamethrower (Passive: Shield on 3rd dash)' },
     { id: 'scorpion', name: 'SCORPION', img: images.scorpion, color: '#00ff66', desc: 'Normal [C | \']: Toxic Burst (3x3)<br>Skill 1 [X | ;]: Hook Arrow (Pull & Jam)<br>Skill 2 [Z | L]: Poison Leak (DoT)' },
     { id: 'dreadnaught', name: 'DREADNAUGHT', img: images.dreadnaught, color: '#8b5a2b', desc: 'Normal [C | \']: Heavy Shell (14)<br>Skill 1 [X | ;]: Dual MG (0.6/shot)<br>Skill 2 [Z | L]: Field Mine (20 Dmg/Knockback)', maxHp: 150, speedMod: 0.5, scaleMod: 1.2 },
     { id: 'seraph', name: 'SERAPH', img: images.seraph, color: '#00ffff', desc: 'Normal [C | \']: Shock Bullet (5 Dmg, 5th shot AoE)<br>Skill 1 [X | ;]: Spark Missile (Emitter)<br>Skill 2 [Z | L]: Lightning Beam (Hold, requires Energy)', maxHp: 100 },
@@ -60,7 +60,7 @@ const sfx = {
 
 function playSound(audio) {
     audio.currentTime = 0; 
-    audio.play().catch(e => console.log(e));
+    audio.play().catch(e => console.log(e)); // Catches errors if browser blocks autoplay
 }
 
 const mapsData = [
