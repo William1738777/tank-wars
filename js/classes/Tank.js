@@ -1,7 +1,14 @@
 class Tank {
-    constructor(owner, config, x, y, angle, controls) {
-        this.owner = owner; this.config = config; 
-        this.x = x; this.y = y; this.angle = angle;
+    class Tank {
+    // Add "isAI = false" to the parameters
+    constructor(owner, config, x, y, angle, controls, isAI = false) {
+        this.owner = owner; 
+        this.config = config; 
+        this.x = x; 
+        this.y = y; 
+        this.angle = angle;
+        this.isAI = isAI; // Save it to the tank
+        // ... leave all the other constructor variables exactly as they are
         
         this.speed = 2.5 * (config.speedMod || 1); 
         this.rotSpeed = 0.045 * (config.speedMod || 1); 
