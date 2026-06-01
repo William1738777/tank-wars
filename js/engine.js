@@ -69,6 +69,9 @@ function handleDeath(loserIndex) {
             loser.fireShieldActive = false;
             loser.isGhosting = false;
             loser.fireTrailTicks = 0;
+
+            // Reset Phantom specials
+            loser.cMode = 0; loser.cHeldTime = 0; loser.phantomEvasiveTimer = 0;
             
             updateHUD();
         }, 1500); 
@@ -251,7 +254,17 @@ function update() {
                             if (Math.random() < 0.10) { tank.stunTimer = Math.max(tank.stunTimer, 30); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ZAPPED!", life: 40, color: '#00ffff'}); }
                         } else if (pA.type === 'destro_missile') {
                             tank.hp -= pA.damage; tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
-                        } else { tank.hp -= pA.damage; }
+                        } else { 
+                            tank.hp -= pA.damage; 
+                        }
+
+                        // Apply Phantom Cooldown Refunds on Hit
+                        if (shooter && shooter.config.id === 'phantom') {
+                            if (pA.type === 'phantom_bounce' || pA.type === 'phantom_spread') {
+                                shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.8);
+                            }
+                            shooter.cooldowns.x -= 1000;
+                        }
                     }
 
                     if (tank.hp < startHp) { let ownerTank = players.find(p => p.owner === pA.owner); if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5); }
