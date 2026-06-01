@@ -190,4 +190,4 @@ class Projectile {
         }
         ctx.restore();
     }
-}
+} // <--- Added this bracket to prevent the crash!
