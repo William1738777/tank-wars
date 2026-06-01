@@ -4,7 +4,7 @@ const ctx = canvas.getContext('2d');
 let frameCount = 0; 
 
 let gameState = 'MENU'; 
-let p1Selection = 0, p2Selection = 5; // Default P2 to Destroyer!
+let p1Selection = 0, p2Selection = 5; 
 let p1Ready = false, p2Ready = false;
 let selectedMapIndex = 0; let currentMap = mapsData[selectedMapIndex];
 let players = []; let p1Score = 0; let p2Score = 0;
@@ -62,7 +62,6 @@ function handleDeath(loserIndex) {
             loser.kbX = 0; loser.kbY = 0; loser.kbTimer = 0; loser.electrocutedTimer = 0;
             loser.energy = 0; loser.zReady = false; loser.zFiring = false; loser.zChargeTimer = 0; loser.cShots = 0;
             
-            // Reset Destroyer variables
             loser.destroAiming = false; loser.destroLocked = false; loser.destroAimDist = 100;
             loser.afterStunSlow = 0; loser.destroSlowTimer = 0; loser.kbType = null;
             
@@ -142,7 +141,7 @@ function update() {
             createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
         }
 
-        // --- DESTROYER STRIKE MANAGER ---
+        // --- DESTROYER STRIKE MANAGER (Updated Timing) ---
         if (h.type === 'destro_strike_manager') {
             if (h.state === 'launching') {
                 h.timer--;
@@ -150,22 +149,35 @@ function update() {
                 if (h.tank && !h.tank.isDead) moving = keys[h.tank.controls.up] || keys[h.tank.controls.down] || keys[h.tank.controls.left] || keys[h.tank.controls.right];
                 else moving = true; 
 
-                if (moving || h.targets.length === 0) {
-                    h.state = 'falling'; h.timer = 60; // 1 second delay before they plummet
+                if (moving) {
+                    h.state = 'falling_delay'; h.timer = 48; // Cancel remaining launches, skip to delay
                 } else if (h.timer <= 0) {
-                    h.timer = Math.floor(Math.random() * 12 + 18); // 0.3-0.5s stagger
-                    let t = h.targets.pop(); h.launched.push(t);
-                    projectiles.push(new Projectile(h.owner, h.tank.x, h.tank.y - 10, -Math.PI/2, 15, 2, 0, '#fff', 'destro_up', 0));
-                    createMuzzleFlash(h.tank.x, h.tank.y - 10, -Math.PI/2, 1.5);
+                    h.timer = 5; // Launch very fast (every 5 frames)
+                    if (h.targets.length > 0) {
+                        let t = h.targets.pop(); h.launched.push(t);
+                        projectiles.push(new Projectile(h.owner, h.tank.x, h.tank.y - 10, -Math.PI/2, 18, 2, 0, '#fff', 'destro_up', 0));
+                        createMuzzleFlash(h.tank.x, h.tank.y - 10, -Math.PI/2, 1.5);
+                    }
+                    if (h.targets.length === 0) {
+                        h.state = 'falling_delay'; h.timer = 48; // 0.8s wait before dropping
+                    }
+                }
+            } else if (h.state === 'falling_delay') {
+                h.timer--;
+                if (h.timer <= 0) {
+                    h.state = 'falling'; h.timer = 0; // Trigger first drop immediately
                 }
             } else if (h.state === 'falling') {
                 h.timer--;
                 if (h.timer <= 0) {
-                    h.launched.forEach(t => {
+                    if (h.launched.length > 0) {
+                        let t = h.launched.shift(); // Drop them in the order they were fired
                         let p = new Projectile(h.owner, t.x, t.y - 800, Math.PI/2, 20, 8, 12, '#ff4500', 'destro_rocket', 0);
                         p.targetY = t.y; projectiles.push(p);
-                    });
-                    h.life = 0; // Strike complete
+                        h.timer = Math.floor(Math.random() * 6 + 12); // 0.2s to 0.3s delay (12 to 18 frames)
+                    } else {
+                        h.life = 0; // Strike complete
+                    }
                 }
             }
         }
@@ -177,7 +189,6 @@ function update() {
         let pA = projectiles[i]; if (pA.dead) continue;
         pA.update();
 
-        // Destroyer Rockets and Up-visuals don't hit tanks mid-air
         if (pA.type === 'destro_rocket' || pA.type === 'destro_up') continue;
 
         players.forEach((tank, tIndex) => {
@@ -246,7 +257,6 @@ function draw() {
         } else if (h.type === 'seraph_emitter') {
             ctx.beginPath(); ctx.arc(h.x, h.y, h.radius, 0, Math.PI*2); ctx.fillStyle = '#fff'; ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff'; ctx.fill();
         } else if (h.type === 'destro_strike_manager' && images.target.complete) {
-            // Draw the target markers pulsating
             h.launched.forEach(t => {
                 let size = 30 + Math.sin(Date.now() / 100) * 5;
                 ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size);
