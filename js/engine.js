@@ -194,7 +194,14 @@ function update() {
         players.forEach((tank, tIndex) => {
             if (pA.owner !== tank.owner && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
                 if (Math.hypot(pA.x - tank.x, pA.y - tank.y) < tank.radius + pA.radius) {
-                    playSound(sfx.tankHit); // <--- ADD THIS
+                    
+                    // Check who shot the projectile before playing the sound
+                    let shooter = players.find(p => p.owner === pA.owner);
+                    if (shooter && shooter.config.id === 'grizzly') {
+                        playSound(sfx.tankHit);
+                    }
+                    // You can add "else if (shooter.config.id === 'pyro')" here later!
+
                     let startHp = tank.hp;
 
                     if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
