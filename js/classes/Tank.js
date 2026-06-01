@@ -21,14 +21,19 @@ class Tank {
         this.poisons = []; this.isSlowed = false;
 
         this.maxCooldowns = { 
-            c: config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500), 
-            x: config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : 8000), 
-            z: config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000)
+            c: config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500)), 
+            x: config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : 8000)), 
+            z: config.id === 'phantom' ? 40000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000))
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
         this.hookState = 'ready'; this.hookTarget = null; this.hookTimer = 0; this.activeArrow = null; 
         this.mgMaxAmmo = config.id === 'dreadnaught' ? 150 : 100; this.mgAmmo = this.mgMaxAmmo; this.mgReloading = false;
+
+        // Phantom specific variables
+        this.cMode = 0; 
+        this.cHeldTime = 0; 
+        this.phantomEvasiveTimer = 0;
 
         // Pyro Passive & Shields variables
         this.dashCount = 0;
@@ -103,6 +108,13 @@ class Tank {
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
         
+        if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) {
+            this.phantomEvasiveTimer--;
+            if (this.phantomEvasiveTimer <= 0) {
+                floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Deactivated", life: 60, color: '#9d00ff'});
+            }
+        }
+
         if (this.kbTimer > 0) {
             let oldX = this.x; let oldY = this.y;
             this.x += this.kbX; this.y += this.kbY;
@@ -323,14 +335,30 @@ class Tank {
         }
 
         if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
-            if (keys[this.controls.left]) this.angle -= this.rotSpeed;
-            if (keys[this.controls.right]) this.angle += this.rotSpeed;
+            if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) {
+                let vx = 0; let vy = 0;
+                if (keys[this.controls.up]) vy -= 1;
+                if (keys[this.controls.down]) vy += 1;
+                if (keys[this.controls.left]) vx -= 1;
+                if (keys[this.controls.right]) vx += 1;
+                
+                if (vx !== 0 || vy !== 0) {
+                    let evSpeed = currentSpeed * 1.18;
+                    let mag = Math.hypot(vx, vy);
+                    this.x += (vx / mag) * evSpeed;
+                    this.y += (vy / mag) * evSpeed;
+                    this.angle = Math.atan2(vy, vx);
+                }
+            } else {
+                if (keys[this.controls.left]) this.angle -= this.rotSpeed;
+                if (keys[this.controls.right]) this.angle += this.rotSpeed;
 
-            if (!this.zFiring) {
-                let throttle = 0;
-                if (keys[this.controls.up]) throttle += 1;
-                if (keys[this.controls.down]) throttle -= 1;
-                if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
+                if (!this.zFiring) {
+                    let throttle = 0;
+                    if (keys[this.controls.up]) throttle += 1;
+                    if (keys[this.controls.down]) throttle -= 1;
+                    if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
+                }
             }
         } else if (this.dashState === 2) {
             this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
@@ -344,7 +372,24 @@ class Tank {
 
         if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
             const now = Date.now();
-            if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) this.fireC(now);
+            
+            if (this.config.id === 'phantom') {
+                if (keys[this.controls.c]) {
+                    this.cHeldTime++;
+                    if (this.cHeldTime === 30) {
+                        this.cMode = this.cMode === 0 ? 1 : 0;
+                        let txt = this.cMode === 0 ? "Cannon: Accurate Bouncing Missiles" : "Cannon: Spread Missiles";
+                        floatingTexts.push({x: this.x, y: this.y - 40, text: txt, life: 60, color: '#9d00ff'});
+                    }
+                } else {
+                    if (this.cHeldTime > 0 && this.cHeldTime < 30 && now > this.cooldowns.c && this.burstsLeft === 0) {
+                        this.fireC(now);
+                    }
+                    this.cHeldTime = 0;
+                }
+            } else if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
+                this.fireC(now);
+            }
             
             if (this.config.id === 'destroyer') {
                 if (keys[this.controls.x] && now > this.cooldowns.x && !this.destroLocked) {
@@ -413,6 +458,15 @@ class Tank {
                 createMuzzleFlash(tip.x, tip.y, this.angle);
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
             }
+        } else if (this.config.id === 'phantom') {
+            createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
+            if (this.cMode === 0) {
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
+            } else {
+                for (let i = -1; i <= 1; i++) {
+                    projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + i * 0.1, 14, 4, 7, '#9d00ff', 'phantom_spread', 0));
+                }
+            }
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
             if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
@@ -438,6 +492,19 @@ class Tank {
     }
 
     fireX(now) {
+        if (this.config.id === 'phantom') {
+            if (now < this.cooldowns.x) return;
+            this.cooldowns.x = now + this.maxCooldowns.x;
+            this.recoil = 5;
+            const tip = this.getTip();
+            createMuzzleFlash(tip.x, tip.y, this.angle, 2);
+            for (let i = 0; i < 5; i++) {
+                let spreadAngle = this.angle - 0.3 + (0.6 / 4) * i;
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, spreadAngle, 16, 3, 1.5, '#9d00ff', 'phantom_sg', 0));
+            }
+            return;
+        }
+
         if (this.config.id === 'pyro') {
             if (now < this.cooldowns.x) return;
             this.cooldowns.x = now + this.maxCooldowns.x;
@@ -472,6 +539,13 @@ class Tank {
     }
 
     fireZ(now) {
+        if (this.config.id === 'phantom') {
+            this.cooldowns.z = now + this.maxCooldowns.z;
+            this.phantomEvasiveTimer = 1200; // 20 seconds at 60fps
+            floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Activated", life: 60, color: '#9d00ff'});
+            return;
+        }
+
         if (this.config.id === 'dreadnaught') {
             if (hazards.filter(h => h.owner === this.owner && h.type === 'mine').length >= 6) return; 
             this.cooldowns.z = now + this.maxCooldowns.z;
@@ -553,6 +627,20 @@ class Tank {
         ctx.shadowBlur = this.dashState === 2 || this.dashState === 3 ? 30 : 15;
         ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : this.config.color;
         const w = this.config.img.width * 0.12 * this.scaleMod; const h = this.config.img.height * 0.12 * this.scaleMod;
-        ctx.drawImage(this.config.img, -w / 2, -h / 2, w, h); ctx.restore();
+        
+        let imgToDraw = this.config.img;
+        if (this.config.id === 'phantom') {
+            if (this.phantomEvasiveTimer > 0) {
+                if (images.phantomB && images.phantomB.complete) imgToDraw = images.phantomB;
+                ctx.filter = 'brightness(1.5)';
+            } else {
+                if (images.phantomA && images.phantomA.complete) imgToDraw = images.phantomA;
+                ctx.filter = 'brightness(0.7)';
+            }
+        }
+        
+        ctx.drawImage(imgToDraw, -w / 2, -h / 2, w, h); 
+        ctx.filter = 'none';
+        ctx.restore();
     }
 }
