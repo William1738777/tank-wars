@@ -136,7 +136,7 @@ function update() {
             }
         }
         
-        if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
+        if (h.type === 'seraph_emitter' && h.life % 36 === 0) {
             for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) projectiles.push(new Projectile(h.owner, h.x, h.y, angle, 6, 3, 1.5, '#00ffff', 'seraph_spark', 1));
             createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
         }
