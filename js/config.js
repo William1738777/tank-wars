@@ -8,10 +8,12 @@ let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
     if (loadedCount === 13) { 
-        const btn = document.getElementById('btn-start');
-        if (btn) {
-            btn.innerText = "ENTER ARENA"; 
-            btn.disabled = false;
+        const btnStart = document.getElementById('btn-start');
+        if (btnStart) {
+            btnStart.innerText = "Single Player"; 
+            btnStart.disabled = false;
+            document.getElementById('btn-mp').style.display = 'block';
+            document.getElementById('btn-online').style.display = 'block';
         }
     }
 }
