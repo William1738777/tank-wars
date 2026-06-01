@@ -119,7 +119,7 @@ class Tank {
                 else if (h.type === 'seraph_aoe') {
                     this.isSlowed = true; this.electrocutedTimer = Math.max(this.electrocutedTimer, 5);
                     if (h.life % 60 === 0) {
-                        this.hp -= 2; this.stunTimer = Math.max(this.stunTimer, 30);
+                        this.hp -= 3.5; this.stunTimer = Math.max(this.stunTimer, 30);
                         floatingTexts.push({x: this.x, y: this.y - 40, text: "SHOCKED!", life: 40, color: '#00ffff'});
                         let ownerTank = players.find(p => p.owner === h.owner);
                         if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5);
