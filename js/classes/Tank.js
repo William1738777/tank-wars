@@ -39,6 +39,8 @@ class Tank {
         this.ghostHitTanks = [];
         this.fireTrailTicks = 0; 
         this.inFireTrail = false;
+        this.pyroCShots = 0;
+        this.fireSlowTimer = 0;
 
         this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
         this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
@@ -151,6 +153,8 @@ class Tank {
         
         if (this.stunTimer <= 0 && this.afterStunSlow > 0) { this.afterStunSlow--; currentSpeed *= 0.1; }
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
+
+        if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
 
         // Pyro Fire Shield Processing
         if (this.fireShieldActive) {
