@@ -50,6 +50,18 @@ const tanksData = [
     { id: 'destroyer', name: 'DESTROYER', img: images.destroyer, color: '#888888', desc: 'Normal [C | \']: Cannon (10)<br>Skill 1 [X | ;]: Mortar Strike (Hold to Lock)<br>Skill 2 [Z | L]: Ghost Missile (Pierces Walls, Wall-Slam Stun)', speedMod: 0.85, maxHp: 120 }
 ];
 
+// --- AUDIO ASSETS ---
+const sfx = {
+    basicShot: new Audio('assets/TankBasicShot.mp3'),
+    tankHit: new Audio('assets/TankHit.mp3'),
+    cluster: new Audio('assets/Cluster.mp3')
+};
+
+function playSound(audio) {
+    audio.currentTime = 0; 
+    audio.play().catch(e => console.log(e)); // Catches errors if browser blocks autoplay
+}
+
 const mapsData = [
     {
         id: 'dusk', name: 'DUSK', bgImg: 'bg1',
