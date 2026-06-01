@@ -1,11 +1,7 @@
 class Tank {
     constructor(owner, config, x, y, angle, controls, isAI = false) {
-        this.owner = owner; 
-        this.config = config; 
-        this.x = x; 
-        this.y = y; 
-        this.angle = angle;
-        this.isAI = isAI;
+        this.owner = owner; this.config = config; 
+        this.x = x; this.y = y; this.angle = angle; this.isAI = isAI;
         
         this.speed = 2.5 * (config.speedMod || 1); 
         this.rotSpeed = 0.045 * (config.speedMod || 1); 
@@ -14,16 +10,16 @@ class Tank {
         this.radius = 25 * (config.scaleMod || 1); 
         this.scaleMod = config.scaleMod || 1;
         
-        this.controls = controls;
-        this.isDead = false;
-        this.invulnTimer = 0; 
-        this.stunTimer = 0;
-        this.recoil = 0;
+        this.controls = controls; this.isDead = false;
+        this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
         
-        // Knockback forces & Electric FX
-        this.kbX = 0; this.kbY = 0; this.kbTimer = 0;
+        // Physics & Debuffs
+        this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
         this.electrocutedTimer = 0;
+        this.afterStunSlow = 0;
+        this.destroSlowTimer = 0;
+        this.poisons = []; this.isSlowed = false;
 
         this.maxCooldowns = { 
             c: config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500), 
@@ -31,172 +27,128 @@ class Tank {
             z: 10000 
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
-        this.poisons = []; this.isSlowed = false;
+        this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
+        this.hookState = 'ready'; this.hookTarget = null; this.hookTimer = 0; this.activeArrow = null; 
+        this.mgMaxAmmo = config.id === 'dreadnaught' ? 150 : 100; this.mgAmmo = this.mgMaxAmmo; this.mgReloading = false;
 
-        this.flameTimer = 0; 
-        this.burstsLeft = 0; this.burstTimer = 0;
-        this.hookState = 'ready'; this.hookTarget = null;
-        this.hookTimer = 0; this.activeArrow = null; 
-
-        this.mgMaxAmmo = config.id === 'dreadnaught' ? 150 : 100;
-        this.mgAmmo = this.mgMaxAmmo;
-        this.mgReloading = false;
-
-        // Seraph Variables
-        this.energy = 0;
-        this.zReady = false;
-        this.zFiring = false;
-        this.zChargeTimer = 0;
-        this.cShots = 0;
+        this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
+        
+        // Destroyer Variables
+        this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
     }
 
-    addPoison(dps, durationFrames) {
-        this.poisons.push({ dps: dps, life: durationFrames });
-    }
+    addPoison(dps, durationFrames) { this.poisons.push({ dps: dps, life: durationFrames }); }
 
     think() {
         if (!players[0] || players[0].isDead || this.stunTimer > 0 || this.dashState === 2) return;
+        const target = players[0]; const dx = target.x - this.x; const dy = target.y - this.y;
+        const dist = Math.hypot(dx, dy); const targetAngle = Math.atan2(dy, dx);
         
-        const target = players[0];
-        const dx = target.x - this.x;
-        const dy = target.y - this.y;
-        const dist = Math.hypot(dx, dy);
-        const targetAngle = Math.atan2(dy, dx);
-        
-        // Wipe all inputs clean for this frame
-        keys[this.controls.up] = false;
-        keys[this.controls.down] = false;
-        keys[this.controls.left] = false;
-        keys[this.controls.right] = false;
-        keys[this.controls.c] = false;
-        keys[this.controls.x] = false;
-        keys[this.controls.z] = false;
+        keys[this.controls.up] = false; keys[this.controls.down] = false; keys[this.controls.left] = false; keys[this.controls.right] = false;
+        keys[this.controls.c] = false; keys[this.controls.x] = false; keys[this.controls.z] = false;
 
-        // 1. AIMING (Rotate towards the player)
         let angleDiff = targetAngle - this.angle;
-        // Normalize angle to find the shortest turning direction (-PI to PI)
         angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
         
-        // Turn if not facing the player directly
         if (angleDiff > 0.1) keys[this.controls.right] = true;
         else if (angleDiff < -0.1) keys[this.controls.left] = true;
 
-        // 2. MOVEMENT & POSITIONING
-        if (dist > 350) {
-            keys[this.controls.up] = true; // Chase if too far
-        } else if (dist < 150) {
-            keys[this.controls.down] = true; // Back up if too close (panic!)
-        } else {
-            // Strafe randomly to be a harder target
-            if (Math.random() < 0.05) keys[this.controls.up] = true;
-        }
+        if (dist > 350) keys[this.controls.up] = true; 
+        else if (dist < 150) keys[this.controls.down] = true; 
+        else if (Math.random() < 0.05) keys[this.controls.up] = true;
 
-        // 3. STUCK PREVENTION (The wiggle algorithm)
         if (this.x === this.lastX && this.y === this.lastY && keys[this.controls.up]) {
             this.stuckTimer = (this.stuckTimer || 0) + 1;
-            if (this.stuckTimer > 20) {
-                // If stuck for 20 frames, reverse and turn sharply
-                keys[this.controls.up] = false;
-                keys[this.controls.down] = true;
-                keys[this.controls.left] = true; 
-            }
-        } else {
-            this.stuckTimer = 0;
-        }
-        this.lastX = this.x;
-        this.lastY = this.y;
+            if (this.stuckTimer > 20) { keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.left] = true; }
+        } else { this.stuckTimer = 0; }
+        this.lastX = this.x; this.lastY = this.y;
 
-        // 4. COMBAT DECISIONS
         if (Math.abs(angleDiff) < 0.3 && dist < 650) {
-            keys[this.controls.c] = true; // Spam primary fire
+            keys[this.controls.c] = true; 
             
-            // Randomly blow cooldowns if available
-            if (Math.random() < 0.03) keys[this.controls.x] = true; 
+            if (this.config.id === 'destroyer') {
+                if (this.destroAiming) {
+                    keys[this.controls.x] = true;
+                    if (this.destroAimDist >= dist - 40) keys[this.controls.x] = false;
+                } else if (Math.random() < 0.02 && dist > 200) { keys[this.controls.x] = true; }
+            } else if (Math.random() < 0.03) { keys[this.controls.x] = true; }
             
-            // Only use Ultimates if relatively close
             if (dist < 400 && Math.random() < 0.02) keys[this.controls.z] = true;
         }
     }
 
     update() {
         if (this.isDead) return;
-
-        // If this is the AI tank, calculate its inputs before doing physics
         if (this.isAI) this.think();
 
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
         
-        // Knockback resolution
+        // --- WALL SLAM KNOCKBACK LOGIC ---
         if (this.kbTimer > 0) {
-            this.x += this.kbX;
-            this.y += this.kbY;
-            this.kbX *= 0.85; 
-            this.kbY *= 0.85;
-            this.kbTimer--;
+            let oldX = this.x; let oldY = this.y;
+            this.x += this.kbX; this.y += this.kbY;
+            this.checkWallCollisions(); 
+            
+            if (this.kbType === 'wall_slam') {
+                let movedDist = Math.hypot(this.x - oldX, this.y - oldY);
+                let intendedDist = Math.hypot(this.kbX, this.kbY);
+                let hitEdge = this.x <= this.radius || this.x >= canvas.width - this.radius || this.y <= this.radius || this.y >= canvas.height - this.radius;
+
+                if (movedDist < intendedDist - 2 || hitEdge) {
+                    this.kbType = null;
+                    this.stunTimer = Math.max(this.stunTimer, 120);
+                    this.afterStunSlow = 90;
+                    floatingTexts.push({x: this.x, y: this.y - 40, text: "CRITICALLY JAMMED!", life: 90, color: '#ff3333'});
+                    createKaboom(this.x, this.y, 1.5);
+                }
+            }
+            this.kbX *= 0.85; this.kbY *= 0.85; this.kbTimer--;
+            if (this.kbTimer <= 0) this.kbType = null;
         }
 
         if (this.stunTimer > 0) {
             this.stunTimer--;
-            if (this.stunTimer % 8 === 0) {
-                createParticles(this.x + (Math.random()-0.5)*30, this.y + (Math.random()-0.5)*30, 2, '#00ffff', 1.2, 0.4);
-            }
+            if (this.stunTimer % 8 === 0) createParticles(this.x + (Math.random()-0.5)*30, this.y + (Math.random()-0.5)*30, 2, '#00ffff', 1.2, 0.4);
         }
 
         this.isSlowed = false;
         for (let i = this.poisons.length - 1; i >= 0; i--) {
-            let p = this.poisons[i];
-            this.hp -= p.dps / 60; 
-            p.life--;
+            let p = this.poisons[i]; this.hp -= p.dps / 60; p.life--;
             if (p.life <= 0) this.poisons.splice(i, 1);
         }
         
         hazards.forEach(h => {
             if (h.owner !== this.owner && Math.hypot(this.x - h.x, this.y - h.y) < this.radius + h.radius) {
-                if (h.type === 'poison_pool') {
-                    this.hp -= 0.5 / 60; 
-                    this.isSlowed = true; 
-                } else if (h.type === 'seraph_aoe') {
-                    this.isSlowed = true;
-                    this.electrocutedTimer = Math.max(this.electrocutedTimer, 5);
+                if (h.type === 'poison_pool') { this.hp -= 0.5 / 60; this.isSlowed = true; } 
+                else if (h.type === 'seraph_aoe') {
+                    this.isSlowed = true; this.electrocutedTimer = Math.max(this.electrocutedTimer, 5);
                     if (h.life % 60 === 0) {
-                        this.hp -= 2;
-                        this.stunTimer = Math.max(this.stunTimer, 30);
+                        this.hp -= 2; this.stunTimer = Math.max(this.stunTimer, 30);
                         floatingTexts.push({x: this.x, y: this.y - 40, text: "SHOCKED!", life: 40, color: '#00ffff'});
-                        
                         let ownerTank = players.find(p => p.owner === h.owner);
-                        if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) {
-                            ownerTank.energy = Math.min(100, ownerTank.energy + 5);
-                        }
+                        if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5);
                     }
                 }
             }
         });
         
-        if (this.hp <= 0 && !this.isDead) {
-            this.isDead = true; createKaboom(this.x, this.y, 2.0 * this.scaleMod); 
-            handleDeath(this.owner === 1 ? 0 : 1); return; 
-        }
+        if (this.hp <= 0 && !this.isDead) { this.isDead = true; createKaboom(this.x, this.y, 2.0 * this.scaleMod); handleDeath(this.owner === 1 ? 0 : 1); return; }
 
         let currentSpeed = this.isSlowed ? this.speed * 0.5 : this.speed;
+        
+        // Apply Wall Slam and Mortar Slows 
+        if (this.stunTimer <= 0 && this.afterStunSlow > 0) { this.afterStunSlow--; currentSpeed *= 0.1; }
+        if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
 
-        // Pyro Dash & Flamethrower Buff 
         if (this.flameTimer > 0) {
-            this.flameTimer--;
-            currentSpeed *= 1.3;
-            const tip = this.getTip();
-            
+            this.flameTimer--; currentSpeed *= 1.3; const tip = this.getTip();
             if (this.flameTimer % 2 === 0) {
                 for(let i=0; i<3; i++) {
-                    let pAngle = this.angle + (Math.random() - 0.5) * 0.7; 
-                    let pSpeed = Math.random() * 6 + 3;
-                    particles.push({
-                        x: tip.x, y: tip.y, vx: Math.cos(pAngle)*pSpeed, vy: Math.sin(pAngle)*pSpeed,
-                        life: Math.random() * 0.3 + 0.2, size: Math.random() * 8 + 4, color: Math.random() > 0.4 ? '#ff4500' : '#ffaa00'
-                    });
+                    let pAngle = this.angle + (Math.random() - 0.5) * 0.7; let pSpeed = Math.random() * 6 + 3;
+                    particles.push({ x: tip.x, y: tip.y, vx: Math.cos(pAngle)*pSpeed, vy: Math.sin(pAngle)*pSpeed, life: Math.random() * 0.3 + 0.2, size: Math.random() * 8 + 4, color: Math.random() > 0.4 ? '#ff4500' : '#ffaa00' });
                 }
             }
-
             players.forEach(enemy => {
                 if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
                     let dx = enemy.x - tip.x; let dy = enemy.y - tip.y;
@@ -204,160 +156,89 @@ class Tank {
                         let angleToEnemy = Math.atan2(dy, dx);
                         let angleDiff = Math.abs(Math.atan2(Math.sin(angleToEnemy - this.angle), Math.cos(angleToEnemy - this.angle)));
                         if (angleDiff < 0.8) { 
-                            enemy.hp -= 3.5 / 60; 
-                            updateHUD();
+                            enemy.hp -= 3.5 / 60; updateHUD();
                             if (Math.random() > 0.7) createParticles(enemy.x, enemy.y, 1, '#ff4500', 1, 0.2); 
-                            if (enemy.hp <= 0 && !enemy.isDead) {
-                                enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1);
-                            }
+                            if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
                         }
                     }
                 }
             });
         }
 
-        // Seraph Energy & Beam Logic
         if (this.config.id === 'seraph') {
-            if (this.energy >= 100 && !this.zReady) {
-                this.energy = 100;
-                this.zReady = true;
-            }
-
+            if (this.energy >= 100 && !this.zReady) { this.energy = 100; this.zReady = true; }
             if (this.zReady && keys[this.controls.z] && this.stunTimer <= 0 && this.dashState === 0) {
                 this.zChargeTimer++;
                 if (this.zChargeTimer > 0 && this.zChargeTimer < 30) {
-                    const tip = this.getTip();
-                    createParticles(tip.x + (Math.random()-0.5)*40, tip.y + (Math.random()-0.5)*40, 1, '#00ffff', 1, 0.2);
+                    const tip = this.getTip(); createParticles(tip.x + (Math.random()-0.5)*40, tip.y + (Math.random()-0.5)*40, 1, '#00ffff', 1, 0.2);
                 }
                 if (this.zChargeTimer >= 30) {
-                    this.zFiring = true;
-                    this.energy -= 10 / 60; 
-                    if (this.energy <= 0) {
-                        this.energy = 0;
-                        this.zReady = false;
-                        this.zFiring = false;
-                        this.zChargeTimer = 0;
-                    }
+                    this.zFiring = true; this.energy -= 10 / 60; 
+                    if (this.energy <= 0) { this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; }
                 }
-            } else {
-                this.zChargeTimer = 0;
-                this.zFiring = false;
-                if (this.energy <= 0) {
-                    this.zReady = false;
-                }
-            }
+            } else { this.zChargeTimer = 0; this.zFiring = false; if (this.energy <= 0) this.zReady = false; }
 
             if (this.zFiring) {
-                const tip = this.getTip();
-                let endX = tip.x; let endY = tip.y;
-                const maxBeamLength = 800;
-
-                for (let i = 0; i < maxBeamLength; i += 5) {
-                    let testX = tip.x + Math.cos(this.angle) * i;
-                    let testY = tip.y + Math.sin(this.angle) * i;
-
+                const tip = this.getTip(); let endX = tip.x; let endY = tip.y;
+                for (let i = 0; i < 800; i += 5) {
+                    let testX = tip.x + Math.cos(this.angle) * i; let testY = tip.y + Math.sin(this.angle) * i;
                     let hitWall = false;
-                    for (let w of currentMap.walls) {
-                        if (testX >= w.x && testX <= w.x + w.w && testY >= w.y && testY <= w.y + w.h) { hitWall = true; break; }
-                    }
+                    for (let w of currentMap.walls) { if (testX >= w.x && testX <= w.x + w.w && testY >= w.y && testY <= w.y + w.h) { hitWall = true; break; } }
                     if (hitWall) break;
-
                     let hitRock = false;
-                    for (let r of currentMap.rocks) {
-                        if (Math.hypot(testX - r.x, testY - r.y) <= r.r) { hitRock = true; break; }
-                    }
+                    for (let r of currentMap.rocks) { if (Math.hypot(testX - r.x, testY - r.y) <= r.r) { hitRock = true; break; } }
                     if (hitRock) break;
-
                     endX = testX; endY = testY;
                 }
-
-                // Beam damages enemies
                 players.forEach(enemy => {
                     if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
-                        let dist = distToSegment({x: enemy.x, y: enemy.y}, tip, {x: endX, y: endY});
-                        if (dist < enemy.radius + 15) { 
+                        if (distToSegment({x: enemy.x, y: enemy.y}, tip, {x: endX, y: endY}) < enemy.radius + 15) { 
                             if (frameCount % 30 === 0) { 
-                                enemy.hp -= 2.0;
-                                enemy.electrocutedTimer = 30; 
-                                createParticles(enemy.x, enemy.y, 3, '#00ffff', 1.5, 0.3);
-                                if (enemy.hp <= 0 && !enemy.isDead) {
-                                    enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1);
-                                }
+                                enemy.hp -= 2.0; enemy.electrocutedTimer = 30; createParticles(enemy.x, enemy.y, 3, '#00ffff', 1.5, 0.3);
+                                if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
                             }
                         }
                     }
                 });
-
-                this.beamStartX = tip.x; this.beamStartY = tip.y;
-                this.beamEndX = endX; this.beamEndY = endY;
+                this.beamStartX = tip.x; this.beamStartY = tip.y; this.beamEndX = endX; this.beamEndY = endY;
             }
         }
 
         if (this.hookState === 'pulling') {
             if (this.hookTarget && !this.hookTarget.isDead && this.hookTimer > 0) {
-                let frontX = this.x + Math.cos(this.angle) * 55 * this.scaleMod;
-                let frontY = this.y + Math.sin(this.angle) * 55 * this.scaleMod;
-                let dx = frontX - this.hookTarget.x; let dy = frontY - this.hookTarget.y;
-                let dist = Math.hypot(dx, dy);
-                
-                if (dist > 20) { 
-                    this.hookTarget.x += (dx / dist) * 11; this.hookTarget.y += (dy / dist) * 11;
-                    createParticles(this.hookTarget.x, this.hookTarget.y, 1, '#00ff66', 1, 0.3);
-                } else {
-                    this.hookState = 'ready'; this.hookTarget.stunTimer = 90; 
-                    floatingTexts.push({x: this.hookTarget.x, y: this.hookTarget.y - 45, text: "JAMMED!", life: 75, color: '#00ffff'});
-                    this.cooldowns.x = Date.now() + this.maxCooldowns.x; this.hookTarget = null;
-                }
+                let frontX = this.x + Math.cos(this.angle) * 55 * this.scaleMod; let frontY = this.y + Math.sin(this.angle) * 55 * this.scaleMod;
+                let dx = frontX - this.hookTarget.x; let dy = frontY - this.hookTarget.y; let dist = Math.hypot(dx, dy);
+                if (dist > 20) { this.hookTarget.x += (dx / dist) * 11; this.hookTarget.y += (dy / dist) * 11; createParticles(this.hookTarget.x, this.hookTarget.y, 1, '#00ff66', 1, 0.3); } 
+                else { this.hookState = 'ready'; this.hookTarget.stunTimer = 90; floatingTexts.push({x: this.hookTarget.x, y: this.hookTarget.y - 45, text: "JAMMED!", life: 75, color: '#00ffff'}); this.cooldowns.x = Date.now() + this.maxCooldowns.x; this.hookTarget = null; }
                 this.hookTimer--;
-                if (this.hookTimer <= 0 && this.hookState === 'pulling') {
-                    this.hookState = 'ready';
-                    if (this.hookTarget) this.hookTarget.stunTimer = 90;
-                    this.cooldowns.x = Date.now() + this.maxCooldowns.x; this.hookTarget = null;
-                }
-            } else {
-                this.hookState = 'ready'; this.hookTarget = null;
-            }
+                if (this.hookTimer <= 0 && this.hookState === 'pulling') { this.hookState = 'ready'; if (this.hookTarget) this.hookTarget.stunTimer = 90; this.cooldowns.x = Date.now() + this.maxCooldowns.x; this.hookTarget = null; }
+            } else { this.hookState = 'ready'; this.hookTarget = null; }
         }
 
         if (this.config.id === 'dreadnaught') {
             const now = Date.now();
-            if (this.mgReloading && now > this.cooldowns.x) {
-                this.mgReloading = false;
-                this.mgAmmo = this.mgMaxAmmo;
-            }
-            if (!this.mgReloading && keys[this.controls.x] && this.dashState === 0 && this.stunTimer <= 0) {
-                if (now > this.cooldowns.x) this.fireMG(now);
-            }
+            if (this.mgReloading && now > this.cooldowns.x) { this.mgReloading = false; this.mgAmmo = this.mgMaxAmmo; }
+            if (!this.mgReloading && keys[this.controls.x] && this.dashState === 0 && this.stunTimer <= 0) { if (now > this.cooldowns.x) this.fireMG(now); }
         }
 
         if (this.burstsLeft > 0 && this.stunTimer <= 0) {
             this.burstTimer--;
             if (this.burstTimer <= 0) {
-                const tip = this.getTip();
-                createMuzzleFlash(tip.x, tip.y, this.angle, 0.5);
-                let spread = (Math.random() - 0.5) * 0.3; 
-                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + spread, 14, 3, 3, '#00ff66', 'toxic_bullet', 0));
+                const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 0.5);
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.3, 14, 3, 3, '#00ff66', 'toxic_bullet', 0));
                 this.burstsLeft--; this.burstTimer = 6; this.recoil = 2;
             }
         }
 
         if (this.dashState === 1 && this.stunTimer <= 0) {
-            this.dashTimer--;
-            createParticles(this.x - Math.cos(this.angle)*20, this.y - Math.sin(this.angle)*20, 2, this.config.color, 1, 0.5);
-            if (this.dashTimer <= 0) {
-                this.dashState = 2; this.dashTimer = 15; 
-                createKaboom(this.x - Math.cos(this.angle)*25, this.y - Math.sin(this.angle)*25, 0.5); 
-            }
+            this.dashTimer--; createParticles(this.x - Math.cos(this.angle)*20, this.y - Math.sin(this.angle)*20, 2, this.config.color, 1, 0.5);
+            if (this.dashTimer <= 0) { this.dashState = 2; this.dashTimer = 15; createKaboom(this.x - Math.cos(this.angle)*25, this.y - Math.sin(this.angle)*25, 0.5); }
             return; 
         }
         
         if (this.dashState === 2 && this.stunTimer <= 0) {
-            currentSpeed = 12; this.dashTimer--;
-            createParticles(this.x, this.y, 1, '#fff', 3, 0.4); 
-            if (this.dashTimer <= 0) {
-                this.dashState = 0;
-                if (this.config.id === 'pyro') this.flameTimer = 180; 
-            }
+            currentSpeed = 12; this.dashTimer--; createParticles(this.x, this.y, 1, '#fff', 3, 0.4); 
+            if (this.dashTimer <= 0) { this.dashState = 0; if (this.config.id === 'pyro') this.flameTimer = 180; }
         }
 
         if (this.dashState !== 2 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
@@ -368,40 +249,48 @@ class Tank {
                 let throttle = 0;
                 if (keys[this.controls.up]) throttle += 1;
                 if (keys[this.controls.down]) throttle -= 1;
-
-                if (throttle !== 0) {
-                    this.x += Math.cos(this.angle) * throttle * currentSpeed;
-                    this.y += Math.sin(this.angle) * throttle * currentSpeed;
-                }
+                if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
             }
         } else if (this.dashState === 2) {
             this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
         }
 
-        if (this.recoil > 0.1) {
-            this.x -= Math.cos(this.angle) * this.recoil; this.y -= Math.sin(this.angle) * this.recoil;
-            this.recoil *= 0.8;
-        }
+        if (this.recoil > 0.1) { this.x -= Math.cos(this.angle) * this.recoil; this.y -= Math.sin(this.angle) * this.recoil; this.recoil *= 0.8; }
 
         this.checkWallCollisions();
-
         this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
         this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
 
         if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
             const now = Date.now();
-            
             if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) this.fireC(now);
             
-            if (this.config.id !== 'dreadnaught') {
-                if (keys[this.controls.x]) {
-                    if (!this.xHeld) { this.fireX(now); this.xHeld = true; }
-                } else { this.xHeld = false; }
+            // --- DESTROYER MORTAR STRIKE LOGIC ---
+            if (this.config.id === 'destroyer') {
+                if (keys[this.controls.x] && now > this.cooldowns.x && !this.destroLocked) {
+                    this.destroAiming = true;
+                    this.destroAimDist = Math.min(600, this.destroAimDist + 6);
+                    this.xHeld = true;
+                } else if (!keys[this.controls.x] && this.destroAiming) {
+                    this.destroAiming = false;
+                    this.cooldowns.x = now + this.maxCooldowns.x;
+                    let targets = [];
+                    let cx = this.x + Math.cos(this.angle) * this.destroAimDist; let cy = this.y + Math.sin(this.angle) * this.destroAimDist;
+                    for(let i=0; i<8; i++) {
+                        let r = Math.random() * 80; let a = Math.random() * Math.PI * 2;
+                        targets.push({x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r});
+                    }
+                    hazards.push({ owner: this.owner, type: 'destro_strike_manager', targets: targets, launched: [], timer: 0, state: 'launching', tank: this, life: 9999 });
+                    this.destroAimDist = 100;
+                }
+                
+                let isMoving = keys[this.controls.up] || keys[this.controls.down] || keys[this.controls.left] || keys[this.controls.right];
+                if (isMoving && this.destroAiming) { this.destroAiming = false; this.destroAimDist = 100; }
+            } else if (this.config.id !== 'dreadnaught') {
+                if (keys[this.controls.x]) { if (!this.xHeld) { this.fireX(now); this.xHeld = true; } } else { this.xHeld = false; }
             }
 
-            if (this.config.id !== 'seraph') {
-                if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now);
-            }
+            if (this.config.id !== 'seraph') { if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now); }
         }
     }
 
@@ -410,103 +299,65 @@ class Tank {
             let testX = this.x; let testY = this.y;
             if (this.x < w.x) testX = w.x; else if (this.x > w.x + w.w) testX = w.x + w.w;
             if (this.y < w.y) testY = w.y; else if (this.y > w.y + w.h) testY = w.y + w.h;
-            let distX = this.x - testX; let distY = this.y - testY;
-            let distance = Math.hypot(distX, distY);
+            let distance = Math.hypot(this.x - testX, this.y - testY);
             if (distance < this.radius) {
                 let push = this.radius - distance;
-                let normX = distX / distance; let normY = distY / distance;
-                this.x += normX * push; this.y += normY * push;
+                this.x += ((this.x - testX) / distance) * push; this.y += ((this.y - testY) / distance) * push;
             }
         }
-        
         for (let r of currentMap.rocks) {
-            let dx = this.x - r.x;
-            let dy = this.y - r.y;
-            let dist = Math.hypot(dx, dy);
-            if (dist < this.radius + r.r) {
-                let push = (this.radius + r.r) - dist;
-                this.x += (dx / dist) * push;
-                this.y += (dy / dist) * push;
-            }
+            let dx = this.x - r.x; let dy = this.y - r.y; let dist = Math.hypot(dx, dy);
+            if (dist < this.radius + r.r) { let push = (this.radius + r.r) - dist; this.x += (dx / dist) * push; this.y += (dy / dist) * push; }
         }
     }
 
-    getTip() {
-        const offset = (this.config.img.width * 0.12 * this.scaleMod) / 2;
-        return { x: this.x + Math.cos(this.angle)*offset, y: this.y + Math.sin(this.angle)*offset };
-    }
+    getTip() { const offset = (this.config.img.width * 0.12 * this.scaleMod) / 2; return { x: this.x + Math.cos(this.angle)*offset, y: this.y + Math.sin(this.angle)*offset }; }
 
     fireC(now) {
-        this.cooldowns.c = now + this.maxCooldowns.c; 
-        this.recoil = 4;
-        const tip = this.getTip();
-        
-        if (this.config.id === 'scorpion') {
-            this.burstsLeft = 3; this.burstTimer = 0; 
-        } else if (this.config.id === 'dreadnaught') {
+        this.cooldowns.c = now + this.maxCooldowns.c; this.recoil = 4; const tip = this.getTip();
+        if (this.config.id === 'scorpion') { this.burstsLeft = 3; this.burstTimer = 0; } 
+        else if (this.config.id === 'dreadnaught') {
             createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 11, 8, 14, '#ff4500', 'dread_c', 2));
         } else if (this.config.id === 'seraph') {
-            createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
-            this.cShots++;
-            let isFifth = (this.cShots % 5 === 0);
+            createMuzzleFlash(tip.x, tip.y, this.angle, 1.5); this.cShots++;
             let p = new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 5, '#00ffff', 'seraph_c', 1);
-            p.isFifth = isFifth;
-            projectiles.push(p);
+            p.isFifth = (this.cShots % 5 === 0); projectiles.push(p);
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
-            if (this.config.id === 'grizzly') projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 10, '#b533ff', 'bullet', 0));
+            if (this.config.id === 'grizzly' || this.config.id === 'destroyer') projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 10, '#b533ff', 'bullet', 0));
             else projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
         }
     }
 
     fireMG(now) {
         this.cooldowns.x = now + 100; 
-        const w = this.config.img.width * 0.12 * this.scaleMod;
-        const h = this.config.img.height * 0.12 * this.scaleMod;
-        
+        const w = this.config.img.width * 0.12 * this.scaleMod; const h = this.config.img.height * 0.12 * this.scaleMod;
         const fwd = w * 0.25; const side = h * 0.35;
-        let px1 = this.x + Math.cos(this.angle)*fwd - Math.sin(this.angle)*side;
-        let py1 = this.y + Math.sin(this.angle)*fwd + Math.cos(this.angle)*side;
-        let px2 = this.x + Math.cos(this.angle)*fwd - Math.sin(this.angle)*(-side);
-        let py2 = this.y + Math.sin(this.angle)*fwd + Math.cos(this.angle)*(-side);
-
-        createMuzzleFlash(px1, py1, this.angle, 0.3); 
-        createMuzzleFlash(px2, py2, this.angle, 0.3); 
-
-        let spread1 = (Math.random() - 0.5) * 0.2; let spread2 = (Math.random() - 0.5) * 0.2;
-
-        projectiles.push(new Projectile(this.owner, px1, py1, this.angle + spread1, 18, 2, 0.6, '#ffcc00', 'mg', 0));
-        projectiles.push(new Projectile(this.owner, px2, py2, this.angle + spread2, 18, 2, 0.6, '#ffcc00', 'mg', 0));
-        
+        let px1 = this.x + Math.cos(this.angle)*fwd - Math.sin(this.angle)*side; let py1 = this.y + Math.sin(this.angle)*fwd + Math.cos(this.angle)*side;
+        let px2 = this.x + Math.cos(this.angle)*fwd - Math.sin(this.angle)*(-side); let py2 = this.y + Math.sin(this.angle)*fwd + Math.cos(this.angle)*(-side);
+        createMuzzleFlash(px1, py1, this.angle, 0.3); createMuzzleFlash(px2, py2, this.angle, 0.3); 
+        projectiles.push(new Projectile(this.owner, px1, py1, this.angle + (Math.random() - 0.5) * 0.2, 18, 2, 0.6, '#ffcc00', 'mg', 0));
+        projectiles.push(new Projectile(this.owner, px2, py2, this.angle + (Math.random() - 0.5) * 0.2, 18, 2, 0.6, '#ffcc00', 'mg', 0));
         this.mgAmmo -= 2;
-        if (this.mgAmmo <= 0) {
-            this.mgAmmo = 0; this.mgReloading = true;
-            this.maxCooldowns.x = 15000; this.cooldowns.x = now + 15000;
-        }
+        if (this.mgAmmo <= 0) { this.mgAmmo = 0; this.mgReloading = true; this.maxCooldowns.x = 15000; this.cooldowns.x = now + 15000; }
     }
 
     fireX(now) {
         if (this.config.id === 'scorpion') {
             if (this.hookState !== 'ready' || now < this.cooldowns.x) return;
-            this.recoil = 6; this.hookState = 'fired';
-            const tip = this.getTip();
+            this.recoil = 6; this.hookState = 'fired'; const tip = this.getTip();
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             let arrow = new Projectile(this.owner, tip.x, tip.y, this.angle, 15, 5, 5, '#00ff66', 'arrow', 0);
-            projectiles.push(arrow); this.activeArrow = arrow;
-            return;
+            projectiles.push(arrow); this.activeArrow = arrow; return;
         }
 
         if (now < this.cooldowns.x) return;
-        this.cooldowns.x = now + this.maxCooldowns.x;
-        this.recoil = 7;
+        this.cooldowns.x = now + this.maxCooldowns.x; this.recoil = 7;
         
         if (this.config.id === 'grizzly') {
             const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
-            for (let i = 0; i < 5; i++) {
-                let rAngle = this.angle - 0.4 + (0.8 / 4) * i;
-                projectiles.push(new Projectile(this.owner, tip.x, tip.y, rAngle, 8, 4, 6, '#ff6600', 'rocket', 3));
-            }
+            for (let i = 0; i < 5; i++) projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle - 0.4 + (0.8 / 4) * i, 8, 4, 6, '#ff6600', 'rocket', 3));
         } else if (this.config.id === 'pyro') {
             const w = this.config.img.width * 0.12; const h = this.config.img.height * 0.12;
             const pods = [ {x: 0.15, y: -0.38}, {x: -0.20, y: -0.38}, {x: 0.15, y: 0.38}, {x: -0.20, y: 0.38} ];
@@ -527,11 +378,9 @@ class Tank {
 
     fireZ(now) {
         if (this.config.id === 'dreadnaught') {
-            let activeMines = hazards.filter(h => h.owner === this.owner && h.type === 'mine').length;
-            if (activeMines >= 6) return; 
+            if (hazards.filter(h => h.owner === this.owner && h.type === 'mine').length >= 6) return; 
             this.cooldowns.z = now + this.maxCooldowns.z;
-            hazards.push({ owner: this.owner, type: 'mine', x: this.x, y: this.y, radius: 15, life: 999999, age: 0, visible: true, triggering: false, triggerTimer: 0 });
-            return;
+            hazards.push({ owner: this.owner, type: 'mine', x: this.x, y: this.y, radius: 15, life: 999999, age: 0, visible: true, triggering: false, triggerTimer: 0 }); return;
         }
 
         this.cooldowns.z = now + this.maxCooldowns.z;
@@ -543,6 +392,9 @@ class Tank {
         } else if (this.config.id === 'scorpion') {
             hazards.push({ owner: this.owner, type: 'poison_pool', x: this.x, y: this.y, radius: 70, life: 1200 });
             createParticles(this.x, this.y, 20, '#00ff66', 2, 1.5);
+        } else if (this.config.id === 'destroyer') {
+            this.recoil = 10; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 3.0);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 6, 20, '#ff0000', 'destro_missile', 0));
         }
     }
 
@@ -550,9 +402,13 @@ class Tank {
         if (this.isDead) return;
         if (this.invulnTimer > 0 && Math.floor(this.invulnTimer / 10) % 2 === 0) return;
         
-        if (this.poisons.length > 0) {
-            ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI*2);
-            ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill();
+        if (this.poisons.length > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI*2); ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill(); }
+
+        if (this.config.id === 'destroyer' && this.destroAiming) {
+            ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 80, 0, Math.PI*2);
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.1)'; ctx.fill(); ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist);
+            ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]);
         }
 
         if (this.electrocutedTimer > 0) {
@@ -560,40 +416,29 @@ class Tank {
             for(let i=0; i<3; i++) {
                 if (Math.random() > 0.3) {
                     ctx.beginPath();
-                    let sx = this.x + (Math.random()-0.5)*this.radius*2.5;
-                    let sy = this.y + (Math.random()-0.5)*this.radius*2.5;
-                    let ex = this.x + (Math.random()-0.5)*this.radius*2.5;
-                    let ey = this.y + (Math.random()-0.5)*this.radius*2.5;
-                    ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
+                    ctx.moveTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
+                    ctx.lineTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
                     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; ctx.stroke();
                 }
             }
             ctx.restore();
         }
         
-        if (this.stunTimer > 0) {
-            ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 8, 0, Math.PI*2);
-            ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3; ctx.stroke();
-        }
+        if (this.stunTimer > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 8, 0, Math.PI*2); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3; ctx.stroke(); }
 
         ctx.save(); ctx.translate(this.x, this.y); 
         
         if (this.config.id === 'seraph') {
-            ctx.save();
-            ctx.fillStyle = '#222';
-            ctx.fillRect(-25, -45, 50, 6);
+            ctx.save(); ctx.fillStyle = '#222'; ctx.fillRect(-25, -45, 50, 6);
             ctx.fillStyle = this.zReady ? '#fff' : '#00ffff';
-            if (this.zReady) { ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; } 
-            else { ctx.shadowBlur = 0; }
-            ctx.fillRect(-25, -45, (this.energy / 100) * 50, 6);
-            ctx.restore();
+            if (this.zReady) { ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; } else { ctx.shadowBlur = 0; }
+            ctx.fillRect(-25, -45, (this.energy / 100) * 50, 6); ctx.restore();
         }
 
         ctx.rotate(this.angle);
         ctx.shadowBlur = this.dashState === 2 ? 30 : 15;
         ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : this.config.color;
-        const w = this.config.img.width * 0.12 * this.scaleMod; 
-        const h = this.config.img.height * 0.12 * this.scaleMod;
+        const w = this.config.img.width * 0.12 * this.scaleMod; const h = this.config.img.height * 0.12 * this.scaleMod;
         ctx.drawImage(this.config.img, -w / 2, -h / 2, w, h); ctx.restore();
     }
 }
