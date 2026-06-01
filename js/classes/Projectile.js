@@ -166,17 +166,25 @@ class Projectile {
             const scale = 0.15; const w = images.static.width * scale; const h = images.static.height * scale;
             ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff'; ctx.drawImage(images.static, -w/2, -h/2, w, h);
         } else if (this.type === 'destro_missile' && images.destroMissile.complete) {
-            const w = images.destroMissile.width * 0.08; // <-- Made smaller here!
+            const w = images.destroMissile.width * 0.08; 
             const h = images.destroMissile.height * 0.08;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000'; ctx.drawImage(images.destroMissile, -w/2, -h/2, w, h);
         } else if ((this.type === 'destro_rocket' || this.type === 'destro_up') && images.destroRocket.complete) {
             ctx.rotate(Math.PI/2); 
             const w = images.destroRocket.width * 0.15; const h = images.destroRocket.height * 0.15;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ffaa00'; ctx.drawImage(images.destroRocket, -w/2, -h/2, w, h);
+        } else if (this.type === 'firebolt') {
+            // ---> YOUR NEW CODE IS PASTED HERE <---
+            if (images.firebolt.complete) {
+                const scale = 0.15;
+                const w = images.firebolt.width * scale;
+                const h = images.firebolt.height * scale;
+                ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000'; 
+                ctx.drawImage(images.firebolt, -w/2, -h/2, w, h);
+            }
         } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = this.color; ctx.shadowBlur = 10; ctx.shadowColor = this.color; ctx.fill();
         }
         ctx.restore();
     }
-}
