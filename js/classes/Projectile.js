@@ -109,7 +109,7 @@ class Projectile {
             createParticles(this.x, this.y, 8, '#00ff66', 1.5, 0.5); 
         } else if (this.type === 'seraph_c') {
             createParticles(this.x, this.y, 8, '#00ffff', 1.5, 0.5);
-            if (this.isFifth) hazards.push({ owner: this.owner, type: 'seraph_aoe', x: this.x, y: this.y, radius: 140, life: 360 });
+            if (this.isFifth) hazards.push({ owner: this.owner, type: 'seraph_aoe', x: this.x, y: this.y, radius: 140, life: 480 });
         } else if (this.type === 'seraph_x') {
             createParticles(this.x, this.y, 15, '#00ffff', 2.0, 0.5);
             hazards.push({ owner: this.owner, type: 'seraph_emitter', x: this.x, y: this.y, radius: 10, life: 240 });
