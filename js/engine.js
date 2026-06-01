@@ -226,25 +226,24 @@ function update() {
 
                     let startHp = tank.hp;
 
-                        // Pyro Shield Blocking
-                        if (tank.config.id === 'pyro' && tank.fireShieldActive) {
-                            tank.fireShieldHp -= pA.damage;
-                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLOCKED!", life: 20, color: '#ffaa00'});
-                        } else {
-                            if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
+                    // Pyro Shield Blocking
+                    if (tank.config.id === 'pyro' && tank.fireShieldActive) {
+                        tank.fireShieldHp -= pA.damage;
+                        floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLOCKED!", life: 20, color: '#ffaa00'});
+                    } else {
+                        if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
 
-                            // ---> NEW FIREBOLT LOGIC ADDED HERE <---
-                            if (pA.type === 'firebolt') {
-                                tank.hp -= pA.damage;
-                                let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
-                                tank.kbX = Math.cos(angle) * 12;
-                                tank.kbY = Math.sin(angle) * 12;
-                                tank.kbTimer = 15;
-                                tank.fireSlowTimer = 90; // 1.5 seconds (90 frames)
-                            } else if (pA.type === 'toxic_bullet') { 
-                                tank.hp -= pA.damage; tank.addPoison(0.5, 300); 
-                            } else if (pA.type === 'arrow') {
-                                tank.hp -= pA.damage; tank.addPoison(1.0, 300); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "HOOKED!", life: 50, color: '#00ff66'});
+                        if (pA.type === 'firebolt') {
+                            tank.hp -= pA.damage;
+                            let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
+                            tank.kbX = Math.cos(angle) * 12;
+                            tank.kbY = Math.sin(angle) * 12;
+                            tank.kbTimer = 15;
+                            tank.fireSlowTimer = 90; // 1.5 seconds (90 frames)
+                        } else if (pA.type === 'toxic_bullet') { 
+                            tank.hp -= pA.damage; tank.addPoison(0.5, 300); 
+                        } else if (pA.type === 'arrow') {
+                            tank.hp -= pA.damage; tank.addPoison(1.0, 300); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "HOOKED!", life: 50, color: '#00ff66'});
                             let ownerTank = players.find(p => p.owner === pA.owner);
                             if (ownerTank) { ownerTank.hookState = 'pulling'; ownerTank.hookTarget = tank; ownerTank.hookTimer = 60; }
                         } else if (pA.type === 'seraph_spark') {
