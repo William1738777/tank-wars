@@ -399,6 +399,16 @@ class Tank {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5); this.cShots++;
             let p = new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 5, '#00ffff', 'seraph_c', 1);
             p.isFifth = (this.cShots % 5 === 0); projectiles.push(p);
+        } else if (this.config.id === 'pyro') {
+            this.pyroCShots++;
+            if (this.pyroCShots % 4 === 0) {
+                floatingTexts.push({x: this.x, y: this.y - 40, text: "SUPERCHARGED FIRE MISSILES", life: 60, color: '#ff0000'});
+                createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 6, 15, '#ff0000', 'firebolt', 0));
+            } else {
+                createMuzzleFlash(tip.x, tip.y, this.angle);
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
+            }
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
             if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
