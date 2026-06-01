@@ -12,7 +12,21 @@
         <div id="main-menu" class="overlay">
             <h1>Tank Wars</h1>
             <p class="subtitle">TACTICAL ARMORED COMBAT</p>
-            <button id="btn-start" onclick="initSelectScreen()">Loading Assets...</button>
+            <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
+                <button id="btn-start" onclick="showMenu('sp-menu')" disabled>Loading Assets...</button>
+                <button id="btn-mp" onclick="startMode('2P')" style="display: none;">2 Players (Local)</button>
+                <button id="btn-online" disabled title="Server offline" style="display: none; background: #333; color: #777; border-color: #555;">Online Multiplayer (WIP)</button>
+            </div>
+        </div>
+
+        <div id="sp-menu" class="overlay" style="display: none;">
+            <h1>Single Player</h1>
+            <p class="subtitle">SELECT CAMPAIGN</p>
+            <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
+                <button disabled style="background: #333; color: #777; border-color: #555;">Story Mode (Locked)</button>
+                <button onclick="startMode('ARCADE')">Arcade Mode</button>
+                <button onclick="showMenu('main-menu')">Back</button>
+            </div>
         </div>
 
         <div id="select-screen" class="overlay">
@@ -40,11 +54,11 @@
                 </div>
                 
                 <div class="player-panel" id="p2-panel">
-                    <h3 style="color: #ff3333;">PLAYER 2 (ARROWS + L, ;, ')</h3>
+                    <h3 id="p2-title" style="color: #ff3333;">PLAYER 2 (ARROWS + L, ;, ')</h3>
                     <div class="selector-box">
-                        <button class="arrow-btn" onclick="cycleTank(2, -1)">&#9664;</button>
+                        <button class="arrow-btn" id="p2-arrow-left" onclick="cycleTank(2, -1)">&#9664;</button>
                         <div class="tank-display" id="p2-display"></div>
-                        <button class="arrow-btn" onclick="cycleTank(2, 1)">&#9654;</button>
+                        <button class="arrow-btn" id="p2-arrow-right" onclick="cycleTank(2, 1)">&#9654;</button>
                     </div>
                     <button id="btn-p2-ready" onclick="toggleReady(2)">Ready</button>
                     <div id="p2-ready-text" class="ready-text">READY!</div>
@@ -70,7 +84,7 @@
             </div>
 
             <div class="hp-box" style="border-color: #ff3333;">
-                <b style="color: #ff3333;">PLAYER 2</b>
+                <b id="hud-p2-name" style="color: #ff3333;">PLAYER 2</b>
                 <div class="hp-bar-bg"><div id="p2-hp" class="hp-bar-fill"></div></div>
             </div>
         </div>
@@ -89,6 +103,7 @@
         <canvas id="gameCanvas" width="1000" height="700"></canvas>
     </div>
 
+    
     <script src="js/config.js"></script>
     <script src="js/classes/Projectile.js"></script>
     <script src="js/classes/Tank.js"></script>
