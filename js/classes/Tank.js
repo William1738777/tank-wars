@@ -1,14 +1,11 @@
 class Tank {
-    class Tank {
-    // Add "isAI = false" to the parameters
     constructor(owner, config, x, y, angle, controls, isAI = false) {
         this.owner = owner; 
         this.config = config; 
         this.x = x; 
         this.y = y; 
         this.angle = angle;
-        this.isAI = isAI; // Save it to the tank
-        // ... leave all the other constructor variables exactly as they are
+        this.isAI = isAI;
         
         this.speed = 2.5 * (config.speedMod || 1); 
         this.rotSpeed = 0.045 * (config.speedMod || 1); 
@@ -110,7 +107,6 @@ class Tank {
         this.lastY = this.y;
 
         // 4. COMBAT DECISIONS
-        // If roughly aiming at the player and within range
         if (Math.abs(angleDiff) < 0.3 && dist < 650) {
             keys[this.controls.c] = true; // Spam primary fire
             
@@ -124,6 +120,9 @@ class Tank {
 
     update() {
         if (this.isDead) return;
+
+        // If this is the AI tank, calculate its inputs before doing physics
+        if (this.isAI) this.think();
 
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
@@ -279,7 +278,7 @@ class Tank {
                         if (dist < enemy.radius + 15) { 
                             if (frameCount % 30 === 0) { 
                                 enemy.hp -= 2.0;
-                                enemy.electrocutedTimer = 30; // Apply zap FX directly on hit
+                                enemy.electrocutedTimer = 30; 
                                 createParticles(enemy.x, enemy.y, 3, '#00ffff', 1.5, 0.3);
                                 if (enemy.hp <= 0 && !enemy.isDead) {
                                     enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1);
@@ -531,7 +530,6 @@ class Tank {
             let activeMines = hazards.filter(h => h.owner === this.owner && h.type === 'mine').length;
             if (activeMines >= 6) return; 
             this.cooldowns.z = now + this.maxCooldowns.z;
-            // Dreadnaught mines logic upgraded inside hazards loop
             hazards.push({ owner: this.owner, type: 'mine', x: this.x, y: this.y, radius: 15, life: 999999, age: 0, visible: true, triggering: false, triggerTimer: 0 });
             return;
         }
@@ -557,7 +555,6 @@ class Tank {
             ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill();
         }
 
-        // Hit visual FX for Seraph's electricity
         if (this.electrocutedTimer > 0) {
             ctx.save();
             for(let i=0; i<3; i++) {
@@ -581,7 +578,6 @@ class Tank {
 
         ctx.save(); ctx.translate(this.x, this.y); 
         
-        // Seraph HUD Bar
         if (this.config.id === 'seraph') {
             ctx.save();
             ctx.fillStyle = '#222';
