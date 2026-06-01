@@ -40,6 +40,7 @@ class Projectile {
         this.lastX = this.x; this.lastY = this.y;
         this.x += this.vx; this.y += this.vy; this.life--;
 
+        // Particle generation during flight
         if (this.type === 'seraph_c' || this.type === 'seraph_x' || this.type === 'seraph_spark') {
             createParticles(this.x + (Math.random()-0.5)*15, this.y + (Math.random()-0.5)*15, 1, '#00ffff', 1.5, 0.3);
             if (Math.random() > 0.5) createParticles(this.x, this.y, 1, '#fff', 2, 0.2);
@@ -47,6 +48,8 @@ class Projectile {
             createParticles(this.x, this.y, 1, 'rgba(0, 255, 102, 0.5)', 2, 0.2); 
         } else if (this.type === 'dread_c') {
             createParticles(this.x, this.y, 2, '#ff4500', 3, 0.4);
+        } else if (this.type.startsWith('phantom_')) {
+            createParticles(this.x, this.y, 1, 'rgba(157, 0, 255, 0.5)', 2, 0.3);
         } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
             createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
         }
@@ -103,6 +106,7 @@ class Projectile {
             }
         }
 
+        // Particle generation on explosion
         if (this.type === 'mg' || this.type === 'bullet') {
             createParticles(this.x, this.y, 4, '#fff', 1, 0.3);
         } else if (this.type === 'toxic_bullet' || this.type === 'arrow') {
@@ -132,6 +136,9 @@ class Projectile {
         } else if (this.type === 'firebolt') {
             createKaboom(this.x, this.y, 1.2);
             createParticles(this.x, this.y, 10, '#ff0000', 1.5, 0.4);
+        } else if (this.type.startsWith('phantom_')) {
+            createParticles(this.x, this.y, 8, '#9d00ff', 1.5, 0.5);
+            if (this.type === 'phantom_bounce') createKaboom(this.x, this.y, 1.0);
         } else {
             createKaboom(this.x, this.y, this.type === 'missile' ? 1.5 : 1.0);
         }
@@ -146,6 +153,7 @@ class Projectile {
 
     draw() {
         ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.angle);
+        
         if (this.type === 'missile') {
             const w = images.missile.width * 0.15; const h = images.missile.height * 0.15;
             ctx.shadowBlur = 15; ctx.shadowColor = this.color; ctx.drawImage(images.missile, -w/2, -h/2, w, h);
@@ -176,18 +184,29 @@ class Projectile {
             ctx.rotate(Math.PI/2); 
             const w = images.destroRocket.width * 0.15; const h = images.destroRocket.height * 0.15;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ffaa00'; ctx.drawImage(images.destroRocket, -w/2, -h/2, w, h);
-        } else if (this.type === 'firebolt') {
-            if (images.firebolt.complete) {
-                const scale = 0.15;
-                const w = images.firebolt.width * scale;
-                const h = images.firebolt.height * scale;
-                ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000'; 
-                ctx.drawImage(images.firebolt, -w/2, -h/2, w, h);
-            }
+        } else if (this.type === 'firebolt' && images.firebolt.complete) {
+            const scale = 0.15;
+            const w = images.firebolt.width * scale;
+            const h = images.firebolt.height * scale;
+            ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000'; 
+            ctx.drawImage(images.firebolt, -w/2, -h/2, w, h);
+        } else if ((this.type === 'phantom_bounce' || this.type === 'phantom_spread') && images.phantomMissile.complete) {
+            const scale = 0.15;
+            const w = images.phantomMissile.width * scale;
+            const h = images.phantomMissile.height * scale;
+            ctx.shadowBlur = 15; ctx.shadowColor = '#9d00ff';
+            ctx.drawImage(images.phantomMissile, -w/2, -h/2, w, h);
+        } else if (this.type === 'phantom_sg' && images.phantomSGMissile.complete) {
+            const scale = 0.10; 
+            const w = images.phantomSGMissile.width * scale;
+            const h = images.phantomSGMissile.height * scale;
+            ctx.shadowBlur = 10; ctx.shadowColor = '#9d00ff';
+            ctx.drawImage(images.phantomSGMissile, -w/2, -h/2, w, h);
         } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = this.color; ctx.shadowBlur = 10; ctx.shadowColor = this.color; ctx.fill();
         }
+        
         ctx.restore();
     }
-} // <--- Added this bracket to prevent the crash!
+}
