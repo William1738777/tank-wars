@@ -2,13 +2,13 @@
 const images = {
     grizzly: new Image(), pyro: new Image(), scorpion: new Image(), dreadnaught: new Image(), seraph: new Image(), destroyer: new Image(),
     missile: new Image(), cluster: new Image(), arrow: new Image(), bg1: new Image(), bg2: new Image(), goo: new Image(), lightning: new Image(), static: new Image(),
-    destroRocket: new Image(), destroMissile: new Image(), target: new Image()
+    destroRocket: new Image(), destroMissile: new Image(), target: new Image(), firebolt: new Image()
 };
 
 let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
-    if (loadedCount === 17) { 
+    if (loadedCount === 18) { // Increased by 1 to account for Firebolt
         const btnStart = document.getElementById('btn-start');
         if (btnStart) {
             btnStart.innerText = "Single Player"; 
