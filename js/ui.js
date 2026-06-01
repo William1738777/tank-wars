@@ -1,11 +1,43 @@
 // --- MENU LOGIC ---
-function initSelectScreen() {
+let gameMode = '2P'; // Global tracker for our game mode
+
+function showMenu(menuId) {
     document.getElementById('main-menu').style.display = 'none';
+    document.getElementById('sp-menu').style.display = 'none';
+    document.getElementById(menuId).style.display = 'flex';
+}
+
+function startMode(mode) {
+    gameMode = mode;
+    document.getElementById('main-menu').style.display = 'none';
+    document.getElementById('sp-menu').style.display = 'none';
     document.getElementById('select-screen').style.display = 'flex';
+    
+    // If Arcade mode, the CPU randomly picks a tank and readies up instantly
+    if (gameMode === 'ARCADE') {
+        p2Selection = Math.floor(Math.random() * tanksData.length);
+        document.getElementById('btn-p2-ready').style.display = 'none';
+        document.getElementById('p2-ready-text').innerText = 'CPU READY!';
+        document.getElementById('p2-ready-text').style.display = 'block';
+        document.getElementById('p2-arrow-left').style.display = 'none';
+        document.getElementById('p2-arrow-right').style.display = 'none';
+        document.getElementById('p2-title').innerText = 'PLAYER 2 (CPU)';
+        document.getElementById('hud-p2-name').innerText = 'CPU';
+        p2Ready = true;
+    } else {
+        // Reset to normal 2P settings
+        document.getElementById('btn-p2-ready').style.display = 'block';
+        document.getElementById('p2-ready-text').style.display = 'none';
+        document.getElementById('p2-arrow-left').style.display = 'block';
+        document.getElementById('p2-arrow-right').style.display = 'block';
+        document.getElementById('p2-title').innerText = 'PLAYER 2 (ARROWS + L, ;, \')';
+        document.getElementById('hud-p2-name').innerText = 'PLAYER 2';
+        p2Ready = false;
+    }
+    
     updateDisplays();
     drawMinimap();
 }
-
 function cycleTank(playerNum, dir) {
     if (playerNum === 1 && !p1Ready) p1Selection = (p1Selection + dir + tanksData.length) % tanksData.length;
     else if (playerNum === 2 && !p2Ready) p2Selection = (p2Selection + dir + tanksData.length) % tanksData.length;
