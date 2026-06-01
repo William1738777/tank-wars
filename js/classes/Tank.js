@@ -325,6 +325,7 @@ class Tank {
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
             }
         }
+    }
         
     fireMG(now) {
         this.cooldowns.x = now + 100; 
