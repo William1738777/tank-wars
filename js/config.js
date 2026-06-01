@@ -35,6 +35,7 @@ images.bg2.onload = onAssetLoad; images.bg2.src = 'assets/BGbattle2.png';
 images.goo.onload = onAssetLoad; images.goo.src = 'assets/GreenGoo.png';
 images.lightning.onload = onAssetLoad; images.lightning.src = 'assets/Lightning.png';
 images.static.onload = onAssetLoad; images.static.src = 'assets/Static.png';
+images.firebolt.onload = onAssetLoad; images.firebolt.src = 'assets/Firebolt.png';
 
 images.destroRocket.onload = onAssetLoad; images.destroRocket.src = 'assets/DestroRocket.png';
 images.destroMissile.onload = onAssetLoad; images.destroMissile.src = 'assets/DestroMissile.png';
