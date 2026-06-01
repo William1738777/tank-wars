@@ -14,7 +14,7 @@ class Projectile {
             createParticles(this.x, this.y, 2, '#ff4500', 2, 0.3);
             this.x += this.vx; this.y += this.vy;
             if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) this.dead = true;
-            return; // Passes through all walls!
+            return; 
         }
         
         if (this.type === 'destro_rocket') {
@@ -117,7 +117,6 @@ class Projectile {
             createKaboom(this.x, this.y, 2.5);
         } else if (this.type === 'destro_rocket') {
             createKaboom(this.x, this.y, 1.5);
-            // AoE Blast for Mortar
             players.forEach(tank => {
                 if (tank.owner !== this.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 60) {
@@ -167,10 +166,11 @@ class Projectile {
             const scale = 0.15; const w = images.static.width * scale; const h = images.static.height * scale;
             ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff'; ctx.drawImage(images.static, -w/2, -h/2, w, h);
         } else if (this.type === 'destro_missile' && images.destroMissile.complete) {
-            const w = images.destroMissile.width * 0.15; const h = images.destroMissile.height * 0.15;
+            const w = images.destroMissile.width * 0.08; // <-- Made smaller here!
+            const h = images.destroMissile.height * 0.08;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000'; ctx.drawImage(images.destroMissile, -w/2, -h/2, w, h);
         } else if ((this.type === 'destro_rocket' || this.type === 'destro_up') && images.destroRocket.complete) {
-            ctx.rotate(Math.PI/2); // Re-orients the PNG to point relative to velocity
+            ctx.rotate(Math.PI/2); 
             const w = images.destroRocket.width * 0.15; const h = images.destroRocket.height * 0.15;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ffaa00'; ctx.drawImage(images.destroRocket, -w/2, -h/2, w, h);
         } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up') {
