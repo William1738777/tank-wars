@@ -1,5 +1,5 @@
 class Projectile {
-    constructor(owner, x, y, angle, speed, radius, damage, color, type, bounces) {
+    constructor(owner, x, y, angle, speed, radius, damage, color, type, bounces, castId = null) {
         this.owner = owner; this.x = x; this.y = y; this.angle = angle;
         this.vx = Math.cos(angle)*speed; this.vy = Math.sin(angle)*speed;
         this.speed = speed; this.radius = radius; this.damage = damage; 
@@ -7,6 +7,7 @@ class Projectile {
         this.life = type === 'missile' ? 70 : (type === 'arrow' ? 45 : 999); 
         this.dead = false; this.isFifth = false; 
         this.projectileHp = type === 'mg' ? 1 : 3;
+        this.castId = castId; // Added to group Plasma Shotgun pellets into a single cast for the passive
     }
 
     update() {
