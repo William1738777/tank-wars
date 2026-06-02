@@ -73,6 +73,7 @@ function handleDeath(loserIndex) {
             // Reset Phantom specials
             loser.cMode = 0; loser.cHeldTime = 0; loser.phantomEvasiveTimer = 0;
             loser.isGhost = false; loser.ghostToggleTimer = 0;
+            loser.cooldowns.cBounce = 0; loser.cooldowns.cSpread = 0;
             
             updateHUD();
         }, 1500); 
@@ -222,7 +223,6 @@ function update() {
         players.forEach((tank, tIndex) => {
             if (pA.owner !== tank.owner && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
                 
-                // Bypass collision if the Phantom is ghosting
                 if (tank.config.id === 'phantom' && tank.isGhost) return;
 
                 if (Math.hypot(pA.x - tank.x, pA.y - tank.y) < tank.radius + pA.radius) {
@@ -262,11 +262,14 @@ function update() {
 
                         // Apply Phantom Cooldown Refunds on Hit
                         if (shooter && shooter.config.id === 'phantom') {
-                            if (pA.type === 'phantom_bounce' || pA.type === 'phantom_spread') {
-                                shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); // 60% Refund
+                            // ONLY Bounce gets the 60% refund
+                            if (pA.type === 'phantom_bounce') {
+                                shooter.cooldowns.cBounce -= (2500 * 0.6); 
                             }
+                            // Shotgun pellets reduce BOTH stance cooldowns by 0.5 seconds per pellet
                             if (pA.type === 'phantom_sg') {
-                                shooter.cooldowns.c -= 500; // 0.5s C-cooldown reduction per pellet
+                                shooter.cooldowns.cBounce -= 500;
+                                shooter.cooldowns.cSpread -= 500;
                             }
                             shooter.cooldowns.x -= 1000;
                         }
