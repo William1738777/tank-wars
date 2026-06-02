@@ -1,14 +1,15 @@
 // --- ASSET MANAGEMENT ---
 const images = {
-    grizzly: new Image(), pyro: new Image(), scorpion: new Image(), dreadnaught: new Image(), seraph: new Image(), destroyer: new Image(), phantomA: new Image(), phantomB: new Image(),
+    grizzly: new Image(), pyro: new Image(), scorpion: new Image(), dreadnaught: new Image(), seraph: new Image(), destroyer: new Image(), phantomA: new Image(), phantomB: new Image(), abyss: new Image(),
     missile: new Image(), cluster: new Image(), arrow: new Image(), bg1: new Image(), bg2: new Image(), goo: new Image(), lightning: new Image(), static: new Image(),
-    destroRocket: new Image(), destroMissile: new Image(), target: new Image(), firebolt: new Image(), phantomMissile: new Image(), phantomSGMissile: new Image(), phantomp: new Image(), phantomp2: new Image()
+    destroRocket: new Image(), destroMissile: new Image(), target: new Image(), firebolt: new Image(), phantomMissile: new Image(), phantomSGMissile: new Image(), phantomp: new Image(), phantomp2: new Image(),
+    abyssOrb: new Image(), abyssProj: new Image()
 };
 
 let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
-    if (loadedCount === 24) { // Increased to 24 for the 2 new Phantom passive assets
+    if (loadedCount === 27) { // Increased to 27 for Abyss assets
         const btnStart = document.getElementById('btn-start');
         if (btnStart) {
             btnStart.innerText = "Single Player"; 
@@ -26,6 +27,7 @@ images.scorpion.onload = onAssetLoad; images.scorpion.src = 'assets/ScorpionTank
 images.dreadnaught.onload = onAssetLoad; images.dreadnaught.src = 'assets/DreadnaughtTank.png';
 images.seraph.onload = onAssetLoad; images.seraph.src = 'assets/SeraphTank.png'; 
 images.destroyer.onload = onAssetLoad; images.destroyer.src = 'assets/DestroyerTank.png';
+images.abyss.onload = onAssetLoad; images.abyss.src = 'assets/AbyssTank.png';
 
 images.missile.onload = onAssetLoad; images.missile.src = 'assets/Missile.png';
 images.cluster.onload = onAssetLoad; images.cluster.src = 'assets/ClusterRocket.png';
@@ -49,6 +51,10 @@ images.phantomSGMissile.onload = onAssetLoad; images.phantomSGMissile.src = 'ass
 images.phantomp.onload = onAssetLoad; images.phantomp.src = 'assets/Phantomp.png';
 images.phantomp2.onload = onAssetLoad; images.phantomp2.src = 'assets/Phantomp2.png';
 
+// Abyss Assets
+images.abyssOrb.onload = onAssetLoad; images.abyssOrb.src = 'assets/AbyssOrbFinal.png';
+images.abyssProj.onload = onAssetLoad; images.abyssProj.src = 'assets/AbyssProjectile.png';
+
 // --- GAME CONFIG & DATA ---
 const tanksData = [
     { id: 'grizzly', name: 'GRIZZLY', img: images.grizzly, color: '#b533ff', desc: 'Normal [C | \']: Cannon (10)<br>Skill 1 [X | ;]: Cluster (6)<br>Skill 2 [Z | L]: Heavy Missile (15)' },
@@ -57,7 +63,8 @@ const tanksData = [
     { id: 'dreadnaught', name: 'DREADNAUGHT', img: images.dreadnaught, color: '#8b5a2b', desc: 'Normal [C | \']: Heavy Shell (14)<br>Skill 1 [X | ;]: Dual MG (0.6/shot)<br>Skill 2 [Z | L]: Field Mine (20 Dmg/Knockback)', maxHp: 150, speedMod: 0.5, scaleMod: 1.2 },
     { id: 'seraph', name: 'SERAPH', img: images.seraph, color: '#00ffff', desc: 'Normal [C | \']: Shock Bullet (5 Dmg, 5th shot AoE)<br>Skill 1 [X | ;]: Spark Missile (Emitter)<br>Skill 2 [Z | L]: Lightning Beam (Hold, requires Energy)', maxHp: 100 },
     { id: 'destroyer', name: 'DESTROYER', img: images.destroyer, color: '#888888', desc: 'Normal [C | \']: Cannon (10)<br>Skill 1 [X | ;]: Mortar Strike (Hold to Lock)<br>Skill 2 [Z | L]: Ghost Missile (Pierces Walls, Wall-Slam Stun)', speedMod: 0.85, maxHp: 120 },
-    { id: 'phantom', name: 'PHANTOM', img: images.phantomA, color: '#9d00ff', desc: 'Normal [C | \']: Dual Mode Missiles (Hold C to Swap)<br>Skill 1 [X | ;]: Plasma Shotgun<br>Skill 2 [Z | L]: Evasive Maneuvers' }
+    { id: 'phantom', name: 'PHANTOM', img: images.phantomA, color: '#9d00ff', desc: 'Normal [C | \']: Bouncing Missiles (60% Hit Refund)<br>Skill 1 [X | ;]: Plasma Shotgun<br>Skill 2 [Z | L]: Evasive Maneuvers' },
+    { id: 'abyss', name: 'ABYSS', img: images.abyss, color: '#1a0033', desc: 'Normal [C | \']: Shadow Bolt (Hold to Rapid Fire stored charges)<br>Skill 1 [X | ;]: Void Orb (Deploy trap, shoot 15x for Domain)<br>Skill 2 [Z | L]: Event Horizon (Bouncing Black Hole)' }
 ];
 
 // --- AUDIO ASSETS ---
