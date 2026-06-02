@@ -74,6 +74,9 @@ function handleDeath(loserIndex) {
             loser.phantomEvasiveTimer = 0;
             loser.isGhost = false; 
             loser.ghostToggleTimer = 0;
+            loser.phantomMarks = 0;
+            loser.phantomMarkTimer = 0;
+            loser.phantomShockTimer = 0;
             
             updateHUD();
         }, 1500); 
@@ -214,6 +217,9 @@ function update() {
         }
     });
 
+    // Array to track which shotgun casts have already applied a mark this frame
+    let processedShotgunCasts = [];
+
     for (let i = 0; i < projectiles.length; i++) {
         let pA = projectiles[i]; if (pA.dead) continue;
         pA.update();
@@ -260,15 +266,48 @@ function update() {
                             tank.hp -= pA.damage; 
                         }
 
-                        // Apply Phantom Cooldown Refunds to the standard C cooldown
+                        // Apply Phantom Cooldown Refunds and Marks
                         if (shooter && shooter.config.id === 'phantom') {
+                            // Cooldown Refunds
                             if (pA.type === 'phantom_bounce') {
-                                shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); // 60% Refund
+                                shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); 
                             }
                             if (pA.type === 'phantom_sg') {
-                                shooter.cooldowns.c -= 500; // 0.5s C reduction per shotgun pellet
+                                shooter.cooldowns.c -= 500; 
                             }
                             shooter.cooldowns.x -= 1000;
+
+                            // Mark Application Logic
+                            let applyMark = false;
+                            if (pA.type === 'phantom_bounce') {
+                                applyMark = true;
+                            } else if (pA.type === 'phantom_sg') {
+                                // Ensure only one mark is applied per shotgun cast
+                                if (!processedShotgunCasts.includes(pA.castId)) {
+                                    applyMark = true;
+                                    processedShotgunCasts.push(pA.castId);
+                                }
+                            }
+
+                            if (applyMark) {
+                                tank.phantomMarkTimer = 300; // Reset 5-second decay (60fps * 5)
+                                tank.phantomMarks++;
+
+                                if (tank.phantomMarks >= 3) {
+                                    tank.hp -= 5; // The burst damage
+                                    tank.phantomMarks = 0; // Reset marks
+                                    tank.phantomShockTimer = 30; // 0.5s visual shock effect
+                                    floatingTexts.push({
+                                        x: tank.x, 
+                                        y: tank.y - 55, 
+                                        text: "PLASMA ELECTROCUTION!", 
+                                        life: 60, 
+                                        color: '#9d00ff', 
+                                        fontSize: '14px' // Used custom fontSize property
+                                    });
+                                    createParticles(tank.x, tank.y, 10, '#9d00ff', 2, 0.5);
+                                }
+                            }
                         }
                     }
 
@@ -365,8 +404,13 @@ function draw() {
         }
     });
 
-    ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center';
-    floatingTexts.forEach(t => { ctx.fillStyle = t.color || '#fff'; ctx.globalAlpha = Math.max(0, t.life / 60); ctx.fillText(t.text, t.x, t.y); });
+    ctx.textAlign = 'center';
+    floatingTexts.forEach(t => { 
+        ctx.font = t.fontSize ? `bold ${t.fontSize} sans-serif` : 'bold 20px sans-serif'; // Apply custom fontSize if it exists
+        ctx.fillStyle = t.color || '#fff'; 
+        ctx.globalAlpha = Math.max(0, t.life / 60); 
+        ctx.fillText(t.text, t.x, t.y); 
+    });
     ctx.globalAlpha = 1.0;
 }
 
