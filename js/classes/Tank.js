@@ -467,7 +467,7 @@ class Tank {
                 this.cooldowns.cBounce = now + 2500;
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
             } else {
-                this.cooldowns.cSpread = now + 900;
+                this.cooldowns.cSpread = now + 300;
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 14, 4, 4, '#9d00ff', 'phantom_spread', 0)); // 4 Damage
             }
         } else {
