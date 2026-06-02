@@ -489,6 +489,7 @@ class Tank {
             createMuzzleFlash(tip.x, tip.y, this.angle, 2);
             for (let i = 0; i < 5; i++) {
                 let spreadAngle = this.angle - 0.3 + (0.6 / 4) * i;
+                // Added the 'now' argument here to group the shotgun pellets by Cast ID
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, spreadAngle, 16, 3, 1.5, '#9d00ff', 'phantom_sg', 0, now));
             }
             return;
@@ -616,11 +617,16 @@ class Tank {
             ctx.restore();
         }
 
-        // Draw Phantom Mark Icons
+        // Draw Phantom Mark Icons (Larger and glowing on 2nd stack)
         if (this.phantomMarks === 1 && images.phantomp && images.phantomp.complete) {
-            ctx.drawImage(images.phantomp, this.x - this.radius - 20, this.y - this.radius - 20, 20, 20);
+            ctx.drawImage(images.phantomp, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32);
         } else if (this.phantomMarks === 2 && images.phantomp2 && images.phantomp2.complete) {
-            ctx.drawImage(images.phantomp2, this.x - this.radius - 20, this.y - this.radius - 20, 20, 20);
+            ctx.save();
+            // Pulsing glow effect
+            ctx.shadowBlur = 15 + Math.sin(Date.now() / 150) * 10;
+            ctx.shadowColor = '#9d00ff'; 
+            ctx.drawImage(images.phantomp2, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32);
+            ctx.restore();
         }
         
         if (this.stunTimer > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 8, 0, Math.PI*2); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3; ctx.stroke(); }
