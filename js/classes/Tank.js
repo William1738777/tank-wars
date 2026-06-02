@@ -23,7 +23,7 @@ class Tank {
         this.maxCooldowns = { 
             c: config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500)), 
             x: config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : 8000)), 
-            z: config.id === 'phantom' ? 40000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000))
+            z: config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000))
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
@@ -34,6 +34,8 @@ class Tank {
         this.cMode = 0; 
         this.cHeldTime = 0; 
         this.phantomEvasiveTimer = 0;
+        this.isGhost = false;
+        this.ghostToggleTimer = 0;
 
         // Pyro Passive & Shields variables
         this.dashCount = 0;
@@ -100,7 +102,6 @@ class Tank {
     update() {
         if (this.isDead) return;
         
-        // Safely evaluate AI parameters only when the matching player target is active on the screen
         if (this.isAI && players[0] && !players[0].isDead) {
             this.think();
         }
@@ -108,10 +109,22 @@ class Tank {
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
         
-        if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) {
-            this.phantomEvasiveTimer--;
-            if (this.phantomEvasiveTimer <= 0) {
-                floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Deactivated", life: 60, color: '#9d00ff'});
+        if (this.config.id === 'phantom') {
+            if (this.phantomEvasiveTimer > 0) {
+                this.phantomEvasiveTimer--;
+                this.ghostToggleTimer--;
+                
+                if (this.ghostToggleTimer <= 0) {
+                    this.isGhost = !this.isGhost;
+                    this.ghostToggleTimer = Math.floor(Math.random() * (120 - 30 + 1) + 30);
+                }
+
+                if (this.phantomEvasiveTimer <= 0) {
+                    this.isGhost = false;
+                    floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Deactivated", life: 60, color: '#9d00ff'});
+                }
+            } else {
+                this.isGhost = false; 
             }
         }
 
@@ -172,18 +185,15 @@ class Tank {
 
         if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
 
-        // Pyro Fire Shield Processing
         if (this.fireShieldActive) {
             this.fireShieldTimer--;
             if (this.fireShieldHp <= 0 || this.fireShieldTimer <= 0) {
                 this.fireShieldActive = false;
             } else {
-                // Total Debuff Immunity
                 this.stunTimer = 0; this.kbTimer = 0; this.kbX = 0; this.kbY = 0;
                 this.poisons = []; this.isSlowed = false; this.electrocutedTimer = 0;
                 if (this.hookState === 'pulled') this.hookState = 'ready';
                 
-                // Aura Damage
                 players.forEach(enemy => {
                     if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius + 45) {
@@ -196,7 +206,6 @@ class Tank {
             }
         }
 
-        // Pyro Z Flamethrower Buff
         if (this.flameTimer > 0) {
             this.flameTimer--; currentSpeed *= 1.4; const tip = this.getTip();
             if (this.flameTimer % 2 === 0) {
@@ -286,12 +295,10 @@ class Tank {
             }
         }
 
-        // Pyro X Skill - Instant Dash & Fire Trail
         if (this.dashState === 3 && this.stunTimer <= 0) {
             currentSpeed = 16; 
             this.dashTimer--;
             
-            // Drop fire trail
             if (frameCount % 3 === 0) {
                 hazards.push({
                     owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, 
@@ -299,7 +306,6 @@ class Tank {
                 });
             }
             
-            // Ghosting collision check
             players.forEach(enemy => {
                 if (enemy.owner !== this.owner && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
                     if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
@@ -322,7 +328,6 @@ class Tank {
             return; 
         }
 
-        // Normal Z Dash Logic
         if (this.dashState === 1 && this.stunTimer <= 0) {
             this.dashTimer--; createParticles(this.x - Math.cos(this.angle)*20, this.y - Math.sin(this.angle)*20, 2, this.config.color, 1, 0.5);
             if (this.dashTimer <= 0) { this.dashState = 2; this.dashTimer = 15; createKaboom(this.x - Math.cos(this.angle)*25, this.y - Math.sin(this.angle)*25, 0.5); }
@@ -335,30 +340,19 @@ class Tank {
         }
 
         if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
-            if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) {
-                let vx = 0; let vy = 0;
-                if (keys[this.controls.up]) vy -= 1;
-                if (keys[this.controls.down]) vy += 1;
-                if (keys[this.controls.left]) vx -= 1;
-                if (keys[this.controls.right]) vx += 1;
-                
-                if (vx !== 0 || vy !== 0) {
-                    let evSpeed = currentSpeed * 1.18;
-                    let mag = Math.hypot(vx, vy);
-                    this.x += (vx / mag) * evSpeed;
-                    this.y += (vy / mag) * evSpeed;
-                    this.angle = Math.atan2(vy, vx);
-                }
-            } else {
-                if (keys[this.controls.left]) this.angle -= this.rotSpeed;
-                if (keys[this.controls.right]) this.angle += this.rotSpeed;
+            if (keys[this.controls.left]) this.angle -= this.rotSpeed;
+            if (keys[this.controls.right]) this.angle += this.rotSpeed;
 
-                if (!this.zFiring) {
-                    let throttle = 0;
-                    if (keys[this.controls.up]) throttle += 1;
-                    if (keys[this.controls.down]) throttle -= 1;
-                    if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
+            if (!this.zFiring) {
+                let throttle = 0;
+                if (keys[this.controls.up]) throttle += 1;
+                if (keys[this.controls.down]) throttle -= 1;
+                
+                if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) {
+                    currentSpeed *= 1.18;
                 }
+
+                if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
             }
         } else if (this.dashState === 2) {
             this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
@@ -463,9 +457,7 @@ class Tank {
             if (this.cMode === 0) {
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
             } else {
-                for (let i = -1; i <= 1; i++) {
-                    projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + i * 0.1, 14, 4, 7, '#9d00ff', 'phantom_spread', 0));
-                }
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 14, 4, 7, '#9d00ff', 'phantom_spread', 0));
             }
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
@@ -541,7 +533,9 @@ class Tank {
     fireZ(now) {
         if (this.config.id === 'phantom') {
             this.cooldowns.z = now + this.maxCooldowns.z;
-            this.phantomEvasiveTimer = 1200; // 20 seconds at 60fps
+            this.phantomEvasiveTimer = 360; 
+            this.isGhost = true;
+            this.ghostToggleTimer = Math.floor(Math.random() * (120 - 30 + 1) + 30);
             floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Activated", life: 60, color: '#9d00ff'});
             return;
         }
@@ -575,7 +569,6 @@ class Tank {
         
         if (this.poisons.length > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI*2); ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill(); }
 
-        // Pyro Fire Shield Rendering
         if (this.config.id === 'pyro' && this.fireShieldActive) {
             ctx.save();
             ctx.beginPath();
@@ -630,8 +623,9 @@ class Tank {
         
         let imgToDraw = this.config.img;
         if (this.config.id === 'phantom') {
-            if (this.phantomEvasiveTimer > 0) {
+            if (this.isGhost) {
                 if (images.phantomB && images.phantomB.complete) imgToDraw = images.phantomB;
+                ctx.globalAlpha = 0.4; 
                 ctx.filter = 'brightness(1.5)';
             } else {
                 if (images.phantomA && images.phantomA.complete) imgToDraw = images.phantomA;
@@ -641,6 +635,7 @@ class Tank {
         
         ctx.drawImage(imgToDraw, -w / 2, -h / 2, w, h); 
         ctx.filter = 'none';
+        ctx.globalAlpha = 1.0;
         ctx.restore();
     }
 }
