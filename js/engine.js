@@ -72,6 +72,7 @@ function handleDeath(loserIndex) {
 
             // Reset Phantom specials
             loser.cMode = 0; loser.cHeldTime = 0; loser.phantomEvasiveTimer = 0;
+            loser.isGhost = false; loser.ghostToggleTimer = 0;
             
             updateHUD();
         }, 1500); 
@@ -101,7 +102,7 @@ function update() {
     if (gameState !== 'PLAYING') return;
 
     frameCount++; players.forEach(p => p.update());
-    players.forEach(p => p.inFireTrail = false); // Reset trail check
+    players.forEach(p => p.inFireTrail = false); 
 
     if (players[0] && players[1] && !players[0].isDead && !players[1].isDead) {
         if (!players[0].isGhosting && !players[1].isGhosting) {
@@ -160,7 +161,6 @@ function update() {
             createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
         }
 
-        // --- DESTROYER STRIKE MANAGER ---
         if (h.type === 'destro_strike_manager') {
             if (h.state === 'launching') {
                 h.timer--;
@@ -200,7 +200,6 @@ function update() {
         h.life--; if (h.life <= 0) hazards.splice(i, 1);
     }
 
-    // Apply Fire Trail Damage & Tracking
     players.forEach((tank, tIndex) => {
         if (tank.inFireTrail && tank.invulnTimer <= 0) {
             tank.fireTrailTicks++;
@@ -222,6 +221,10 @@ function update() {
 
         players.forEach((tank, tIndex) => {
             if (pA.owner !== tank.owner && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
+                
+                // Bypass collision if the Phantom is ghosting
+                if (tank.config.id === 'phantom' && tank.isGhost) return;
+
                 if (Math.hypot(pA.x - tank.x, pA.y - tank.y) < tank.radius + pA.radius) {
                     
                     let shooter = players.find(p => p.owner === pA.owner);
@@ -229,7 +232,6 @@ function update() {
 
                     let startHp = tank.hp;
 
-                    // Pyro Shield Blocking
                     if (tank.config.id === 'pyro' && tank.fireShieldActive) {
                         tank.fireShieldHp -= pA.damage;
                         floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLOCKED!", life: 20, color: '#ffaa00'});
@@ -242,7 +244,7 @@ function update() {
                             tank.kbX = Math.cos(angle) * 12;
                             tank.kbY = Math.sin(angle) * 12;
                             tank.kbTimer = 15;
-                            tank.fireSlowTimer = 90; // 1.5 seconds (90 frames)
+                            tank.fireSlowTimer = 90; 
                         } else if (pA.type === 'toxic_bullet') { 
                             tank.hp -= pA.damage; tank.addPoison(0.5, 300); 
                         } else if (pA.type === 'arrow') {
@@ -261,7 +263,10 @@ function update() {
                         // Apply Phantom Cooldown Refunds on Hit
                         if (shooter && shooter.config.id === 'phantom') {
                             if (pA.type === 'phantom_bounce' || pA.type === 'phantom_spread') {
-                                shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.8);
+                                shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); // 60% Refund
+                            }
+                            if (pA.type === 'phantom_sg') {
+                                shooter.cooldowns.c -= 500; // 0.5s C-cooldown reduction per pellet
                             }
                             shooter.cooldowns.x -= 1000;
                         }
