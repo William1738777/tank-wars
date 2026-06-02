@@ -119,14 +119,27 @@ function updateCooldownUI() {
         const pPrefix = index === 0 ? 'p1' : 'p2';
         const skills = ['c', 'x', 'z'];
         
-        let ammoTextEl = document.getElementById(`${pPrefix}-ammo-x`);
-        if (ammoTextEl) {
+        // Handling Ammo text for X skill (Dreadnaught Machine Gun)
+        let ammoTextXEl = document.getElementById(`${pPrefix}-ammo-x`);
+        if (ammoTextXEl) {
             if (p.config.id === 'dreadnaught') {
-                ammoTextEl.innerText = p.mgReloading ? '0' : Math.floor(p.mgAmmo);
-                ammoTextEl.style.color = p.mgReloading ? '#ff3333' : 'gold';
+                ammoTextXEl.innerText = p.mgReloading ? '0' : Math.floor(p.mgAmmo);
+                ammoTextXEl.style.color = p.mgReloading ? '#ff3333' : 'gold';
                 if (!p.mgReloading) p.maxCooldowns.x = 100;
             } else {
-                ammoTextEl.innerText = '';
+                ammoTextXEl.innerText = '';
+            }
+        }
+
+        // Handling Ammo text for C skill (Abyss Tank Rapid Fire Charges)
+        let ammoTextCEl = document.getElementById(`${pPrefix}-ammo-c`);
+        if (ammoTextCEl) {
+            if (p.config.id === 'abyss') {
+                let charges = Math.floor(p.abyssCharges || 0);
+                ammoTextCEl.innerText = `${charges}/50`;
+                ammoTextCEl.style.color = charges >= 50 ? '#ff3333' : '#ffffff';
+            } else {
+                ammoTextCEl.innerText = '';
             }
         }
 
