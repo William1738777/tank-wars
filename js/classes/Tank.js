@@ -489,7 +489,7 @@ class Tank {
             createMuzzleFlash(tip.x, tip.y, this.angle, 2);
             for (let i = 0; i < 5; i++) {
                 let spreadAngle = this.angle - 0.3 + (0.6 / 4) * i;
-                projectiles.push(new Projectile(this.owner, tip.x, tip.y, spreadAngle, 16, 3, 1.5, '#9d00ff', 'phantom_sg', 0));
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, spreadAngle, 16, 3, 1.5, '#9d00ff', 'phantom_sg', 0, now));
             }
             return;
         }
