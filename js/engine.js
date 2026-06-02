@@ -71,9 +71,9 @@ function handleDeath(loserIndex) {
             loser.fireTrailTicks = 0;
 
             // Reset Phantom specials
-            loser.cMode = 0; loser.cHeldTime = 0; loser.phantomEvasiveTimer = 0;
-            loser.isGhost = false; loser.ghostToggleTimer = 0;
-            loser.cooldowns.cBounce = 0; loser.cooldowns.cSpread = 0;
+            loser.phantomEvasiveTimer = 0;
+            loser.isGhost = false; 
+            loser.ghostToggleTimer = 0;
             
             updateHUD();
         }, 1500); 
@@ -260,16 +260,13 @@ function update() {
                             tank.hp -= pA.damage; 
                         }
 
-                        // Apply Phantom Cooldown Refunds on Hit
+                        // Apply Phantom Cooldown Refunds to the standard C cooldown
                         if (shooter && shooter.config.id === 'phantom') {
-                            // ONLY Bounce gets the 60% refund
                             if (pA.type === 'phantom_bounce') {
-                                shooter.cooldowns.cBounce -= (2500 * 0.6); 
+                                shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); // 60% Refund
                             }
-                            // Shotgun pellets reduce BOTH stance cooldowns by 0.5 seconds per pellet
                             if (pA.type === 'phantom_sg') {
-                                shooter.cooldowns.cBounce -= 500;
-                                shooter.cooldowns.cSpread -= 500;
+                                shooter.cooldowns.c -= 500; // 0.5s C reduction per shotgun pellet
                             }
                             shooter.cooldowns.x -= 1000;
                         }
