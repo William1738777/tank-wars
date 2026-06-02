@@ -25,15 +25,13 @@ class Tank {
             x: config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : 8000)), 
             z: config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000))
         };
-        // Phantom has separate cooldown tracking for its stances
-        this.cooldowns = { c: 0, cBounce: 0, cSpread: 0, x: 0, z: 0 };
+        // Reverted to standard single C cooldown
+        this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
         this.hookState = 'ready'; this.hookTarget = null; this.hookTimer = 0; this.activeArrow = null; 
         this.mgMaxAmmo = config.id === 'dreadnaught' ? 150 : 100; this.mgAmmo = this.mgMaxAmmo; this.mgReloading = false;
 
         // Phantom specific variables
-        this.cMode = 0; 
-        this.cHeldTime = 0; 
         this.phantomEvasiveTimer = 0;
         this.isGhost = false;
         this.ghostToggleTimer = 0;
@@ -184,12 +182,6 @@ class Tank {
         if (this.stunTimer <= 0 && this.afterStunSlow > 0) { this.afterStunSlow--; currentSpeed *= 0.1; }
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
         if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
-
-        // --- PHANTOM STANCE MOVEMENT MODIFIERS ---
-        if (this.config.id === 'phantom') {
-            if (this.cMode === 0) currentSpeed *= 1.10; // +10% Bounce Mode
-            else if (this.cMode === 1) currentSpeed *= 0.70; // -30% Spread Mode
-        }
 
         if (this.fireShieldActive) {
             this.fireShieldTimer--;
@@ -373,23 +365,8 @@ class Tank {
         if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
             const now = Date.now();
             
-            // --- INDEPENDENT PHANTOM C COOLDOWNS ---
-            if (this.config.id === 'phantom') {
-                if (keys[this.controls.c]) {
-                    this.cHeldTime++;
-                    if (this.cHeldTime === 30) {
-                        this.cMode = this.cMode === 0 ? 1 : 0;
-                        let txt = this.cMode === 0 ? "Cannon: Accurate Bouncing Missiles" : "Cannon: Spread Missiles";
-                        floatingTexts.push({x: this.x, y: this.y - 40, text: txt, life: 60, color: '#9d00ff'});
-                    }
-                } else {
-                    if (this.cHeldTime > 0 && this.cHeldTime < 30 && this.burstsLeft === 0) {
-                        if (this.cMode === 0 && now > this.cooldowns.cBounce) this.fireC(now);
-                        else if (this.cMode === 1 && now > this.cooldowns.cSpread) this.fireC(now);
-                    }
-                    this.cHeldTime = 0;
-                }
-            } else if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
+            // Reverted back to a standard C trigger
+            if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
                 this.fireC(now);
             }
             
@@ -441,7 +418,9 @@ class Tank {
     getTip() { const offset = (this.config.img.width * 0.12 * this.scaleMod) / 2; return { x: this.x + Math.cos(this.angle)*offset, y: this.y + Math.sin(this.angle)*offset }; }
 
     fireC(now) {
-        if (this.config.id !== 'phantom') this.cooldowns.c = now + this.maxCooldowns.c; 
+        // Set cooldown.c for ALL tanks again
+        this.cooldowns.c = now + this.maxCooldowns.c; 
+        
         this.recoil = 4; const tip = this.getTip();
         if (this.config.id === 'scorpion') { this.burstsLeft = 3; this.burstTimer = 0; } 
         else if (this.config.id === 'dreadnaught') {
@@ -462,14 +441,9 @@ class Tank {
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
             }
         } else if (this.config.id === 'phantom') {
+            // Only fire the bounce shot now
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
-            if (this.cMode === 0) {
-                this.cooldowns.cBounce = now + 2500;
-                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
-            } else {
-                this.cooldowns.cSpread = now + 300;
-                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 14, 4, 4, '#9d00ff', 'phantom_spread', 0)); // 4 Damage
-            }
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
             if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
