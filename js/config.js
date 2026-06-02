@@ -2,13 +2,13 @@
 const images = {
     grizzly: new Image(), pyro: new Image(), scorpion: new Image(), dreadnaught: new Image(), seraph: new Image(), destroyer: new Image(), phantomA: new Image(), phantomB: new Image(),
     missile: new Image(), cluster: new Image(), arrow: new Image(), bg1: new Image(), bg2: new Image(), goo: new Image(), lightning: new Image(), static: new Image(),
-    destroRocket: new Image(), destroMissile: new Image(), target: new Image(), firebolt: new Image(), phantomMissile: new Image(), phantomSGMissile: new Image()
+    destroRocket: new Image(), destroMissile: new Image(), target: new Image(), firebolt: new Image(), phantomMissile: new Image(), phantomSGMissile: new Image(), phantomp: new Image(), phantomp2: new Image()
 };
 
 let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
-    if (loadedCount === 22) { // Increased to 22 for the 4 new Phantom assets
+    if (loadedCount === 24) { // Increased to 24 for the 2 new Phantom passive assets
         const btnStart = document.getElementById('btn-start');
         if (btnStart) {
             btnStart.innerText = "Single Player"; 
@@ -46,6 +46,8 @@ images.phantomA.onload = onAssetLoad; images.phantomA.src = 'assets/PhantomFormA
 images.phantomB.onload = onAssetLoad; images.phantomB.src = 'assets/PhantomFormB.png';
 images.phantomMissile.onload = onAssetLoad; images.phantomMissile.src = 'assets/PhantomMissile.png';
 images.phantomSGMissile.onload = onAssetLoad; images.phantomSGMissile.src = 'assets/PhantomSGMissile.png';
+images.phantomp.onload = onAssetLoad; images.phantomp.src = 'assets/Phantomp.png';
+images.phantomp2.onload = onAssetLoad; images.phantomp2.src = 'assets/Phantomp2.png';
 
 // --- GAME CONFIG & DATA ---
 const tanksData = [
