@@ -36,6 +36,11 @@ class Tank {
         this.isGhost = false;
         this.ghostToggleTimer = 0;
 
+        // Phantom Passive Marks variables
+        this.phantomMarks = 0;
+        this.phantomMarkTimer = 0;
+        this.phantomShockTimer = 0;
+
         // Pyro Passive & Shields variables
         this.dashCount = 0;
         this.fireShieldActive = false;
@@ -107,6 +112,13 @@ class Tank {
 
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
+        
+        // Update Phantom Passive Timers
+        if (this.phantomMarkTimer > 0) {
+            this.phantomMarkTimer--;
+            if (this.phantomMarkTimer <= 0) this.phantomMarks = 0;
+        }
+        if (this.phantomShockTimer > 0) this.phantomShockTimer--;
         
         if (this.config.id === 'phantom') {
             if (this.phantomEvasiveTimer > 0) {
@@ -588,6 +600,27 @@ class Tank {
                 }
             }
             ctx.restore();
+        }
+
+        // Draw Phantom Purple Shock Effect
+        if (this.phantomShockTimer > 0) {
+            ctx.save();
+            for(let i=0; i<3; i++) {
+                if (Math.random() > 0.3) {
+                    ctx.beginPath();
+                    ctx.moveTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
+                    ctx.lineTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
+                    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.shadowBlur = 10; ctx.shadowColor = '#9d00ff'; ctx.stroke();
+                }
+            }
+            ctx.restore();
+        }
+
+        // Draw Phantom Mark Icons
+        if (this.phantomMarks === 1 && images.phantomp && images.phantomp.complete) {
+            ctx.drawImage(images.phantomp, this.x - this.radius - 20, this.y - this.radius - 20, 20, 20);
+        } else if (this.phantomMarks === 2 && images.phantomp2 && images.phantomp2.complete) {
+            ctx.drawImage(images.phantomp2, this.x - this.radius - 20, this.y - this.radius - 20, 20, 20);
         }
         
         if (this.stunTimer > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 8, 0, Math.PI*2); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3; ctx.stroke(); }
