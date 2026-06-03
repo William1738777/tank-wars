@@ -83,12 +83,6 @@ function handleDeath(loserIndex) {
             loser.phantomMarks = 0;
             loser.phantomMarkTimer = 0;
             loser.phantomShockTimer = 0;
-
-            // Reset Abyss specials
-            loser.abyssCharges = 0;
-            loser.abyssCHeldTime = 0;
-            loser.isRapidFiring = false;
-            loser.rapidFireTimer = 0;
             
             updateHUD();
         }, 1500); 
@@ -204,7 +198,8 @@ function update() {
                 if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     let dx = h.x - tank.x; let dy = h.y - tank.y;
                     let dist = Math.hypot(dx, dy);
-                    if (dist < h.radius) {
+                    // Add "&& dist > 0.1" to prevent the NaN coordinate corruption
+                    if (dist < h.radius && dist > 0.1) {
                         tank.x += (dx / dist) * 2;
                         tank.y += (dy / dist) * 2;
                         tank.hp -= 1 / 60;
@@ -212,7 +207,7 @@ function update() {
                 }
             });
             if (h.life <= 1) { 
-                hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 150, maxLife: 150 });
+                hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 60, maxLife: 60 });
                 players.forEach(tank => {
                     if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0 && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
                         tank.hp -= 5;
@@ -338,7 +333,7 @@ function update() {
                         pA.triggerExplosion();
                         if (h.orbHp <= 0) {
                             h.life = 0;
-                            createKaboom(h.x, h.y, 1.5);
+                            hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 60, maxLife: 60 });
                             floatingTexts.push({x: h.x, y: h.y - 40, text: "ORB DESTROYED!", life: 50, color: '#777'});
                         }
                     }
@@ -394,7 +389,10 @@ function update() {
                         } else if (pA.type === 'abyss_rapid') {
                             tank.hp -= pA.damage;
                             let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
-                            tank.kbX = Math.cos(angle) * 1.5; tank.kbY = Math.sin(angle) * 1.5; tank.kbTimer = 5;
+                            // Increased knockback multiplier from 1.5 to 3.0
+                            tank.kbX = Math.cos(angle) * 3.0; 
+                            tank.kbY = Math.sin(angle) * 3.0; 
+                            tank.kbTimer = 5;
                         } else { 
                             tank.hp -= pA.damage; 
                         }
@@ -426,11 +424,6 @@ function update() {
                                     createParticles(tank.x, tank.y, 10, '#9d00ff', 2, 0.5);
                                 }
                             }
-                        }
-
-                        if (shooter && shooter.config.id === 'abyss') {
-                            let stacks = Math.floor(Math.random() * 3) + 2; 
-                            shooter.abyssCharges = Math.min(50, (shooter.abyssCharges || 0) + stacks);
                         }
                     }
 
