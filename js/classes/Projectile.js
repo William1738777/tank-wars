@@ -7,7 +7,8 @@ class Projectile {
         this.life = type === 'missile' ? 70 : (type === 'arrow' ? 45 : 999); 
         this.dead = false; this.isFifth = false; 
         this.projectileHp = type === 'mg' ? 1 : 3;
-        this.castId = castId; // Added to group Plasma Shotgun pellets into a single cast for the passive
+        this.castId = castId; 
+        this.hasBounced = false; // Tracks if the projectile has ricocheted (Crucial for Abyss Z skill)
     }
 
     update() {
@@ -31,6 +32,19 @@ class Projectile {
             return;
         }
 
+        // Abyss X Skill Flight Path
+        if (this.type === 'abyss_orb_throw') {
+            createParticles(this.x, this.y, 2, '#1a0033', 2, 0.3);
+            this.x += this.vx; this.y += this.vy;
+            // Check if it reached the target reticle distance
+            if (Math.hypot(this.x - this.startX, this.y - this.startY) >= this.throwDist) {
+                this.x = this.startX + Math.cos(this.angle) * this.throwDist;
+                this.y = this.startY + Math.sin(this.angle) * this.throwDist;
+                this.triggerExplosion();
+            }
+            return;
+        }
+
         if (this.type === 'swarm') {
             this.timer++;
             if (this.timer % 6 === 0) this.targetAngle = this.baseAngle + (Math.random() - 0.5) * 1.5;
@@ -51,6 +65,8 @@ class Projectile {
             createParticles(this.x, this.y, 2, '#ff4500', 3, 0.4);
         } else if (this.type.startsWith('phantom_')) {
             createParticles(this.x, this.y, 1, 'rgba(157, 0, 255, 0.5)', 2, 0.3);
+        } else if (this.type.startsWith('abyss_')) {
+            createParticles(this.x, this.y, 1, 'rgba(74, 0, 128, 0.6)', 2, 0.3);
         } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
             createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
         }
@@ -92,6 +108,7 @@ class Projectile {
         }
 
         if (collided) {
+            this.hasBounced = true; // Sets flag for Abyss Z skill
             if (this.bounces > 0) { this.angle = Math.atan2(this.vy, this.vx); this.bounces--; } 
             else { this.triggerExplosion(); }
         } else if (this.life <= 0 && !this.dead) { this.triggerExplosion(); }
@@ -140,6 +157,23 @@ class Projectile {
         } else if (this.type.startsWith('phantom_')) {
             createParticles(this.x, this.y, 8, '#9d00ff', 1.5, 0.5);
             if (this.type === 'phantom_bounce') createKaboom(this.x, this.y, 1.0);
+        } else if (this.type === 'abyss_orb_throw') {
+            // AoE Effect for Abyss X Landing
+            players.forEach(tank => {
+                if (tank.owner !== this.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                    if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 75) {
+                        tank.hp -= 3;
+                        tank.isSlowed = true;
+                        tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 240); // 4 second slow (240 frames)
+                        floatingTexts.push({x: tank.x, y: tank.y - 40, text: "GRAVITY CRUSH!", life: 50, color: '#ff0000'});
+                    }
+                }
+            });
+            // Spawn visual boom and deploy the physical Void Orb
+            hazards.push({ owner: this.owner, type: 'dark_boom', x: this.x, y: this.y, radius: 0, life: 150 });
+            hazards.push({ owner: this.owner, type: 'void_orb', x: this.x, y: this.y, radius: 25, life: 999999, orbHp: 15 });
+        } else if (this.type.startsWith('abyss_')) {
+            createParticles(this.x, this.y, 8, '#4a0080', 1.5, 0.5);
         } else {
             createKaboom(this.x, this.y, this.type === 'missile' ? 1.5 : 1.0);
         }
@@ -203,6 +237,24 @@ class Projectile {
             const h = images.phantomSGMissile.height * scale;
             ctx.shadowBlur = 10; ctx.shadowColor = '#9d00ff';
             ctx.drawImage(images.phantomSGMissile, -w/2, -h/2, w, h);
+        } else if (this.type === 'abyss_orb_throw' && images.abyssOrb.complete) {
+            const scale = 0.2;
+            const w = images.abyssOrb.width * scale;
+            const h = images.abyssOrb.height * scale;
+            this.spinAngle = (this.spinAngle || 0) + 0.1;
+            ctx.rotate(this.spinAngle);
+            ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000';
+            ctx.drawImage(images.abyssOrb, -w/2, -h/2, w, h);
+        } else if ((this.type === 'abyss_c' || this.type === 'abyss_rapid') && images.abyssProj.complete) {
+            const scale = this.type === 'abyss_rapid' ? 0.08 : 0.15; 
+            const w = images.abyssProj.width * scale;
+            const h = images.abyssProj.height * scale;
+            ctx.shadowBlur = 10; ctx.shadowColor = '#4a0080';
+            ctx.drawImage(images.abyssProj, -w/2, -h/2, w, h);
+        } else if (this.type === 'abyss_z') {
+            ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
+            ctx.fillStyle = '#000000'; ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000'; ctx.fill();
+            ctx.strokeStyle = '#4a0080'; ctx.lineWidth = 2; ctx.stroke();
         } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = this.color; ctx.shadowBlur = 10; ctx.shadowColor = this.color; ctx.fill();
