@@ -287,12 +287,10 @@ function update() {
             if (h.type === 'void_orb' && !pA.dead) {
                 if (Math.hypot(pA.x - h.x, pA.y - h.y) < h.radius + pA.radius) {
                     if (pA.type === 'abyss_z') {
-                        // Z Bounce triggers Black Hole
                         hazards.push({ owner: pA.owner, type: 'black_hole', x: h.x, y: h.y, radius: 150, life: 240 });
                         pA.triggerExplosion();
                         h.life = 0;
                     } else if (pA.type === 'abyss_rapid' && pA.owner === h.owner) {
-                        // Stacking rapid fire hits
                         h.orbHp -= 1;
                         pA.triggerExplosion();
                         createParticles(h.x, h.y, 3, '#ff0000', 1.5, 0.3);
@@ -302,7 +300,6 @@ function update() {
                             floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
                         }
                     } else if (pA.owner !== h.owner) {
-                        // Enemy counterplay destroys orb
                         h.orbHp -= pA.damage;
                         pA.triggerExplosion();
                         if (h.orbHp <= 0) {
@@ -391,9 +388,10 @@ function update() {
                             }
                         }
 
-                        // Abyss Stacking Mechanic
+                        // FIX: Abyss Stacking Mechanic (rolls between 2 and 4 per hit)
                         if (shooter && shooter.config.id === 'abyss') {
-                            shooter.abyssCharges = Math.min(50, (shooter.abyssCharges || 0) + 1);
+                            let stacks = Math.floor(Math.random() * 3) + 2; 
+                            shooter.abyssCharges = Math.min(50, (shooter.abyssCharges || 0) + stacks);
                         }
                     }
 
@@ -458,37 +456,73 @@ function draw() {
         } else if (h.type === 'destro_strike_manager' && images.target.complete) {
             h.launched.forEach(t => { let size = 30 + Math.sin(Date.now() / 100) * 5; ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size); });
         } 
-        // --- ABYSS VISUAL TRANSLATIONS ---
+        // --- FIX: ABYSS VISUAL TRANSLATIONS (Pseudo-3D) ---
         else if (h.type === 'black_hole') {
             let scale = Math.min(1, (240 - h.life) / 30); // Grow in
             ctx.save(); ctx.translate(h.x, h.y);
+            
             // Event Horizon Floor Shadow
             let grad = ctx.createRadialGradient(0, 0, 10, 0, 0, 150 * scale);
             grad.addColorStop(0, '#000'); grad.addColorStop(0.3, 'rgba(15, 0, 0, 0.9)'); grad.addColorStop(1, 'transparent');
             ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, 150 * scale, 0, Math.PI * 2); ctx.fill();
             
-            // Accretion Disk (Tilted and Spinning)
-            ctx.rotate(Date.now() / 200);
-            ctx.scale(1, 0.4); 
-            ctx.strokeStyle = 'rgba(255, 20, 20, 0.4)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(0, 0, 120 * scale, 0, Math.PI * 2); ctx.stroke();
-            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 80 * scale, 0, Math.PI * 2); ctx.stroke();
-            ctx.restore();
+            // Accretion Disk (Tilted and Spinning via Pseudo-3D ctx.ellipse)
+            let time = Date.now() / 200;
+            ctx.strokeStyle = 'rgba(255, 20, 20, 0.4)'; ctx.lineWidth = 6; 
+            ctx.beginPath(); ctx.ellipse(0, 0, 120 * scale, 60 * scale, time, 0, Math.PI * 2); ctx.stroke();
+            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 3; 
+            ctx.beginPath(); ctx.ellipse(0, 0, 80 * scale, 40 * scale, -time * 1.5, 0, Math.PI * 2); ctx.stroke();
+
+            // Spaghettification Streaks (Violent suction particles)
+            for (let i = 0; i < 8; i++) {
+                let pTime = (Date.now() + i * 150) % 1000 / 1000; // Loops 0 to 1
+                let pAngle = i * (Math.PI / 4) + (time * 0.5);
+                let dist = 150 * (1 - pTime); // Starts far, moves to 0
+                let stretch = pTime * 40 + 5; // Stretches as it gets closer
+                ctx.save();
+                ctx.rotate(pAngle);
+                ctx.fillStyle = pTime > 0.6 ? '#8b0000' : (pTime > 0.3 ? '#ff3333' : '#fff');
+                ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000';
+                ctx.fillRect(dist, -1, stretch, 3);
+                ctx.restore();
+            }
 
             // Core Void Orb
             if (images.abyssOrb.complete) {
-                ctx.save(); ctx.translate(h.x, h.y);
+                ctx.save(); 
                 ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000';
-                ctx.globalCompositeOperation = 'difference'; // Make it absorb light
+                ctx.globalCompositeOperation = 'difference'; 
                 ctx.drawImage(images.abyssOrb, -40 * scale, -40 * scale, 80 * scale, 80 * scale);
                 ctx.restore();
             }
+            ctx.restore();
         } else if (h.type === 'dark_boom') {
             let p = 1 - (h.life / h.maxLife); 
             ctx.save(); ctx.translate(h.x, h.y);
+            
             // Ambient Flash
-            if (p < 0.2) { ctx.fillStyle = `rgba(255,0,0,${1 - p*5})`; ctx.beginPath(); ctx.arc(0,0,300, 0, Math.PI*2); ctx.fill(); }
-            // Red Shockwave Ring
-            ctx.strokeStyle = `rgba(139,0,0,${1 - p})`; ctx.lineWidth = 10 * (1 - p); ctx.beginPath(); ctx.arc(0,0,150 * p, 0, Math.PI*2); ctx.stroke();
+            if (p < 0.2) { 
+                ctx.fillStyle = `rgba(255,0,0,${1 - p*5})`; 
+                ctx.beginPath(); ctx.arc(0,0,300, 0, Math.PI*2); ctx.fill(); 
+            }
+            // Expanding Red Shockwave
+            ctx.strokeStyle = `rgba(139,0,0,${1 - p})`; 
+            ctx.lineWidth = 10 * (1 - p); 
+            ctx.beginPath(); ctx.arc(0,0,150 * p, 0, Math.PI*2); ctx.stroke();
+            
+            // Spiky Shrapnel / Debris shooting outwards
+            for(let i = 0; i < 12; i++) {
+                let angle = i * (Math.PI / 6);
+                let dist = p * 200; // shoots outward
+                let len = (1 - p) * 60; // shrinks as it fades
+                ctx.save(); 
+                ctx.rotate(angle);
+                ctx.fillStyle = p < 0.3 ? '#fff' : '#ff0000';
+                ctx.shadowBlur = 10; ctx.shadowColor = '#ff0000';
+                ctx.fillRect(dist, -2, len, 4);
+                ctx.restore();
+            }
+
             // Core Black/Red Blast
             let cRadius = p < 0.3 ? p * 200 : 60 * (1 - p);
             ctx.fillStyle = p < 0.1 ? '#fff' : '#000';
@@ -507,6 +541,7 @@ function draw() {
             }
         } else if (h.type === 'abyss_domain') {
             ctx.save(); ctx.translate(h.x, h.y);
+            
             // Floor Aura
             let gradD = ctx.createRadialGradient(0,0,20, 0,0,h.radius);
             gradD.addColorStop(0, 'rgba(0,0,0,0.98)'); gradD.addColorStop(0.35, 'rgba(15,0,0,0.8)'); gradD.addColorStop(1, 'transparent');
@@ -520,18 +555,32 @@ function draw() {
                 });
             }
 
-            // Tilted Tumbling Rings
+            // Tilted Tumbling Rings using Pseudo-3D Ellipse (No squishing distortion!)
             let time = Date.now() / 1000;
             for(let i=1; i<=3; i++) {
                 ctx.save();
-                ctx.scale(1, 0.5); 
-                ctx.rotate(time * i + Math.sin(time)); // Morphing wobble
                 ctx.strokeStyle = i % 2 === 0 ? '#8b0000' : '#ff0000'; 
-                ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0,0,60 + i*30, 0, Math.PI*2); ctx.stroke();
+                ctx.lineWidth = 4;
+                let rx = 60 + i*30;
+                // Add a slight wobble to the Y radius to make it look like it's tumbling on multiple axes
+                let ry = rx * 0.5 * (1 + 0.3 * Math.sin(time + i)); 
+                ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, time * i, 0, Math.PI*2); ctx.stroke();
                 ctx.restore();
             }
 
-            // Dark Barrier Shell (Half-Dome)
+            // Floating Red/Black Dust inside the Domain
+            for(let i=0; i<8; i++) {
+                let dTime = (Date.now() + i * 400) % 2000 / 2000;
+                let dAngle = i * (Math.PI / 4) + time;
+                let dDist = h.radius * Math.sin(dTime * Math.PI); // Bobs in and out
+                ctx.save(); ctx.rotate(dAngle);
+                ctx.fillStyle = i % 2 === 0 ? '#ff0000' : '#8b0000'; 
+                ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000';
+                ctx.beginPath(); ctx.arc(dDist, 0, 4, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            }
+
+            // Dark Barrier Shell (Half-Dome projecting towards the top/back)
             ctx.beginPath(); ctx.arc(0, 0, h.radius * 0.8, Math.PI, 0); 
             ctx.fillStyle = 'rgba(5, 0, 0, 0.8)'; ctx.fill();
             ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)'; ctx.lineWidth = 2; ctx.stroke();
