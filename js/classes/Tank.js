@@ -535,7 +535,9 @@ class Tank {
         if (this.config.id === 'orion') {
             if (now < this.cooldowns.x) return;
             this.cooldowns.x = now + this.maxCooldowns.x;
-            playSound(sfx.orionX)
+            setTimeout(() => {
+            playSound(sfx.orionX);
+        }, 2000);
             // Spawn Chronosphere Hazard directly on Orion
             hazards.push({ owner: this.owner, type: 'orion_chrono', x: this.x, y: this.y, radius: 175, life: 300, maxLife: 300 });
             return;
