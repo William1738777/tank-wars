@@ -30,25 +30,16 @@ class Tank {
         this.hookState = 'ready'; this.hookTarget = null; this.hookTimer = 0; this.activeArrow = null; 
         this.mgMaxAmmo = config.id === 'dreadnaught' ? 150 : 100; this.mgAmmo = this.mgMaxAmmo; this.mgReloading = false;
 
-        // Phantom specific variables
-        this.phantomEvasiveTimer = 0;
-        this.isGhost = false;
-        this.ghostToggleTimer = 0;
-        this.phantomMarks = 0;
-        this.phantomMarkTimer = 0;
-        this.phantomShockTimer = 0;
+        this.phantomEvasiveTimer = 0; this.isGhost = false; this.ghostToggleTimer = 0;
+        this.phantomMarks = 0; this.phantomMarkTimer = 0; this.phantomShockTimer = 0;
 
-        // Pyro Passive & Shields variables
-        this.dashCount = 0;
-        this.fireShieldActive = false;
-        this.fireShieldHp = 0;
-        this.fireShieldTimer = 0;
-        this.isGhosting = false;
-        this.ghostHitTanks = [];
-        this.fireTrailTicks = 0; 
-        this.inFireTrail = false;
-        this.pyroCShots = 0;
-        this.fireSlowTimer = 0;
+        this.dashCount = 0; this.fireShieldActive = false; this.fireShieldHp = 0; this.fireShieldTimer = 0;
+        this.isGhosting = false; this.ghostHitTanks = []; this.fireTrailTicks = 0; this.inFireTrail = false;
+        this.pyroCShots = 0; this.fireSlowTimer = 0;
+
+        // 🔴 NEW: Variables to track the Abyssal Tether Slow
+        this.abyssSlowStacks = 0;
+        this.abyssSlowTimer = 0;
 
         this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
         this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
@@ -57,9 +48,7 @@ class Tank {
     addPoison(dps, durationFrames) { this.poisons.push({ dps: dps, life: durationFrames }); }
 
     activateFireShield() {
-        this.fireShieldActive = true;
-        this.fireShieldHp = 20;
-        this.fireShieldTimer = 300; 
+        this.fireShieldActive = true; this.fireShieldHp = 20; this.fireShieldTimer = 300; 
         floatingTexts.push({x: this.x, y: this.y - 40, text: "SHIELD UP!", life: 60, color: '#ffaa00'});
     }
 
@@ -71,15 +60,9 @@ class Tank {
         keys[this.controls.up] = false; keys[this.controls.down] = false; keys[this.controls.left] = false; keys[this.controls.right] = false;
         keys[this.controls.c] = false; keys[this.controls.x] = false; keys[this.controls.z] = false;
 
-        let angleDiff = targetAngle - this.angle;
-        angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-        
-        if (angleDiff > 0.1) keys[this.controls.right] = true;
-        else if (angleDiff < -0.1) keys[this.controls.left] = true;
-
-        if (dist > 350) keys[this.controls.up] = true; 
-        else if (dist < 150) keys[this.controls.down] = true; 
-        else if (Math.random() < 0.05) keys[this.controls.up] = true;
+        let angleDiff = targetAngle - this.angle; angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+        if (angleDiff > 0.1) keys[this.controls.right] = true; else if (angleDiff < -0.1) keys[this.controls.left] = true;
+        if (dist > 350) keys[this.controls.up] = true; else if (dist < 150) keys[this.controls.down] = true; else if (Math.random() < 0.05) keys[this.controls.up] = true;
 
         if (this.x === this.lastX && this.y === this.lastY && keys[this.controls.up]) {
             this.stuckTimer = (this.stuckTimer || 0) + 1;
@@ -90,67 +73,40 @@ class Tank {
         if (Math.abs(angleDiff) < 0.3 && dist < 650) {
             keys[this.controls.c] = true; 
             if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
-                if (this.destroAiming) {
-                    keys[this.controls.x] = true;
-                    if (this.destroAimDist >= dist - 40) keys[this.controls.x] = false;
-                } else if (Math.random() < 0.02 && dist > 200) { keys[this.controls.x] = true; }
+                if (this.destroAiming) { keys[this.controls.x] = true; if (this.destroAimDist >= dist - 40) keys[this.controls.x] = false; } 
+                else if (Math.random() < 0.02 && dist > 200) { keys[this.controls.x] = true; }
             } else if (Math.random() < 0.03) { keys[this.controls.x] = true; }
-            
             if (dist < 400 && Math.random() < 0.02) keys[this.controls.z] = true;
         }
     }
 
     update() {
         if (this.isDead) return;
-        
-        if (this.isAI && players[0] && !players[0].isDead) {
-            this.think();
-        }
+        if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
-        
-        if (this.phantomMarkTimer > 0) {
-            this.phantomMarkTimer--;
-            if (this.phantomMarkTimer <= 0) this.phantomMarks = 0;
-        }
+        if (this.phantomMarkTimer > 0) { this.phantomMarkTimer--; if (this.phantomMarkTimer <= 0) this.phantomMarks = 0; }
         if (this.phantomShockTimer > 0) this.phantomShockTimer--;
         
         if (this.config.id === 'phantom') {
             if (this.phantomEvasiveTimer > 0) {
-                this.phantomEvasiveTimer--;
-                this.ghostToggleTimer--;
-                
-                if (this.ghostToggleTimer <= 0) {
-                    this.isGhost = !this.isGhost;
-                    this.ghostToggleTimer = Math.floor(Math.random() * (120 - 30 + 1) + 30);
-                }
-
-                if (this.phantomEvasiveTimer <= 0) {
-                    this.isGhost = false;
-                    floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Deactivated", life: 60, color: '#9d00ff'});
-                }
-            } else {
-                this.isGhost = false; 
-            }
+                this.phantomEvasiveTimer--; this.ghostToggleTimer--;
+                if (this.ghostToggleTimer <= 0) { this.isGhost = !this.isGhost; this.ghostToggleTimer = Math.floor(Math.random() * (120 - 30 + 1) + 30); }
+                if (this.phantomEvasiveTimer <= 0) { this.isGhost = false; floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Deactivated", life: 60, color: '#9d00ff'}); }
+            } else { this.isGhost = false; }
         }
 
         if (this.kbTimer > 0) {
             let oldX = this.x; let oldY = this.y;
             this.x += this.kbX; this.y += this.kbY;
             this.checkWallCollisions(); 
-            
             if (this.kbType === 'wall_slam') {
-                let movedDist = Math.hypot(this.x - oldX, this.y - oldY);
-                let intendedDist = Math.hypot(this.kbX, this.kbY);
+                let movedDist = Math.hypot(this.x - oldX, this.y - oldY); let intendedDist = Math.hypot(this.kbX, this.kbY);
                 let hitEdge = this.x <= this.radius || this.x >= canvas.width - this.radius || this.y <= this.radius || this.y >= canvas.height - this.radius;
-
                 if (movedDist < intendedDist - 2 || hitEdge) {
-                    this.kbType = null;
-                    this.stunTimer = Math.max(this.stunTimer, 120);
-                    this.afterStunSlow = 90;
-                    floatingTexts.push({x: this.x, y: this.y - 40, text: "CRITICALLY JAMMED!", life: 90, color: '#ff3333'});
-                    createKaboom(this.x, this.y, 1.5);
+                    this.kbType = null; this.stunTimer = Math.max(this.stunTimer, 120); this.afterStunSlow = 90;
+                    floatingTexts.push({x: this.x, y: this.y - 40, text: "CRITICALLY JAMMED!", life: 90, color: '#ff3333'}); createKaboom(this.x, this.y, 1.5);
                 }
             }
             this.kbX *= 0.85; this.kbY *= 0.85; this.kbTimer--;
@@ -191,6 +147,27 @@ class Tank {
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
         if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
 
+        // 🔴 NEW: Apply Abyssal Tether Stacking Slow
+        if (this.abyssSlowTimer > 0) {
+            this.abyssSlowTimer--;
+            let domainActive = hazards.some(h => h.type === 'abyss_domain' && h.owner !== this.owner);
+            
+            // If the enemy Abyss drops their domain, or 3 seconds pass, instant clear
+            if (!domainActive || this.abyssSlowTimer <= 0) {
+                this.abyssSlowStacks = 0;
+                this.abyssSlowTimer = 0;
+            } else {
+                let slowMultiplier = 1 - (this.abyssSlowStacks * 0.08); 
+                currentSpeed *= Math.max(0.2, slowMultiplier); // Hard cap at 80% reduction
+                
+                if (frameCount % 10 === 0) {
+                    createParticles(this.x, this.y, 1, '#ff0000', 1.2, 0.3); // Red binding effect
+                }
+            }
+        } else {
+            this.abyssSlowStacks = 0;
+        }
+
         if (this.fireShieldActive) {
             this.fireShieldTimer--;
             if (this.fireShieldHp <= 0 || this.fireShieldTimer <= 0) {
@@ -203,8 +180,7 @@ class Tank {
                 players.forEach(enemy => {
                     if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius + 45) {
-                            enemy.hp -= 3 / 60;
-                            if (Math.random() > 0.8) createParticles(enemy.x, enemy.y, 1, '#ffaa00', 1, 0.2);
+                            enemy.hp -= 3 / 60; if (Math.random() > 0.8) createParticles(enemy.x, enemy.y, 1, '#ffaa00', 1, 0.2);
                             if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
                         }
                     }
@@ -302,35 +278,21 @@ class Tank {
         }
 
         if (this.dashState === 3 && this.stunTimer <= 0) {
-            currentSpeed = 16; 
-            this.dashTimer--;
-            
-            if (frameCount % 3 === 0) {
-                hazards.push({
-                    owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, 
-                    radius: 30, life: 300, maxLife: 300 
-                });
-            }
-            
+            currentSpeed = 16; this.dashTimer--;
+            if (frameCount % 3 === 0) { hazards.push({ owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, radius: 30, life: 300, maxLife: 300 }); }
             players.forEach(enemy => {
                 if (enemy.owner !== this.owner && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
                     if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
-                        enemy.hp -= 15;
-                        this.ghostHitTanks.push(enemy.owner);
+                        enemy.hp -= 15; this.ghostHitTanks.push(enemy.owner);
                         createParticles(enemy.x, enemy.y, 10, '#ff4500', 2, 0.5);
                         floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-15 BURN!", life: 40, color: '#ff3300'});
                         if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; handleDeath(enemy.owner === 1 ? 0 : 1); }
                     }
                 }
             });
-            
             this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
-
             if (this.dashTimer <= 0) { this.dashState = 0; this.isGhosting = false; }
-            
-            this.checkWallCollisions();
-            this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
-            this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+            this.checkWallCollisions(); this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x)); this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
             return; 
         }
 
@@ -348,16 +310,11 @@ class Tank {
         if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
             if (keys[this.controls.left]) this.angle -= this.rotSpeed;
             if (keys[this.controls.right]) this.angle += this.rotSpeed;
-
             if (!this.zFiring) {
                 let throttle = 0;
                 if (keys[this.controls.up]) throttle += 1;
                 if (keys[this.controls.down]) throttle -= 1;
-                
-                if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) {
-                    currentSpeed *= 1.18;
-                }
-
+                if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) { currentSpeed *= 1.18; }
                 if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
             }
         } else if (this.dashState === 2) {
@@ -373,20 +330,23 @@ class Tank {
         if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
             const now = Date.now();
             
-            // Continuous Rapid Fire & Standard C Firing
             if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
                 if (this.config.id === 'abyss') {
-                    // Extremely low recoil (0.5) so it doesn't push you backward too hard
-                    this.kbX -= Math.cos(this.angle) * 0.5;
-                    this.kbY -= Math.sin(this.angle) * 0.5;
-                    this.kbTimer = 5;
+                    this.kbX -= Math.cos(this.angle) * 0.5; this.kbY -= Math.sin(this.angle) * 0.5; this.kbTimer = 5;
 
                     const tip = this.getTip();
-                    // Fires the rapid projectile (0.5 Damage)
-                    projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 18, 3, 0.5, '#4a0080', 'abyss_rapid', 0));
-                    createMuzzleFlash(tip.x, tip.y, this.angle, 0.8);
+                    // 🔴 NEW: Check if Domain is Active to empower the C Skill
+                    let isDomainActive = hazards.some(h => h.type === 'abyss_domain' && h.owner === this.owner);
                     
-                    // Short cooldown for rapid fire (150ms / approx 6-7 shots per second)
+                    if (isDomainActive) {
+                        // Pitch Black Bullet, slightly larger
+                        projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 20, 5, 0.5, '#000000', 'abyss_rapid_empowered', 0));
+                        createMuzzleFlash(tip.x, tip.y, this.angle, 1.2);
+                    } else {
+                        // Standard Bullet
+                        projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 18, 3, 0.5, '#4a0080', 'abyss_rapid', 0));
+                        createMuzzleFlash(tip.x, tip.y, this.angle, 0.8);
+                    }
                     this.cooldowns.c = now + 150; 
                 } else {
                     this.fireC(now);
