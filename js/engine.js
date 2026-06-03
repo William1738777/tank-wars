@@ -83,7 +83,7 @@ function handleDeath(loserIndex) {
             loser.phantomEvasiveTimer = 0; loser.isGhost = false; loser.ghostToggleTimer = 0;
             loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
             loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
-
+            
             // Reset Orion fields explicitly
             loser.zHeight = 0; loser.zRotation = 0;
             loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
@@ -292,8 +292,8 @@ function update() {
         h.life--; if (h.life <= 0) hazards.splice(i, 1);
     }
 
-    // --- ORION Z-AXIS GRAVITY LIFT PHYSICS LOOP ---
     players.forEach((tank, tIndex) => {
+        // --- ORION Z-AXIS GRAVITY LIFT PHYSICS LOOP ---
         if (tank.zHeightActive) {
             tank.zFrameCounter++;
             
@@ -399,6 +399,7 @@ function update() {
         let pA = projectiles[i]; if (pA.dead) continue;
         pA.update();
 
+        // 🔴 NEW: Add vibrant red burning trail to empowered Abyss shots
         if (pA.type === 'abyss_rapid_empowered' && frameCount % 2 === 0) {
             createParticles(pA.x, pA.y, 1, '#ff0000', 1.5, 0.3);
         }
@@ -443,6 +444,7 @@ function update() {
                             hazards.push({ owner: h.owner, type: 'abyss_domain', x: h.x, y: h.y, radius: 170, life: 720, dps: 0.5, tickTimer: 120 });
                             floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
                             
+                            // 🔴 NEW: 50% Cooldown Refund on X when Domain Pops
                             let domainOwner = players.find(p => p.owner === h.owner);
                             if (domainOwner) {
                                 let cdReduction = domainOwner.maxCooldowns.x * 0.5;
@@ -508,9 +510,11 @@ function update() {
                             tank.hp -= pA.damage;
                             let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
                             tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
+                            
+                            // 🔴 NEW: Abyssal Slow Stacking (max 10 stacks for 80% slow)
                             if (pA.type === 'abyss_rapid_empowered') {
                                 tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1);
-                                tank.abyssSlowTimer = 180; 
+                                tank.abyssSlowTimer = 180; // 3 seconds before expiring
                             }
                         } else { tank.hp -= pA.damage; }
 
