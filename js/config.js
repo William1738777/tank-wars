@@ -9,7 +9,7 @@ const images = {
 let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
-    // Must reach 30 to account for all base tanks, Abyss assets, and new Orion assets
+    // Increased to 30 to account for the Abyss assets + 2 new Orion assets
     if (loadedCount === 30) { 
         const btnStart = document.getElementById('btn-start');
         if (btnStart) {
@@ -60,8 +60,8 @@ images.abyssOrb.onload = onAssetLoad; images.abyssOrb.src = 'assets/AbyssOrbFina
 images.abyssProj.onload = onAssetLoad; images.abyssProj.src = 'assets/AbyssProjectile.png';
 images.auraThing.onload = onAssetLoad; images.auraThing.src = 'assets/aurathing.png'; 
 
-// Orion Specific Assets
-images.orionProj.onload = onAssetLoad; images.orionProj.src = 'assets/OrionProjectile.png';
+// Orion Specific Assets (Space accounted for)
+images.orionProj.onload = onAssetLoad; images.orionProj.src = 'assets/Orion projectile.png';
 
 // --- GAME CONFIG & DATA ---
 const tanksData = [
