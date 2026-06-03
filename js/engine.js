@@ -271,7 +271,7 @@ function update() {
                     h.timer = 5; 
                     if (h.targets.length > 0) {
                         let t = h.targets.pop(); h.launched.push(t);
-                        projectiles.push(new Projectile(this.owner, h.tank.x, h.tank.y - 10, -Math.PI/2, 18, 2, 0, '#fff', 'destro_up', 0));
+                        projectiles.push(new Projectile(h.owner, h.tank.x, h.tank.y - 10, -Math.PI/2, 18, 2, 0, '#fff', 'destro_up', 0));
                         createMuzzleFlash(h.tank.x, h.tank.y - 10, -Math.PI/2, 1.5);
                     }
                     if (h.targets.length === 0) { h.state = 'falling_delay'; h.timer = 48; }
@@ -369,8 +369,29 @@ function update() {
             if (Math.random() < 0.1) createParticles(tank.x, tank.y, 1, '#ff3300', 1.5, 0.3);
             if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
         } else { tank.fireTrailTicks = 0; }
-    }
-    );
+    });
+
+    // --- GLOBAL ORION QUANTUM PORTALS WARP MATRIX (TANKS) ---
+    players.forEach(orionTank => {
+        if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
+            // Check if Orion Tank himself hitches onto the portal transport nodes
+            if (!orionTank.isDead && orionTank.zHeight === 0) {
+                let distTankToA = Math.hypot(orionTank.x - orionTank.portalA.x, orionTank.y - orionTank.portalA.y);
+                let distTankToB = Math.hypot(orionTank.x - orionTank.portalB.x, orionTank.y - orionTank.portalB.y);
+                
+                if (distTankToA < orionTank.radius && !orionTank.justWarped) {
+                    orionTank.x = orionTank.portalB.x; orionTank.y = orionTank.portalB.y;
+                    orionTank.justWarped = true;
+                    createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
+                } else if (distTankToB < orionTank.radius && !orionTank.justWarped) {
+                    orionTank.x = orionTank.portalA.x; orionTank.y = orionTank.portalA.y;
+                    orionTank.justWarped = true;
+                    createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
+                }
+                if (distTankToA > orionTank.radius + 15 && distTankToB > orionTank.radius + 15) orionTank.justWarped = false;
+            }
+        }
+    });
 
     let processedShotgunCasts = [];
 
@@ -382,10 +403,10 @@ function update() {
             createParticles(pA.x, pA.y, 1, '#ff0000', 1.5, 0.3);
         }
 
-        // --- GLOBAL ORION QUANTUM PORTALS WARP MATRIX ---
+        // --- GLOBAL ORION QUANTUM PORTALS WARP MATRIX (PROJECTILES) ---
         players.forEach(orionTank => {
             if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
-                // 1. Check if Orion C Projectile collides with either active portal anchor
+                // Check if Orion C Projectile collides with either active portal anchor
                 if (pA.type === 'orion_c' && !pA.dead) {
                     let distToA = Math.hypot(pA.x - orionTank.portalA.x, pA.y - orionTank.portalA.y);
                     let distToB = Math.hypot(pA.x - orionTank.portalB.x, pA.y - orionTank.portalB.y);
@@ -400,23 +421,6 @@ function update() {
                         createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
                     }
                     if (distToA > 40 && distToB > 40) pA.justWarped = false; // Reset toggle outside exit field parameters
-                }
-                
-                // 2. Check if Orion Tank himself hitches onto the portal transport nodes
-                if (!orionTank.isDead && orionTank.zHeight === 0) {
-                    let distTankToA = Math.hypot(orionTank.x - orionTank.portalA.x, orionTank.y - orionTank.portalA.y);
-                    let distTankToB = Math.hypot(orionTank.x - orionTank.portalB.x, orionTank.y - orionTank.portalB.y);
-                    
-                    if (distTankToA < orionTank.radius && !orionTank.justWarped) {
-                        orionTank.x = orionTank.portalB.x; orionTank.y = orionTank.portalB.y;
-                        orionTank.justWarped = true;
-                        createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
-                    } else if (distTankToB < orionTank.radius && !orionTank.justWarped) {
-                        orionTank.x = orionTank.portalA.x; orionTank.y = orionTank.portalA.y;
-                        orionTank.justWarped = true;
-                        createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
-                    }
-                    if (distTankToA > orionTank.radius + 15 && distTankToB > orionTank.radius + 15) orionTank.justWarped = false;
                 }
             }
         });
