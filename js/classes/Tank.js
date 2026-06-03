@@ -37,7 +37,6 @@ class Tank {
         this.isGhosting = false; this.ghostHitTanks = []; this.fireTrailTicks = 0; this.inFireTrail = false;
         this.pyroCShots = 0; this.fireSlowTimer = 0;
 
-        // 🔴 NEW: Variables to track the Abyssal Tether Slow
         this.abyssSlowStacks = 0;
         this.abyssSlowTimer = 0;
 
@@ -147,21 +146,19 @@ class Tank {
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
         if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
 
-        // 🔴 NEW: Apply Abyssal Tether Stacking Slow
         if (this.abyssSlowTimer > 0) {
             this.abyssSlowTimer--;
             let domainActive = hazards.some(h => h.type === 'abyss_domain' && h.owner !== this.owner);
             
-            // If the enemy Abyss drops their domain, or 3 seconds pass, instant clear
             if (!domainActive || this.abyssSlowTimer <= 0) {
                 this.abyssSlowStacks = 0;
                 this.abyssSlowTimer = 0;
             } else {
                 let slowMultiplier = 1 - (this.abyssSlowStacks * 0.08); 
-                currentSpeed *= Math.max(0.2, slowMultiplier); // Hard cap at 80% reduction
+                currentSpeed *= Math.max(0.2, slowMultiplier); 
                 
                 if (frameCount % 10 === 0) {
-                    createParticles(this.x, this.y, 1, '#ff0000', 1.2, 0.3); // Red binding effect
+                    createParticles(this.x, this.y, 1, '#ff0000', 1.2, 0.3); 
                 }
             }
         } else {
@@ -335,15 +332,12 @@ class Tank {
                     this.kbX -= Math.cos(this.angle) * 0.5; this.kbY -= Math.sin(this.angle) * 0.5; this.kbTimer = 5;
 
                     const tip = this.getTip();
-                    // 🔴 NEW: Check if Domain is Active to empower the C Skill
                     let isDomainActive = hazards.some(h => h.type === 'abyss_domain' && h.owner === this.owner);
                     
                     if (isDomainActive) {
-                        // Pitch Black Bullet, slightly larger
                         projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 20, 5, 0.5, '#000000', 'abyss_rapid_empowered', 0));
                         createMuzzleFlash(tip.x, tip.y, this.angle, 1.2);
                     } else {
-                        // Standard Bullet
                         projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 18, 3, 0.5, '#4a0080', 'abyss_rapid', 0));
                         createMuzzleFlash(tip.x, tip.y, this.angle, 0.8);
                     }
@@ -382,6 +376,12 @@ class Tank {
                         orbThrow.startY = this.y;
                         projectiles.push(orbThrow);
                         createMuzzleFlash(this.x, this.y, this.angle, 2.0);
+
+                        // 🔴 NEW: Reduce Z cooldown by 3.5 seconds when Void Orb is thrown
+                        this.cooldowns.z -= 3500;
+                        if (this.cooldowns.z > Date.now()) {
+                            floatingTexts.push({x: this.x, y: this.y - 60, text: "-3.5s Z-CD!", life: 40, color: '#ff0000'});
+                        }
                     }
                     this.destroAimDist = 100;
                 }
