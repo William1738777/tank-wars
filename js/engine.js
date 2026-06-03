@@ -14,6 +14,12 @@ const keys = {};
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
+// Dynamically load the PNG for the Abyssal Domain overlay
+if (typeof images !== 'undefined' && !images.auraThing) {
+    images.auraThing = new Image();
+    images.auraThing.src = 'aurathing.png';
+}
+
 function distToSegment(p, v, w) {
     let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
     if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
@@ -131,15 +137,98 @@ function update() {
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
         
+        // Hazard Particle initialization and physics
+        if (h.type === 'dark_boom') {
+            if (!h.initialized) {
+                h.particles = [];
+                for (let j = 0; j < 35; j++) {
+                    const isSmoke = Math.random() > 0.5;
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = (Math.random() * 9) + 4;
+                    let pColor = isSmoke ? (Math.random() > 0.5 ? '#000000' : '#1a1a1a') : (Math.random() > 0.5 ? '#ff0000' : '#8b0000');
+                    h.particles.push({ vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, x: 0, y: 0, size: Math.random() * 7 + 3, color: pColor });
+                }
+                h.initialized = true;
+            } else {
+                h.particles.forEach(part => {
+                    part.x += part.vx; part.y += part.vy;
+                    part.vx *= 0.92; part.vy *= 0.92;
+                });
+            }
+        } else if (h.type === 'abyss_domain') {
+            if (!h.initialized) {
+                h.particles = [];
+                for (let j = 0; j < 45; j++) {
+                    h.particles.push({
+                        angle: Math.random() * Math.PI * 2,
+                        radius: 120 + Math.random() * 100,
+                        speed: (Math.random() * 0.03) + 0.01,
+                        size: Math.random() * 6 + 2,
+                        isBlack: Math.random() > 0.4 
+                    });
+                }
+                h.initialized = true;
+            } else {
+                h.particles.forEach(p => {
+                    p.angle -= p.speed; 
+                    p.radius -= 0.5; 
+                    if (p.radius < 30) p.radius = h.radius * 0.9 + Math.random() * 50; 
+                });
+            }
+            
+            h.tickTimer--;
+            players.forEach(tank => {
+                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
+                        tank.hp -= h.dps / 60;
+                        if (h.tickTimer <= 0) {
+                            tank.hp -= 2; 
+                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "DOMAIN BURST!", life: 40, color: '#ff3333'});
+                        }
+                    }
+                }
+            });
+
+            if (h.tickTimer <= 0) {
+                h.dps *= 2; 
+                h.tickTimer = 120; 
+                h.shockwaves = h.shockwaves || [];
+                h.shockwaves.push({ life: 60, maxLife: 60 });
+            }
+            if (h.shockwaves) {
+                h.shockwaves.forEach(s => s.life--);
+                h.shockwaves = h.shockwaves.filter(s => s.life > 0);
+            }
+        } else if (h.type === 'black_hole') {
+            players.forEach(tank => {
+                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                    let dx = h.x - tank.x; let dy = h.y - tank.y;
+                    let dist = Math.hypot(dx, dy);
+                    if (dist < h.radius) {
+                        tank.x += (dx / dist) * 2;
+                        tank.y += (dy / dist) * 2;
+                        tank.hp -= 1 / 60;
+                    }
+                }
+            });
+            if (h.life <= 1) { 
+                hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 150, maxLife: 150 });
+                players.forEach(tank => {
+                    if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0 && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
+                        tank.hp -= 5;
+                        floatingTexts.push({x: tank.x, y: tank.y - 40, text: "EVENT HORIZON!", life: 50, color: '#ff0000'});
+                    }
+                });
+            }
+        }
+        
         if (h.type === 'fire_trail') {
             players.forEach(tank => {
                 if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) tank.inFireTrail = true;
                 }
             });
-        }
-        
-        if (h.type === 'mine') {
+        } else if (h.type === 'mine') {
             h.age++; if (h.age > 120 && !h.triggering) h.visible = false;
             
             if (h.triggering) {
@@ -164,14 +253,10 @@ function update() {
                     }
                 });
             }
-        }
-        
-        if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
+        } else if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
             for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) projectiles.push(new Projectile(h.owner, h.x, h.y, angle, 6, 3, 1.5, '#00ffff', 'seraph_spark', 1));
             createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
-        }
-
-        if (h.type === 'destro_strike_manager') {
+        } else if (h.type === 'destro_strike_manager') {
             if (h.state === 'launching') {
                 h.timer--;
                 let moving = false;
@@ -204,57 +289,6 @@ function update() {
                         h.life = 0; 
                     }
                 }
-            }
-        }
-
-        // --- ABYSS BLACK HOLE ---
-        if (h.type === 'black_hole') {
-            players.forEach(tank => {
-                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                    let dx = h.x - tank.x; let dy = h.y - tank.y;
-                    let dist = Math.hypot(dx, dy);
-                    if (dist < h.radius) {
-                        tank.x += (dx / dist) * 2; // Pull inward
-                        tank.y += (dy / dist) * 2;
-                        tank.hp -= 1 / 60; // 1 DMG per second
-                    }
-                }
-            });
-            if (h.life <= 1) { // Trigger boom on expire
-                hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 150, maxLife: 150 });
-                players.forEach(tank => {
-                    if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0 && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
-                        tank.hp -= 5; // 5 Burst Damage
-                        floatingTexts.push({x: tank.x, y: tank.y - 40, text: "EVENT HORIZON!", life: 50, color: '#ff0000'});
-                    }
-                });
-            }
-        }
-
-        // --- ABYSSAL DOMAIN ---
-        if (h.type === 'abyss_domain') {
-            h.tickTimer--;
-            players.forEach(tank => {
-                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
-                        tank.hp -= h.dps / 60; // Continuous scaling damage
-                        if (h.tickTimer <= 0) {
-                            tank.hp -= 2; // Pulse Damage
-                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "DOMAIN BURST!", life: 40, color: '#ff3333'});
-                        }
-                    }
-                }
-            });
-
-            if (h.tickTimer <= 0) {
-                h.dps *= 2; // Double damage every 2 seconds
-                h.tickTimer = 120; // Reset 2s timer
-                h.shockwaves = h.shockwaves || [];
-                h.shockwaves.push({ life: 60, maxLife: 60 });
-            }
-            if (h.shockwaves) {
-                h.shockwaves.forEach(s => s.life--);
-                h.shockwaves = h.shockwaves.filter(s => s.life > 0);
             }
         }
         
@@ -355,7 +389,7 @@ function update() {
                                 hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 });
                             } else {
                                 tank.isSlowed = true;
-                                tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 180); // 3 seconds
+                                tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 180); 
                             }
                         } else if (pA.type === 'abyss_rapid') {
                             tank.hp -= pA.damage;
@@ -365,7 +399,6 @@ function update() {
                             tank.hp -= pA.damage; 
                         }
 
-                        // Phantom Refunds and Marks
                         if (shooter && shooter.config.id === 'phantom') {
                             if (pA.type === 'phantom_bounce') shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); 
                             if (pA.type === 'phantom_sg') shooter.cooldowns.c -= 500; 
@@ -375,20 +408,26 @@ function update() {
                             if (pA.type === 'phantom_bounce') {
                                 applyMark = true;
                             } else if (pA.type === 'phantom_sg') {
-                                if (!processedShotgunCasts.includes(pA.castId)) { applyMark = true; processedShotgunCasts.push(pA.castId); }
+                                if (!processedShotgunCasts.includes(pA.castId)) {
+                                    applyMark = true;
+                                    processedShotgunCasts.push(pA.castId);
+                                }
                             }
 
                             if (applyMark) {
-                                tank.phantomMarkTimer = 300; tank.phantomMarks++;
+                                tank.phantomMarkTimer = 300;
+                                tank.phantomMarks++;
+
                                 if (tank.phantomMarks >= 3) {
-                                    tank.hp -= 5; tank.phantomMarks = 0; tank.phantomShockTimer = 30; 
+                                    tank.hp -= 5;
+                                    tank.phantomMarks = 0; 
+                                    tank.phantomShockTimer = 30;
                                     floatingTexts.push({ x: tank.x, y: tank.y - 55, text: "PLASMA ELECTROCUTION!", life: 60, color: '#9d00ff', fontSize: '14px' });
                                     createParticles(tank.x, tank.y, 10, '#9d00ff', 2, 0.5);
                                 }
                             }
                         }
 
-                        // FIX: Abyss Stacking Mechanic (rolls between 2 and 4 per hit)
                         if (shooter && shooter.config.id === 'abyss') {
                             let stacks = Math.floor(Math.random() * 3) + 2; 
                             shooter.abyssCharges = Math.min(50, (shooter.abyssCharges || 0) + stacks);
@@ -456,81 +495,145 @@ function draw() {
         } else if (h.type === 'destro_strike_manager' && images.target.complete) {
             h.launched.forEach(t => { let size = 30 + Math.sin(Date.now() / 100) * 5; ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size); });
         } 
-        // --- FIX: ABYSS VISUAL TRANSLATIONS (Pseudo-3D) ---
+        // --- NEW: ABYSS CUSTOM VFX TRANSLATIONS ---
         else if (h.type === 'black_hole') {
-            let scale = Math.min(1, (240 - h.life) / 30); // Grow in
+            let age = 240 - h.life; 
             ctx.save(); ctx.translate(h.x, h.y);
-            
-            // Event Horizon Floor Shadow
-            let grad = ctx.createRadialGradient(0, 0, 10, 0, 0, 150 * scale);
-            grad.addColorStop(0, '#000'); grad.addColorStop(0.3, 'rgba(15, 0, 0, 0.9)'); grad.addColorStop(1, 'transparent');
-            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, 150 * scale, 0, Math.PI * 2); ctx.fill();
-            
-            // Accretion Disk (Tilted and Spinning via Pseudo-3D ctx.ellipse)
-            let time = Date.now() / 200;
-            ctx.strokeStyle = 'rgba(255, 20, 20, 0.4)'; ctx.lineWidth = 6; 
-            ctx.beginPath(); ctx.ellipse(0, 0, 120 * scale, 60 * scale, time, 0, Math.PI * 2); ctx.stroke();
-            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 3; 
-            ctx.beginPath(); ctx.ellipse(0, 0, 80 * scale, 40 * scale, -time * 1.5, 0, Math.PI * 2); ctx.stroke();
 
-            // Spaghettification Streaks (Violent suction particles)
-            for (let i = 0; i < 8; i++) {
-                let pTime = (Date.now() + i * 150) % 1000 / 1000; // Loops 0 to 1
-                let pAngle = i * (Math.PI / 4) + (time * 0.5);
-                let dist = 150 * (1 - pTime); // Starts far, moves to 0
-                let stretch = pTime * 40 + 5; // Stretches as it gets closer
-                ctx.save();
-                ctx.rotate(pAngle);
-                ctx.fillStyle = pTime > 0.6 ? '#8b0000' : (pTime > 0.3 ? '#ff3333' : '#fff');
-                ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000';
-                ctx.fillRect(dist, -1, stretch, 3);
-                ctx.restore();
-            }
+            let grad = ctx.createRadialGradient(0, 0, 10, 0, 0, 150);
+            grad.addColorStop(0, '#000000');
+            grad.addColorStop(0.4, 'rgba(15, 0, 0, 0.95)');
+            grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, 200, 0, Math.PI*2); ctx.fill();
 
-            // Core Void Orb
-            if (images.abyssOrb.complete) {
-                ctx.save(); 
-                ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000';
-                ctx.globalCompositeOperation = 'difference'; 
-                ctx.drawImage(images.abyssOrb, -40 * scale, -40 * scale, 80 * scale, 80 * scale);
-                ctx.restore();
-            }
-            ctx.restore();
-        } else if (h.type === 'dark_boom') {
-            let p = 1 - (h.life / h.maxLife); 
-            ctx.save(); ctx.translate(h.x, h.y);
-            
-            // Ambient Flash
-            if (p < 0.2) { 
-                ctx.fillStyle = `rgba(255,0,0,${1 - p*5})`; 
-                ctx.beginPath(); ctx.arc(0,0,300, 0, Math.PI*2); ctx.fill(); 
-            }
-            // Expanding Red Shockwave
-            ctx.strokeStyle = `rgba(139,0,0,${1 - p})`; 
-            ctx.lineWidth = 10 * (1 - p); 
-            ctx.beginPath(); ctx.arc(0,0,150 * p, 0, Math.PI*2); ctx.stroke();
-            
-            // Spiky Shrapnel / Debris shooting outwards
-            for(let i = 0; i < 12; i++) {
-                let angle = i * (Math.PI / 6);
-                let dist = p * 200; // shoots outward
-                let len = (1 - p) * 60; // shrinks as it fades
-                ctx.save(); 
-                ctx.rotate(angle);
-                ctx.fillStyle = p < 0.3 ? '#fff' : '#ff0000';
-                ctx.shadowBlur = 10; ctx.shadowColor = '#ff0000';
-                ctx.fillRect(dist, -2, len, 4);
-                ctx.restore();
-            }
-
-            // Core Black/Red Blast
-            let cRadius = p < 0.3 ? p * 200 : 60 * (1 - p);
-            ctx.fillStyle = p < 0.1 ? '#fff' : '#000';
+            let vibrateX = (Math.random() - 0.5) * 3;
+            let vibrateY = (Math.random() - 0.5) * 3;
             ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000';
-            ctx.beginPath(); ctx.arc(0,0, cRadius, 0, Math.PI*2); ctx.fill();
+            
+            ctx.beginPath(); ctx.arc(vibrateX, vibrateY, 25, 0, Math.PI * 2); ctx.fillStyle = '#000000'; ctx.fill();
+            ctx.beginPath(); ctx.arc(vibrateX, vibrateY, 40, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255, 0, 0, 0.4)'; ctx.fill();
+
+            ctx.lineWidth = 3; ctx.lineCap = 'round';
+            for (let i = 0; i < 24; i++) {
+                let pAge = (age + i * 5) % 40; 
+                let pRatio = pAge / 40; 
+                let dist = (1 - pRatio) * 200; 
+                let angle = (i * (Math.PI * 2) / 24) + (age * 0.01); 
+                
+                let startX = Math.cos(angle) * dist;
+                let startY = Math.sin(angle) * dist;
+                let streakLength = 15 + (1 - pRatio) * 30; 
+                let endX = Math.cos(angle) * (dist + streakLength);
+                let endY = Math.sin(angle) * (dist + streakLength);
+
+                ctx.strokeStyle = pRatio < 0.2 ? '#ff3333' : '#ff0000';
+                ctx.globalAlpha = Math.sin(pRatio * Math.PI); 
+                ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
+            }
+            
+            ctx.globalAlpha = 1; ctx.lineWidth = 2;
+            for (let i = 0; i < 3; i++) {
+                let rAge = (age + i * 20) % 60;
+                let radius = (1 - (rAge / 60)) * 180;
+                ctx.strokeStyle = `rgba(255, 0, 0, ${rAge / 60})`;
+                ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
+            }
             ctx.restore();
-        } else if (h.type === 'void_orb') {
-            if (images.abyssOrb.complete) {
+        } 
+        else if (h.type === 'dark_boom') {
+            let age = h.maxLife - h.life;
+            let p = age / 60; 
+            ctx.save(); ctx.translate(h.x, h.y);
+
+            if (p <= 1) {
+                if (age < 10) {
+                    ctx.fillStyle = `rgba(255, 0, 0, ${1 - age/10})`;
+                    ctx.beginPath(); ctx.arc(0, 0, 80 * (1 - age/10), 0, Math.PI*2); ctx.fill();
+                }
+
+                ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000';
+                if (p < 0.6) {
+                    let r1 = p * 400; 
+                    ctx.strokeStyle = `rgba(255, 0, 0, ${1 - (p / 0.6)})`; ctx.lineWidth = 12 * (1 - (p / 0.6));
+                    ctx.beginPath(); ctx.arc(0, 0, r1, 0, Math.PI*2); ctx.stroke();
+                }
+                if (p > 0.1 && p < 0.8) {
+                    let r2 = (p - 0.1) * 350;
+                    ctx.strokeStyle = `rgba(139, 0, 0, ${1 - ((p - 0.1) / 0.7)})`; ctx.lineWidth = 8 * (1 - ((p - 0.1) / 0.7));
+                    ctx.beginPath(); ctx.arc(0, 0, r2, 0, Math.PI*2); ctx.stroke();
+                }
+            }
+
+            if (h.particles) {
+                ctx.shadowBlur = 10;
+                h.particles.forEach(part => {
+                    ctx.globalAlpha = Math.max(0, 1 - (age / 100)); 
+                    ctx.fillStyle = part.color;
+                    ctx.shadowColor = (part.color === '#000000' || part.color === '#1a1a1a') ? '#000' : '#ff0000';
+                    ctx.beginPath(); ctx.arc(part.x, part.y, part.size, 0, Math.PI*2); ctx.fill();
+                });
+            }
+            ctx.restore();
+        } 
+        else if (h.type === 'abyss_domain') {
+            let age = 720 - h.life;
+            ctx.save(); ctx.translate(h.x, h.y);
+
+            let alpha = Math.min(1, age / 30);
+            ctx.globalAlpha = alpha;
+
+            let grad = ctx.createRadialGradient(0, 0, 50, 0, 0, h.radius);
+            grad.addColorStop(0, '#000000');
+            grad.addColorStop(0.7, 'rgba(15, 0, 0, 0.95)');
+            grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(0, 0, h.radius + 20, 0, Math.PI*2); ctx.fill();
+
+            if (images.auraThing && images.auraThing.complete) {
+                ctx.save();
+                ctx.rotate(age * 0.005);
+                ctx.filter = 'brightness(150%) contrast(150%) saturate(200%)'; 
+                ctx.shadowBlur = 30 + Math.sin(age * 0.1) * 15; 
+                ctx.shadowColor = '#ff0000';
+                const drawSize = h.radius * 2; 
+                ctx.drawImage(images.auraThing, -drawSize/2, -drawSize/2, drawSize, drawSize);
+                
+                ctx.globalCompositeOperation = 'screen';
+                ctx.globalAlpha = 0.5 * alpha;
+                ctx.drawImage(images.auraThing, -drawSize/2, -drawSize/2, drawSize, drawSize);
+                ctx.restore();
+            } else {
+                ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000';
+                ctx.save(); ctx.rotate(-age * 0.01); ctx.strokeStyle = '#8b0000'; ctx.lineWidth = 4; ctx.setLineDash([25, 15, 5, 15]); ctx.beginPath(); ctx.arc(0, 0, h.radius * 0.8, 0, Math.PI*2); ctx.stroke(); ctx.restore();
+            }
+
+            ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000'; ctx.fillStyle = '#000000';
+            ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill();
+
+            if (h.particles) {
+                ctx.shadowBlur = 10;
+                h.particles.forEach(p => {
+                    let wobbleDist = p.radius + Math.sin(age * 0.1 + p.angle) * 15;
+                    let px = Math.cos(p.angle) * wobbleDist;
+                    let py = Math.sin(p.angle) * wobbleDist;
+
+                    ctx.fillStyle = p.isBlack ? '#000000' : '#8b0000';
+                    ctx.shadowColor = p.isBlack ? 'transparent' : '#ff0000';
+
+                    ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI * 2); ctx.fill();
+                    
+                    if (p.isBlack) {
+                        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)'; ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.moveTo(px, py);
+                        ctx.lineTo(Math.cos(p.angle + 0.1) * (wobbleDist + 5), Math.sin(p.angle + 0.1) * (wobbleDist + 5));
+                        ctx.stroke();
+                    }
+                });
+            }
+            ctx.restore();
+        } 
+        else if (h.type === 'void_orb') {
+            if (images.abyssOrb && images.abyssOrb.complete) {
                 ctx.save(); ctx.translate(h.x, h.y);
                 ctx.rotate(Date.now() / 500);
                 ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000';
@@ -539,57 +642,6 @@ function draw() {
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; 
                 ctx.fillText(Math.ceil(h.orbHp), h.x, h.y - 30);
             }
-        } else if (h.type === 'abyss_domain') {
-            ctx.save(); ctx.translate(h.x, h.y);
-            
-            // Floor Aura
-            let gradD = ctx.createRadialGradient(0,0,20, 0,0,h.radius);
-            gradD.addColorStop(0, 'rgba(0,0,0,0.98)'); gradD.addColorStop(0.35, 'rgba(15,0,0,0.8)'); gradD.addColorStop(1, 'transparent');
-            ctx.fillStyle = gradD; ctx.beginPath(); ctx.arc(0,0,h.radius, 0, Math.PI*2); ctx.fill();
-            
-            // Domain Shockwaves
-            if (h.shockwaves) {
-                h.shockwaves.forEach(s => {
-                    let sp = 1 - (s.life / s.maxLife);
-                    ctx.strokeStyle = `rgba(255,0,0,${1 - sp})`; ctx.lineWidth = 15 * (1 - sp); ctx.beginPath(); ctx.arc(0,0,h.radius * sp, 0, Math.PI*2); ctx.stroke();
-                });
-            }
-
-            // Tilted Tumbling Rings using Pseudo-3D Ellipse (No squishing distortion!)
-            let time = Date.now() / 1000;
-            for(let i=1; i<=3; i++) {
-                ctx.save();
-                ctx.strokeStyle = i % 2 === 0 ? '#8b0000' : '#ff0000'; 
-                ctx.lineWidth = 4;
-                let rx = 60 + i*30;
-                // Add a slight wobble to the Y radius to make it look like it's tumbling on multiple axes
-                let ry = rx * 0.5 * (1 + 0.3 * Math.sin(time + i)); 
-                ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, time * i, 0, Math.PI*2); ctx.stroke();
-                ctx.restore();
-            }
-
-            // Floating Red/Black Dust inside the Domain
-            for(let i=0; i<8; i++) {
-                let dTime = (Date.now() + i * 400) % 2000 / 2000;
-                let dAngle = i * (Math.PI / 4) + time;
-                let dDist = h.radius * Math.sin(dTime * Math.PI); // Bobs in and out
-                ctx.save(); ctx.rotate(dAngle);
-                ctx.fillStyle = i % 2 === 0 ? '#ff0000' : '#8b0000'; 
-                ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000';
-                ctx.beginPath(); ctx.arc(dDist, 0, 4, 0, Math.PI*2); ctx.fill();
-                ctx.restore();
-            }
-
-            // Dark Barrier Shell (Half-Dome projecting towards the top/back)
-            ctx.beginPath(); ctx.arc(0, 0, h.radius * 0.8, Math.PI, 0); 
-            ctx.fillStyle = 'rgba(5, 0, 0, 0.8)'; ctx.fill();
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)'; ctx.lineWidth = 2; ctx.stroke();
-
-            // Core
-            if (images.abyssOrb.complete) {
-                ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000'; ctx.drawImage(images.abyssOrb, -35, -35, 70, 70);
-            }
-            ctx.restore();
         }
     });
 
