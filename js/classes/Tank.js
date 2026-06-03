@@ -146,6 +146,8 @@ class Tank {
         if (this.stunTimer > 0 && this.zHeight === 0) {
             this.stunTimer--;
             if (this.stunTimer % 8 === 0) createParticles(this.x + (Math.random()-0.5)*30, this.y + (Math.random()-0.5)*30, 2, '#00ffff', 1.2, 0.4);
+        } else if (this.stunTimer > 0) {
+            this.stunTimer--;
         }
 
         this.isSlowed = false;
@@ -437,6 +439,8 @@ class Tank {
                         orbThrow.startY = this.y;
                         projectiles.push(orbThrow);
                         createMuzzleFlash(this.x, this.y, this.angle, 2.0);
+
+                        // 🔴 NEW: Reduce Z cooldown by 3.5 seconds when Void Orb is thrown
                         this.cooldowns.z -= 3500;
                         if (this.cooldowns.z > Date.now()) {
                             floatingTexts.push({x: this.x, y: this.y - 60, text: "-3.5s Z-CD!", life: 40, color: '#ff0000'});
@@ -451,10 +455,28 @@ class Tank {
                 if (keys[this.controls.x]) { if (!this.xHeld) { this.fireX(now); this.xHeld = true; } } else { this.xHeld = false; }
             }
 
-            // Standard Z Firing for non-Orion tanks
             if (this.config.id !== 'seraph' && this.config.id !== 'orion') { if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now); }
         }
     }
+
+    checkWallCollisions() {
+        for (let w of currentMap.walls) {
+            let testX = this.x; let testY = this.y;
+            if (this.x < w.x) testX = w.x; else if (this.x > w.x + w.w) testX = w.x + w.w;
+            if (this.y < w.y) testY = w.y; else if (this.y > w.y + w.h) testY = w.y + w.h;
+            let distance = Math.hypot(this.x - testX, this.y - testY);
+            if (distance < this.radius) {
+                let push = this.radius - distance;
+                this.x += ((this.x - testX) / distance) * push; this.y += ((this.y - testY) / distance) * push;
+            }
+        }
+        for (let r of currentMap.rocks) {
+            let dx = this.x - r.x; let dy = this.y - r.y; let dist = Math.hypot(dx, dy);
+            if (dist < this.radius + r.r) { let push = (this.radius + r.r) - dist; this.x += (dx / dist) * push; this.y += (dy / dist) * push; }
+        }
+    }
+
+    getTip() { const offset = (this.config.img.width * 0.12 * this.scaleMod) / 2; return { x: this.x + Math.cos(this.angle)*offset, y: this.y + Math.sin(this.angle)*offset }; }
 
     fireC(now) {
         this.cooldowns.c = now + this.maxCooldowns.c; 
