@@ -123,9 +123,12 @@ class Projectile {
                 this.angle = Math.atan2(this.vy, this.vx); 
                 this.bounces--; 
                 
-                // Orion C Bounce Logic: +2 Damage per bounce, accompanied by a visual spark
+                // Orion C Bounce Logic: +2 Damage, Speed Boost, Vibrancy
                 if (this.type === 'orion_c') {
                     this.damage += 2;
+                    this.speed *= 1.25; // Massively accelerate upon bounce
+                    this.vx = Math.cos(this.angle) * this.speed;
+                    this.vy = Math.sin(this.angle) * this.speed;
                     createParticles(this.x, this.y, 5, '#ff33cc', 1.5, 0.4);
                 }
             } 
@@ -283,11 +286,15 @@ class Projectile {
             const w = images.orionProj.width * scale;
             const h = images.orionProj.height * scale;
             
-            // Dynamic glow intensity: increases based on how many bounce damage stacks it has
+            // Dynamic glow intensity and vibrancy injection
             let damageBonus = this.damage - (this.baseDamage || 4);
             ctx.shadowBlur = 10 + (damageBonus * 3); 
             ctx.shadowColor = '#ff33cc';
+            
+            // Render filter mathematically scales brightness and saturation alongside damage stacks
+            ctx.filter = `brightness(${1 + (damageBonus * 0.15)}) saturate(${1 + (damageBonus * 0.3)})`;
             ctx.drawImage(images.orionProj, -w/2, -h/2, w, h);
+            ctx.filter = 'none'; // Clear filter to avoid bleeding into other canvas layers
         } else if (this.type === 'orion_z_lift') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = '#000000'; ctx.shadowBlur = 15; ctx.shadowColor = '#ff33cc'; ctx.fill();
