@@ -10,6 +10,10 @@ let selectedMapIndex = 0; let currentMap = mapsData[selectedMapIndex];
 let players = []; let p1Score = 0; let p2Score = 0;
 let projectiles = []; let particles = []; let flashes = []; let hazards = []; let floatingTexts = []; 
 
+// Global visual modifiers
+let screenShakeTimer = 0;
+let screenShakeIntensity = 0;
+
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -24,6 +28,12 @@ function distToSegment(p, v, w) {
     if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
     let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2; t = Math.max(0, Math.min(1, t));
     return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+}
+
+// Helper to apply screen shake modifiers
+function triggerScreenShake(duration, intensity) {
+    screenShakeTimer = duration;
+    screenShakeIntensity = intensity;
 }
 
 // --- ENGINE LOGIC ---
@@ -73,6 +83,10 @@ function handleDeath(loserIndex) {
             loser.phantomEvasiveTimer = 0; loser.isGhost = false; loser.ghostToggleTimer = 0;
             loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
             loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
+
+            // Reset Orion fields explicitly
+            loser.zHeight = 0; loser.zRotation = 0;
+            loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
             
             updateHUD();
         }, 1500); 
@@ -117,6 +131,9 @@ function update() {
     }
 
     updateHUD(); updateCooldownUI();
+
+    // Decrease global screen shake timer
+    if (screenShakeTimer > 0) screenShakeTimer--;
 
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
@@ -178,6 +195,47 @@ function update() {
             }
         }
         
+        // --- ORION CHRONOSPHERE POTENTIAL LOGIC MATRIX ---
+        else if (h.type === 'orion_chrono') {
+            let age = h.maxLife - h.life;
+            h.isFullyCharged = age >= 90; // 1.5 seconds charge window at 60fps
+            
+            // Loop through all currently active projectiles inside the bubble
+            projectiles.forEach(proj => {
+                let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
+                if (dist < h.radius) {
+                    if (h.isFullyCharged) {
+                        proj.isTimeDilated = true;
+                        // Smoothly decay velocity until matching a total dead stop frame
+                        proj.vx *= 0.92;
+                        proj.vy *= 0.92;
+                    }
+                }
+            });
+
+            // At the final expiration frame, reflect everything back at original speed
+            if (h.life === 1) {
+                createParticles(h.x, h.y, 40, '#ff33cc', 2.5, 0.6);
+                triggerScreenShake(15, 6);
+                
+                projectiles.forEach(proj => {
+                    let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
+                    if (dist < h.radius && proj.isTimeDilated) {
+                        // Reflect trajectory angle 180 degrees directly back to sender
+                        proj.vx = -Math.cos(proj.angle) * proj.speed;
+                        proj.vy = -Math.sin(proj.angle) * proj.speed;
+                        proj.angle = Math.atan2(proj.vy, proj.vx);
+                        
+                        // Switch code signature mapping so it hurts its creator instead
+                        proj.owner = h.owner; 
+                        proj.isTimeDilated = false;
+                        
+                        createParticles(proj.x, proj.y, 4, '#ff33cc', 1, 0.3);
+                    }
+                });
+            }
+        }
+        
         if (h.type === 'fire_trail') {
             players.forEach(tank => { if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) { if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) tank.inFireTrail = true; } });
         } else if (h.type === 'mine') {
@@ -213,7 +271,7 @@ function update() {
                     h.timer = 5; 
                     if (h.targets.length > 0) {
                         let t = h.targets.pop(); h.launched.push(t);
-                        projectiles.push(new Projectile(h.owner, h.tank.x, h.tank.y - 10, -Math.PI/2, 18, 2, 0, '#fff', 'destro_up', 0));
+                        projectiles.push(new Projectile(this.owner, h.tank.x, h.tank.y - 10, -Math.PI/2, 18, 2, 0, '#fff', 'destro_up', 0));
                         createMuzzleFlash(h.tank.x, h.tank.y - 10, -Math.PI/2, 1.5);
                     }
                     if (h.targets.length === 0) { h.state = 'falling_delay'; h.timer = 48; }
@@ -234,13 +292,85 @@ function update() {
         h.life--; if (h.life <= 0) hazards.splice(i, 1);
     }
 
+    // --- ORION Z-AXIS GRAVITY LIFT PHYSICS LOOP ---
     players.forEach((tank, tIndex) => {
+        if (tank.zHeightActive) {
+            tank.zFrameCounter++;
+            
+            // Check if captured by Orion's active Chronosphere *during* the air animation
+            let insideChronosphere = hazards.some(h => h.type === 'orion_chrono' && h.isFullyCharged && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius);
+            
+            if (insideChronosphere && !tank.chronoIntercepted && tank.zFrameCounter < tank.zMaxDuration) {
+                tank.chronoIntercepted = true;
+                tank.zMaxDuration += 120; // Freeze/extend flight duration for an extra 2.0s
+                tank.zHeight += 150; // Push tank even higher up into sky perspective layers
+                floatingTexts.push({x: tank.x, y: tank.y - 80, text: "TIME-DILATED SUSPENSION!", life: 60, color: '#ff33cc', fontSize: '15px'});
+            }
+
+            // Map a seamless parabole progression arc matrix across duration frames
+            let progress = tank.zFrameCounter / tank.zMaxDuration;
+            
+            if (progress <= 1.0) {
+                if (tank.chronoIntercepted) {
+                    // Hover at maximum distorted height matrix with violent visual shaking offsets
+                    if (progress > 0.2 && progress < 0.8) {
+                        tank.zHeight = tank.zHeightBaseMax + 150 + Math.sin(frameCount * 0.4) * 8;
+                    } else if (progress >= 0.8) {
+                        // Accelerate fall downward from apex
+                        let fallProgress = (progress - 0.8) / 0.2;
+                        tank.zHeight = (tank.zHeightBaseMax + 150) * (1 - fallProgress * fallProgress);
+                    }
+                } else {
+                    // Standard gravity arc profile
+                    tank.zHeight = Math.sin(progress * Math.PI) * tank.zHeightBaseMax;
+                }
+            }
+
+            if (progress >= 1.0 || tank.zHeight <= 0) {
+                // The tank has crashed back down into map geometry coordinates
+                tank.zHeight = 0;
+                tank.zHeightActive = false;
+                tank.stunTimer = 0; // Break freeze state lock
+                
+                if (tank.chronoIntercepted) {
+                    // Massive Wombo Combo execution payload triggered
+                    tank.hp -= 40;
+                    tank.afterStunSlow = 180; // Cripple velocity by 90% for 3s (180 frames)
+                    tank.fireSlowTimer = 180; 
+                    triggerScreenShake(24, 12); // Extreme visual impact vibration
+                    
+                    // Spawn custom particle impact rings and heavy earth crumbles
+                    createParticles(tank.x, tank.y, 35, '#ff33cc', 2.5, 0.8);
+                    createParticles(tank.x, tank.y, 25, '#222222', 4, 1);
+                    
+                    floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ORBITAL ANNIHILATION!", life: 80, color: '#ff33cc', fontSize: '24px'});
+                    
+                    // Introduce a wild spinning animation that tapers off over frames
+                    tank.zRotation = 12.5; 
+                } else {
+                    // Standard Drop execution parameters
+                    tank.hp -= 25;
+                    triggerScreenShake(12, 5);
+                    createParticles(tank.x, tank.y, 15, '#ff33cc', 1.5, 0.5);
+                    floatingTexts.push({x: tank.x, y: tank.y - 40, text: "CRASH LANDING!", life: 60, color: '#ff33cc'});
+                }
+                
+                if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
+            }
+        }
+
+        // Dissipate wild spinning mechanics over ground frames
+        if (!tank.zHeightActive && tank.zRotation > 0.01) {
+            tank.zRotation *= 0.88;
+        }
+
         if (tank.inFireTrail && tank.invulnTimer <= 0) {
             tank.fireTrailTicks++; let multiplier = Math.pow(1.2, Math.floor(tank.fireTrailTicks / 30)); tank.hp -= (1 / 60) * multiplier;
             if (Math.random() < 0.1) createParticles(tank.x, tank.y, 1, '#ff3300', 1.5, 0.3);
             if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
         } else { tank.fireTrailTicks = 0; }
-    });
+    }
+    );
 
     let processedShotgunCasts = [];
 
@@ -248,12 +378,53 @@ function update() {
         let pA = projectiles[i]; if (pA.dead) continue;
         pA.update();
 
-        // 🔴 NEW: Add vibrant red burning trail to empowered Abyss shots
         if (pA.type === 'abyss_rapid_empowered' && frameCount % 2 === 0) {
             createParticles(pA.x, pA.y, 1, '#ff0000', 1.5, 0.3);
         }
 
+        // --- GLOBAL ORION QUANTUM PORTALS WARP MATRIX ---
+        players.forEach(orionTank => {
+            if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
+                // 1. Check if Orion C Projectile collides with either active portal anchor
+                if (pA.type === 'orion_c' && !pA.dead) {
+                    let distToA = Math.hypot(pA.x - orionTank.portalA.x, pA.y - orionTank.portalA.y);
+                    let distToB = Math.hypot(pA.x - orionTank.portalB.x, pA.y - orionTank.portalB.y);
+                    
+                    if (distToA < 25 && !pA.justWarped) {
+                        pA.x = orionTank.portalB.x; pA.y = orionTank.portalB.y;
+                        pA.damage += 5; pA.justWarped = true; // Inject flat portal warp damage buff
+                        createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
+                    } else if (distToB < 25 && !pA.justWarped) {
+                        pA.x = orionTank.portalA.x; pA.y = orionTank.portalA.y;
+                        pA.damage += 5; pA.justWarped = true;
+                        createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
+                    }
+                    if (distToA > 40 && distToB > 40) pA.justWarped = false; // Reset toggle outside exit field parameters
+                }
+                
+                // 2. Check if Orion Tank himself hitches onto the portal transport nodes
+                if (!orionTank.isDead && orionTank.zHeight === 0) {
+                    let distTankToA = Math.hypot(orionTank.x - orionTank.portalA.x, orionTank.y - orionTank.portalA.y);
+                    let distTankToB = Math.hypot(orionTank.x - orionTank.portalB.x, orionTank.y - orionTank.portalB.y);
+                    
+                    if (distTankToA < orionTank.radius && !orionTank.justWarped) {
+                        orionTank.x = orionTank.portalB.x; orionTank.y = orionTank.portalB.y;
+                        orionTank.justWarped = true;
+                        createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
+                    } else if (distTankToB < orionTank.radius && !orionTank.justWarped) {
+                        orionTank.x = orionTank.portalA.x; orionTank.y = orionTank.portalA.y;
+                        orionTank.justWarped = true;
+                        createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
+                    }
+                    if (distTankToA > orionTank.radius + 15 && distTankToB > orionTank.radius + 15) orionTank.justWarped = false;
+                }
+            }
+        });
+
         if (pA.type === 'destro_rocket' || pA.type === 'destro_up') continue;
+
+        // Skip standard ground damage calculations entirely if the target projectile is caught in status lock suspension
+        if (pA.isTimeDilated) continue;
 
         hazards.forEach(h => {
             if (h.type === 'void_orb' && !pA.dead) {
@@ -268,7 +439,6 @@ function update() {
                             hazards.push({ owner: h.owner, type: 'abyss_domain', x: h.x, y: h.y, radius: 170, life: 720, dps: 0.5, tickTimer: 120 });
                             floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
                             
-                            // 🔴 NEW: 50% Cooldown Refund on X when Domain Pops
                             let domainOwner = players.find(p => p.owner === h.owner);
                             if (domainOwner) {
                                 let cdReduction = domainOwner.maxCooldowns.x * 0.5;
@@ -290,6 +460,9 @@ function update() {
         players.forEach((tank, tIndex) => {
             if (pA.owner !== tank.owner && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
                 if (tank.config.id === 'phantom' && tank.isGhost) return;
+
+                // CRITICAL EXCLUSION DEFENSE LAYER: Airborne targets are safe from standard surface level shells
+                if (tank.zHeight > 0) return;
 
                 if (Math.hypot(pA.x - tank.x, pA.y - tank.y) < tank.radius + pA.radius) {
                     let shooter = players.find(p => p.owner === pA.owner);
@@ -314,6 +487,15 @@ function update() {
                             tank.hp -= pA.damage; if (Math.random() < 0.10) { tank.stunTimer = Math.max(tank.stunTimer, 30); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ZAPPED!", life: 40, color: '#00ffff'}); }
                         } else if (pA.type === 'destro_missile') {
                             tank.hp -= pA.damage; tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
+                        } else if (pA.type === 'orion_z_lift') {
+                            // Inject zero gravity suspension payload variables to the hit target tank profile
+                            tank.hp -= pA.damage;
+                            tank.zHeightActive = true;
+                            tank.zFrameCounter = 0;
+                            tank.zMaxDuration = 150; // 2.5 seconds base hangtime at 60fps
+                            tank.zHeightBaseMax = 160; 
+                            tank.chronoIntercepted = false;
+                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ANTI-GRAV LIFT!", life: 50, color: '#ff33cc'});
                         } else if (pA.type === 'abyss_z') {
                             tank.hp -= pA.damage;
                             if (pA.hasBounced) { hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 }); } 
@@ -322,11 +504,9 @@ function update() {
                             tank.hp -= pA.damage;
                             let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
                             tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
-                            
-                            // 🔴 NEW: Abyssal Slow Stacking (max 10 stacks for 80% slow)
                             if (pA.type === 'abyss_rapid_empowered') {
                                 tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1);
-                                tank.abyssSlowTimer = 180; // 3 seconds before expiring
+                                tank.abyssSlowTimer = 180; 
                             }
                         } else { tank.hp -= pA.damage; }
 
@@ -374,6 +554,15 @@ function update() {
 
 function draw() {
     if (gameState === 'MENU' || gameState === 'SELECT') return;
+
+    ctx.save();
+    // Execute structural camera shakes across global viewport coordinates
+    if (screenShakeTimer > 0) {
+        let dx = (Math.random() - 0.5) * screenShakeIntensity;
+        let dy = (Math.random() - 0.5) * screenShakeIntensity;
+        ctx.translate(dx, dy);
+    }
+
     if (images[currentMap.bgImg].complete) ctx.drawImage(images[currentMap.bgImg], 0, 0, canvas.width, canvas.height);
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -401,8 +590,9 @@ function draw() {
             ctx.beginPath(); ctx.arc(0, 0, h.radius, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0, 255, 255, 0.1)'; ctx.fill(); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.stroke();
             if (Math.random() > 0.5) { ctx.beginPath(); ctx.moveTo((Math.random()-0.5)*h.radius, (Math.random()-0.5)*h.radius); ctx.lineTo((Math.random()-0.5)*h.radius, (Math.random()-0.5)*h.radius); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
             ctx.restore();
-        } else if (h.type === 'seraph_emitter') {
-            ctx.beginPath(); ctx.arc(h.x, h.y, h.radius, 0, Math.PI*2); ctx.fillStyle = '#fff'; ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff'; ctx.fill();
+        } else if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
+            for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) projectiles.push(new Projectile(h.owner, h.x, h.y, angle, 6, 3, 1.5, '#00ffff', 'seraph_spark', 1));
+            createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
         } else if (h.type === 'destro_strike_manager' && images.target.complete) {
             h.launched.forEach(t => { let size = 30 + Math.sin(Date.now() / 100) * 5; ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size); });
         } 
@@ -489,6 +679,70 @@ function draw() {
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.fillText(Math.ceil(h.orbHp), h.x, h.y - 30);
             }
         }
+        
+        // --- RENDERING ORION'S CHRONOSPHERE ---
+        else if (h.type === 'orion_chrono') {
+            let age = h.maxLife - h.life;
+            ctx.save(); ctx.translate(h.x, h.y);
+            
+            if (age < 90) {
+                // Phase 1: Charge up ring filling space from inside out
+                let chargeRatio = age / 90;
+                ctx.beginPath(); ctx.arc(0, 0, h.radius * chargeRatio, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 51, 204, 0.12)'; ctx.fill();
+                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 1.5; ctx.stroke();
+            } else {
+                // Phase 2: Active Dilation Field rendering properties
+                ctx.beginPath(); ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+                let pulseGlow = 15 + Math.sin(frameCount * 0.08) * 6;
+                ctx.shadowBlur = pulseGlow; ctx.shadowColor = '#ff33cc';
+                
+                let chronoGrad = ctx.createRadialGradient(0, 0, h.radius * 0.2, 0, 0, h.radius);
+                chronoGrad.addColorStop(0, 'rgba(10, 5, 20, 0.4)');
+                chronoGrad.addColorStop(0.75, 'rgba(255, 51, 204, 0.08)');
+                chronoGrad.addColorStop(1.0, 'rgba(255, 51, 204, 0.4)');
+                
+                ctx.fillStyle = chronoGrad; ctx.fill();
+                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2.5; ctx.stroke();
+                
+                // Draw fast moving clock hand traces inside sphere space
+                ctx.rotate(age * 0.02);
+                ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0, -h.radius + 15);
+                ctx.strokeStyle = 'rgba(255, 51, 204, 0.3)'; ctx.lineWidth = 2; ctx.stroke();
+            }
+            ctx.restore();
+        }
+    });
+
+    // --- DRAWING ORION QUANTUM PORTAL ANCHORS ---
+    players.forEach(p => {
+        if (p.config.id === 'orion' && p.portalA) {
+            ctx.save(); ctx.translate(p.portalA.x, p.portalA.y);
+            ctx.rotate(frameCount * 0.03);
+            ctx.shadowBlur = 15 + Math.sin(frameCount * 0.1) * 5; ctx.shadowColor = '#ff33cc';
+            ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.ellipse(0, 0, 24, 12, 0, 0, Math.PI * 2); ctx.stroke();
+            ctx.fillStyle = '#000000'; ctx.fill();
+            ctx.restore();
+            
+            if (p.portalB) {
+                ctx.save(); ctx.translate(p.portalB.x, p.portalB.y);
+                ctx.rotate(-frameCount * 0.03);
+                ctx.shadowBlur = 15 + Math.sin(frameCount * 0.1) * 5; ctx.shadowColor = '#ff33cc';
+                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.ellipse(0, 0, 24, 12, 0, 0, Math.PI * 2); ctx.stroke();
+                ctx.fillStyle = '#000000'; ctx.fill();
+                ctx.restore();
+                
+                // Draw connecting particle thread lines if both portals are operating
+                if (frameCount % 4 === 0) {
+                    let randRatio = Math.random();
+                    let px = p.portalA.x + (p.portalB.x - p.portalA.x) * randRatio;
+                    let py = p.portalA.y + (p.portalB.y - p.portalA.y) * randRatio;
+                    createParticles(px, py, 1, '#ff33cc', 0.8, 0.2);
+                }
+            }
+        }
     });
 
     players.forEach(p => {
@@ -527,6 +781,8 @@ function draw() {
         ctx.fillStyle = t.color || '#fff'; ctx.globalAlpha = Math.max(0, t.life / 60); ctx.fillText(t.text, t.x, t.y); 
     });
     ctx.globalAlpha = 1.0;
+
+    ctx.restore(); // Restore normal screen transform state back to canvas base variables
 }
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
