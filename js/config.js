@@ -9,7 +9,7 @@ const images = {
 let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
-    // Increased to 30 to account for Abyss assets + new Orion assets
+    // Must reach 30 to account for all base tanks, Abyss assets, and new Orion assets
     if (loadedCount === 30) { 
         const btnStart = document.getElementById('btn-start');
         if (btnStart) {
