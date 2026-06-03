@@ -221,6 +221,13 @@ function update() {
                 projectiles.forEach(proj => {
                     let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
                     if (dist < h.radius && proj.isTimeDilated) {
+                        
+                        // Orion's specific Slingshot payload properties
+                        if (proj.type === 'orion_c') {
+                            proj.damage += 5;
+                            proj.speed *= 1.5; // Extreme Slingshot Acceleration Triggered
+                        }
+
                         // Reflect trajectory angle 180 degrees directly back to sender
                         proj.vx = -Math.cos(proj.angle) * proj.speed;
                         proj.vy = -Math.sin(proj.angle) * proj.speed;
@@ -414,11 +421,19 @@ function update() {
                     
                     if (distToA < 25 && !pA.justWarped) {
                         pA.x = orionTank.portalB.x; pA.y = orionTank.portalB.y;
-                        pA.damage += 5; pA.justWarped = true; // Inject flat portal warp damage buff
+                        pA.damage += 5; 
+                        pA.speed *= 1.25; // Portal Speed Boost Injection
+                        pA.vx = Math.cos(pA.angle) * pA.speed;
+                        pA.vy = Math.sin(pA.angle) * pA.speed;
+                        pA.justWarped = true; 
                         createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
                     } else if (distToB < 25 && !pA.justWarped) {
                         pA.x = orionTank.portalA.x; pA.y = orionTank.portalA.y;
-                        pA.damage += 5; pA.justWarped = true;
+                        pA.damage += 5; 
+                        pA.speed *= 1.25; // Portal Speed Boost Injection
+                        pA.vx = Math.cos(pA.angle) * pA.speed;
+                        pA.vy = Math.sin(pA.angle) * pA.speed;
+                        pA.justWarped = true;
                         createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
                     }
                     if (distToA > 40 && distToB > 40) pA.justWarped = false; // Reset toggle outside exit field parameters
