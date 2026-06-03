@@ -20,10 +20,14 @@ class Tank {
         this.destroSlowTimer = 0;
         this.poisons = []; this.isSlowed = false;
 
+        // Orion Z-Axis rendering variables
+        this.zHeight = 0;
+        this.zRotation = 0;
+
         this.maxCooldowns = { 
             c: config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500))), 
-            x: config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : 8000))), 
-            z: config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000)))
+            x: config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : 8000)))), 
+            z: config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : 10000))))
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
@@ -39,6 +43,13 @@ class Tank {
 
         this.abyssSlowStacks = 0;
         this.abyssSlowTimer = 0;
+
+        // Orion Specific Variables
+        this.zHoldTimer = 0;
+        this.zHeldLastFrame = false;
+        this.portalA = null;
+        this.portalB = null;
+        this.portalTimer = 0;
 
         this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
         this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
@@ -88,12 +99,32 @@ class Tank {
         if (this.phantomMarkTimer > 0) { this.phantomMarkTimer--; if (this.phantomMarkTimer <= 0) this.phantomMarks = 0; }
         if (this.phantomShockTimer > 0) this.phantomShockTimer--;
         
+        // Orion Portal Decay Timer
+        if (this.portalTimer > 0) {
+            this.portalTimer--;
+            if (this.portalTimer <= 0) {
+                this.portalA = null;
+                this.portalB = null;
+                // Start the 18s cooldown NOW, as the portals have expired
+                this.cooldowns.z = Date.now() + 18000;
+            }
+        }
+
         if (this.config.id === 'phantom') {
             if (this.phantomEvasiveTimer > 0) {
                 this.phantomEvasiveTimer--; this.ghostToggleTimer--;
                 if (this.ghostToggleTimer <= 0) { this.isGhost = !this.isGhost; this.ghostToggleTimer = Math.floor(Math.random() * (120 - 30 + 1) + 30); }
                 if (this.phantomEvasiveTimer <= 0) { this.isGhost = false; floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Deactivated", life: 60, color: '#9d00ff'}); }
             } else { this.isGhost = false; }
+        }
+
+        // --- Z-Axis Gravity Lift Effect Handling ---
+        if (this.zHeight > 0) {
+            // Cannot be hit, cannot act, rotates helplessly
+            this.stunTimer = Math.max(this.stunTimer, 2); 
+            this.zRotation += 0.05;
+        } else {
+            this.zRotation = 0;
         }
 
         if (this.kbTimer > 0) {
@@ -112,7 +143,7 @@ class Tank {
             if (this.kbTimer <= 0) this.kbType = null;
         }
 
-        if (this.stunTimer > 0) {
+        if (this.stunTimer > 0 && this.zHeight === 0) {
             this.stunTimer--;
             if (this.stunTimer % 8 === 0) createParticles(this.x + (Math.random()-0.5)*30, this.y + (Math.random()-0.5)*30, 2, '#00ffff', 1.2, 0.4);
         }
@@ -346,6 +377,36 @@ class Tank {
                     this.fireC(now);
                 }
             }
+
+            // Orion Z Logic (Hold vs Tap)
+            if (this.config.id === 'orion') {
+                if (keys[this.controls.z] && now > this.cooldowns.z) {
+                    this.zHoldTimer++;
+                    this.zHeldLastFrame = true;
+                    // Held for 0.25s: Fire Gravity Lift
+                    if (this.zHoldTimer === 15) {
+                        this.recoil = 8;
+                        const tip = this.getTip();
+                        createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
+                        projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 6, 3, '#ff33cc', 'orion_z_lift', 0));
+                        this.cooldowns.z = now + this.maxCooldowns.z; // Gravity Lift instantly triggers the 18s CD
+                    }
+                } else if (!keys[this.controls.z] && this.zHeldLastFrame) {
+                    // Key released before 0.25s: Drop Portal
+                    if (this.zHoldTimer > 0 && this.zHoldTimer < 15 && now > this.cooldowns.z) {
+                        if (!this.portalA) {
+                            this.portalA = { x: this.x, y: this.y };
+                            createParticles(this.x, this.y, 15, '#ff33cc', 2, 0.5);
+                        } else if (!this.portalB) {
+                            this.portalB = { x: this.x, y: this.y };
+                            createParticles(this.x, this.y, 15, '#ff33cc', 2, 0.5);
+                            this.portalTimer = 600; // 10 seconds duration (60 fps * 10)
+                        }
+                    }
+                    this.zHeldLastFrame = false;
+                    this.zHoldTimer = 0;
+                }
+            }
             
             if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
                 if (keys[this.controls.x] && now > this.cooldowns.x && !this.destroLocked) {
@@ -376,8 +437,6 @@ class Tank {
                         orbThrow.startY = this.y;
                         projectiles.push(orbThrow);
                         createMuzzleFlash(this.x, this.y, this.angle, 2.0);
-
-                        // 🔴 NEW: Reduce Z cooldown by 3.5 seconds when Void Orb is thrown
                         this.cooldowns.z -= 3500;
                         if (this.cooldowns.z > Date.now()) {
                             floatingTexts.push({x: this.x, y: this.y - 60, text: "-3.5s Z-CD!", life: 40, color: '#ff0000'});
@@ -392,28 +451,10 @@ class Tank {
                 if (keys[this.controls.x]) { if (!this.xHeld) { this.fireX(now); this.xHeld = true; } } else { this.xHeld = false; }
             }
 
-            if (this.config.id !== 'seraph') { if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now); }
+            // Standard Z Firing for non-Orion tanks
+            if (this.config.id !== 'seraph' && this.config.id !== 'orion') { if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now); }
         }
     }
-
-    checkWallCollisions() {
-        for (let w of currentMap.walls) {
-            let testX = this.x; let testY = this.y;
-            if (this.x < w.x) testX = w.x; else if (this.x > w.x + w.w) testX = w.x + w.w;
-            if (this.y < w.y) testY = w.y; else if (this.y > w.y + w.h) testY = w.y + w.h;
-            let distance = Math.hypot(this.x - testX, this.y - testY);
-            if (distance < this.radius) {
-                let push = this.radius - distance;
-                this.x += ((this.x - testX) / distance) * push; this.y += ((this.y - testY) / distance) * push;
-            }
-        }
-        for (let r of currentMap.rocks) {
-            let dx = this.x - r.x; let dy = this.y - r.y; let dist = Math.hypot(dx, dy);
-            if (dist < this.radius + r.r) { let push = (this.radius + r.r) - dist; this.x += (dx / dist) * push; this.y += (dy / dist) * push; }
-        }
-    }
-
-    getTip() { const offset = (this.config.img.width * 0.12 * this.scaleMod) / 2; return { x: this.x + Math.cos(this.angle)*offset, y: this.y + Math.sin(this.angle)*offset }; }
 
     fireC(now) {
         this.cooldowns.c = now + this.maxCooldowns.c; 
@@ -440,6 +481,10 @@ class Tank {
         } else if (this.config.id === 'phantom') {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
+        } else if (this.config.id === 'orion') {
+            // Orion's Shockwave Missile (Base 4 dmg, bounces 3 times)
+            createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 5, 4, '#ff33cc', 'orion_c', 3));
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
             if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
@@ -465,6 +510,14 @@ class Tank {
     }
 
     fireX(now) {
+        if (this.config.id === 'orion') {
+            if (now < this.cooldowns.x) return;
+            this.cooldowns.x = now + this.maxCooldowns.x;
+            // Spawn Chronosphere Hazard directly on Orion
+            hazards.push({ owner: this.owner, type: 'orion_chrono', x: this.x, y: this.y, radius: 175, life: 300, maxLife: 300 });
+            return;
+        }
+
         if (this.config.id === 'phantom') {
             if (now < this.cooldowns.x) return;
             this.cooldowns.x = now + this.maxCooldowns.x;
@@ -616,7 +669,22 @@ class Tank {
         
         if (this.stunTimer > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 8, 0, Math.PI*2); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3; ctx.stroke(); }
 
-        ctx.save(); ctx.translate(this.x, this.y); 
+        // --- ORION Z-AXIS RENDER ILLUSION ---
+        ctx.save(); 
+        
+        // 1. Draw the shrinking, fading ground shadow exactly at (this.x, this.y)
+        if (this.zHeight > 0) {
+            let shadowScale = Math.max(0.2, 1 - (this.zHeight / 200));
+            let shadowAlpha = Math.max(0.1, 0.6 - (this.zHeight / 300));
+            ctx.beginPath();
+            // Shadow is an ellipse
+            ctx.ellipse(this.x, this.y, this.radius * shadowScale * 1.5, this.radius * shadowScale * 0.8, 0, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha})`;
+            ctx.fill();
+        }
+
+        // 2. Translate the context UP the screen by zHeight to draw the tank sprite
+        ctx.translate(this.x, this.y - this.zHeight); 
         
         if (this.config.id === 'seraph') {
             ctx.save(); ctx.fillStyle = '#222'; ctx.fillRect(-25, -45, 50, 6);
@@ -625,10 +693,20 @@ class Tank {
             ctx.fillRect(-25, -45, (this.energy / 100) * 50, 6); ctx.restore();
         }
 
-        ctx.rotate(this.angle);
+        // Apply visual Z rotation if tumbling in the air
+        ctx.rotate(this.angle + this.zRotation);
+
         ctx.shadowBlur = this.dashState === 2 || this.dashState === 3 ? 30 : 15;
         ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : this.config.color;
-        const w = this.config.img.width * 0.12 * this.scaleMod; const h = this.config.img.height * 0.12 * this.scaleMod;
+        
+        // 3. Temporarily increase scale if airborne (moves closer to camera)
+        let visualScaleMod = this.scaleMod;
+        if (this.zHeight > 0) {
+            visualScaleMod += (this.zHeight / 400); // Maxes out at around 1.5x scale
+        }
+
+        const w = this.config.img.width * 0.12 * visualScaleMod; 
+        const h = this.config.img.height * 0.12 * visualScaleMod;
         
         let imgToDraw = this.config.img;
         if (this.config.id === 'phantom') {
@@ -642,6 +720,11 @@ class Tank {
             }
         }
         
+        // Add artificial drop shadow if airborne to separate from background
+        if (this.zHeight > 0) {
+            ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
+        }
+
         ctx.drawImage(imgToDraw, -w / 2, -h / 2, w, h); 
         ctx.filter = 'none';
         ctx.globalAlpha = 1.0;
