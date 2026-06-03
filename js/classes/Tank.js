@@ -21,7 +21,7 @@ class Tank {
         this.poisons = []; this.isSlowed = false;
 
         this.maxCooldowns = { 
-            c: config.id === 'abyss' ? 1300 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500))), 
+            c: config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500))), 
             x: config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : 8000))), 
             z: config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000)))
         };
@@ -37,12 +37,6 @@ class Tank {
         this.phantomMarks = 0;
         this.phantomMarkTimer = 0;
         this.phantomShockTimer = 0;
-
-        // Abyss specific variables
-        this.abyssCharges = 0;
-        this.abyssCHeldTime = 0;
-        this.isRapidFiring = false;
-        this.rapidFireTimer = 0;
 
         // Pyro Passive & Shields variables
         this.dashCount = 0;
@@ -379,42 +373,24 @@ class Tank {
         if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
             const now = Date.now();
             
-            if (this.config.id === 'abyss') {
-                if (this.isRapidFiring) {
-                    if (this.rapidFireTimer > 0) this.rapidFireTimer--;
+            // Continuous Rapid Fire & Standard C Firing
+            if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
+                if (this.config.id === 'abyss') {
+                    // Extremely low recoil (0.5) so it doesn't push you backward too hard
+                    this.kbX -= Math.cos(this.angle) * 0.5;
+                    this.kbY -= Math.sin(this.angle) * 0.5;
+                    this.kbTimer = 5;
+
+                    const tip = this.getTip();
+                    // Fires the rapid projectile (0.5 Damage)
+                    projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 18, 3, 0.5, '#4a0080', 'abyss_rapid', 0));
+                    createMuzzleFlash(tip.x, tip.y, this.angle, 0.8);
                     
-                    if (keys[this.controls.c] && this.rapidFireTimer <= 0) {
-                        if (this.abyssCharges > 0) {
-                            this.fireAbyssRapid();
-                            this.abyssCharges--;
-                            this.rapidFireTimer = 15; // 0.25 seconds between shots
-                        } 
-                    }
-                    // Exit mode once empty
-                    if (this.abyssCharges <= 0) {
-                        this.isRapidFiring = false;
-                        this.abyssCHeldTime = 0;
-                    }
+                    // Short cooldown for rapid fire (150ms / approx 6-7 shots per second)
+                    this.cooldowns.c = now + 150; 
                 } else {
-                    if (keys[this.controls.c]) {
-                        this.abyssCHeldTime++;
-                        // Enter rapid fire mode if held for 30 frames (0.5s) and we have charges
-                        if (this.abyssCHeldTime === 30 && this.abyssCharges > 0) {
-                            this.isRapidFiring = true;
-                            this.rapidFireTimer = 0; 
-                            this.abyssCHeldTime = 0;
-                            floatingTexts.push({x: this.x, y: this.y - 40, text: "RAPID FIRE ENGAGED!", life: 60, color: '#ff3333'});
-                        }
-                    } else {
-                        // Standard C attack if tapped
-                        if (this.abyssCHeldTime > 0 && this.abyssCHeldTime < 30 && now > this.cooldowns.c && this.burstsLeft === 0) {
-                            this.fireC(now);
-                        }
-                        this.abyssCHeldTime = 0;
-                    }
+                    this.fireC(now);
                 }
-            } else if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
-                this.fireC(now);
             }
             
             if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
@@ -479,14 +455,6 @@ class Tank {
 
     getTip() { const offset = (this.config.img.width * 0.12 * this.scaleMod) / 2; return { x: this.x + Math.cos(this.angle)*offset, y: this.y + Math.sin(this.angle)*offset }; }
 
-    fireAbyssRapid() {
-        this.recoil = 1.5;
-        const tip = this.getTip();
-        createMuzzleFlash(tip.x, tip.y, this.angle, 0.5);
-        // Fires tiny rapid bullets with spread
-        projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 18, 3, 0.5, '#4a0080', 'abyss_rapid', 0));
-    }
-
     fireC(now) {
         this.cooldowns.c = now + this.maxCooldowns.c; 
         
@@ -512,9 +480,6 @@ class Tank {
         } else if (this.config.id === 'phantom') {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
-        } else if (this.config.id === 'abyss') {
-            createMuzzleFlash(tip.x, tip.y, this.angle, 1.2);
-            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 15, 5, 5, '#1a0033', 'abyss_c', 0));
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
             if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
