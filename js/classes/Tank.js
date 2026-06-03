@@ -21,11 +21,10 @@ class Tank {
         this.poisons = []; this.isSlowed = false;
 
         this.maxCooldowns = { 
-            c: config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500)), 
-            x: config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : 8000)), 
-            z: config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000))
+            c: config.id === 'abyss' ? 1300 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500))), 
+            x: config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : 8000))), 
+            z: config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : 10000)))
         };
-        // Reverted to standard single C cooldown
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
         this.hookState = 'ready'; this.hookTarget = null; this.hookTimer = 0; this.activeArrow = null; 
@@ -35,11 +34,15 @@ class Tank {
         this.phantomEvasiveTimer = 0;
         this.isGhost = false;
         this.ghostToggleTimer = 0;
-
-        // Phantom Passive Marks variables
         this.phantomMarks = 0;
         this.phantomMarkTimer = 0;
         this.phantomShockTimer = 0;
+
+        // Abyss specific variables
+        this.abyssCharges = 0;
+        this.abyssCHeldTime = 0;
+        this.isRapidFiring = false;
+        this.rapidFireTimer = 0;
 
         // Pyro Passive & Shields variables
         this.dashCount = 0;
@@ -92,7 +95,7 @@ class Tank {
 
         if (Math.abs(angleDiff) < 0.3 && dist < 650) {
             keys[this.controls.c] = true; 
-            if (this.config.id === 'destroyer') {
+            if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
                 if (this.destroAiming) {
                     keys[this.controls.x] = true;
                     if (this.destroAimDist >= dist - 40) keys[this.controls.x] = false;
@@ -113,7 +116,6 @@ class Tank {
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
         
-        // Update Phantom Passive Timers
         if (this.phantomMarkTimer > 0) {
             this.phantomMarkTimer--;
             if (this.phantomMarkTimer <= 0) this.phantomMarks = 0;
@@ -377,12 +379,45 @@ class Tank {
         if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
             const now = Date.now();
             
-            // Reverted back to a standard C trigger
-            if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
+            if (this.config.id === 'abyss') {
+                if (this.isRapidFiring) {
+                    if (this.rapidFireTimer > 0) this.rapidFireTimer--;
+                    
+                    if (keys[this.controls.c] && this.rapidFireTimer <= 0) {
+                        if (this.abyssCharges > 0) {
+                            this.fireAbyssRapid();
+                            this.abyssCharges--;
+                            this.rapidFireTimer = 15; // 0.25 seconds between shots
+                        } 
+                    }
+                    // Exit mode once empty
+                    if (this.abyssCharges <= 0) {
+                        this.isRapidFiring = false;
+                        this.abyssCHeldTime = 0;
+                    }
+                } else {
+                    if (keys[this.controls.c]) {
+                        this.abyssCHeldTime++;
+                        // Enter rapid fire mode if held for 30 frames (0.5s) and we have charges
+                        if (this.abyssCHeldTime === 30 && this.abyssCharges > 0) {
+                            this.isRapidFiring = true;
+                            this.rapidFireTimer = 0; 
+                            this.abyssCHeldTime = 0;
+                            floatingTexts.push({x: this.x, y: this.y - 40, text: "RAPID FIRE ENGAGED!", life: 60, color: '#ff3333'});
+                        }
+                    } else {
+                        // Standard C attack if tapped
+                        if (this.abyssCHeldTime > 0 && this.abyssCHeldTime < 30 && now > this.cooldowns.c && this.burstsLeft === 0) {
+                            this.fireC(now);
+                        }
+                        this.abyssCHeldTime = 0;
+                    }
+                }
+            } else if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
                 this.fireC(now);
             }
             
-            if (this.config.id === 'destroyer') {
+            if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
                 if (keys[this.controls.x] && now > this.cooldowns.x && !this.destroLocked) {
                     this.destroAiming = true;
                     this.destroAimDist = Math.min(600, this.destroAimDist + 6);
@@ -390,13 +425,28 @@ class Tank {
                 } else if (!keys[this.controls.x] && this.destroAiming) {
                     this.destroAiming = false;
                     this.cooldowns.x = now + this.maxCooldowns.x;
-                    let targets = [];
-                    let cx = this.x + Math.cos(this.angle) * this.destroAimDist; let cy = this.y + Math.sin(this.angle) * this.destroAimDist;
-                    for(let i=0; i<8; i++) {
-                        let r = Math.random() * 80; let a = Math.random() * Math.PI * 2;
-                        targets.push({x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r});
+                    
+                    if (this.config.id === 'destroyer') {
+                        let targets = [];
+                        let cx = this.x + Math.cos(this.angle) * this.destroAimDist; let cy = this.y + Math.sin(this.angle) * this.destroAimDist;
+                        for(let i=0; i<8; i++) {
+                            let r = Math.random() * 80; let a = Math.random() * Math.PI * 2;
+                            targets.push({x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r});
+                        }
+                        hazards.push({ owner: this.owner, type: 'destro_strike_manager', targets: targets, launched: [], timer: 0, state: 'launching', tank: this, life: 9999 });
+                    } else if (this.config.id === 'abyss') {
+                        let targetX = this.x + Math.cos(this.angle) * this.destroAimDist;
+                        let targetY = this.y + Math.sin(this.angle) * this.destroAimDist;
+                        
+                        let orbThrow = new Projectile(this.owner, this.x, this.y, this.angle, 15, 0, 0, '#1a0033', 'abyss_orb_throw', 0);
+                        orbThrow.targetX = targetX;
+                        orbThrow.targetY = targetY;
+                        orbThrow.throwDist = this.destroAimDist;
+                        orbThrow.startX = this.x;
+                        orbThrow.startY = this.y;
+                        projectiles.push(orbThrow);
+                        createMuzzleFlash(this.x, this.y, this.angle, 2.0);
                     }
-                    hazards.push({ owner: this.owner, type: 'destro_strike_manager', targets: targets, launched: [], timer: 0, state: 'launching', tank: this, life: 9999 });
                     this.destroAimDist = 100;
                 }
                 
@@ -429,8 +479,15 @@ class Tank {
 
     getTip() { const offset = (this.config.img.width * 0.12 * this.scaleMod) / 2; return { x: this.x + Math.cos(this.angle)*offset, y: this.y + Math.sin(this.angle)*offset }; }
 
+    fireAbyssRapid() {
+        this.recoil = 1.5;
+        const tip = this.getTip();
+        createMuzzleFlash(tip.x, tip.y, this.angle, 0.5);
+        // Fires tiny rapid bullets with spread
+        projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 18, 3, 0.5, '#4a0080', 'abyss_rapid', 0));
+    }
+
     fireC(now) {
-        // Set cooldown.c for ALL tanks again
         this.cooldowns.c = now + this.maxCooldowns.c; 
         
         this.recoil = 4; const tip = this.getTip();
@@ -453,9 +510,11 @@ class Tank {
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
             }
         } else if (this.config.id === 'phantom') {
-            // Only fire the bounce shot now
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
+        } else if (this.config.id === 'abyss') {
+            createMuzzleFlash(tip.x, tip.y, this.angle, 1.2);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 15, 5, 5, '#1a0033', 'abyss_c', 0));
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
             if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
@@ -489,7 +548,6 @@ class Tank {
             createMuzzleFlash(tip.x, tip.y, this.angle, 2);
             for (let i = 0; i < 5; i++) {
                 let spreadAngle = this.angle - 0.3 + (0.6 / 4) * i;
-                // Added the 'now' argument here to group the shotgun pellets by Cast ID
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, spreadAngle, 16, 3, 1.5, '#9d00ff', 'phantom_sg', 0, now));
             }
             return;
@@ -549,7 +607,7 @@ class Tank {
             this.recoil = 12; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 3);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 9, 8, 15, '#8a2be2', 'missile', 0));
         } else if (this.config.id === 'pyro') {
-            this.dashState = 1; this.dashTimer = 18; // 0.3s delay
+            this.dashState = 1; this.dashTimer = 18; 
             this.dashCount++;
             if (this.dashCount % 3 === 0) this.activateFireShield();
         } else if (this.config.id === 'scorpion') {
@@ -558,6 +616,9 @@ class Tank {
         } else if (this.config.id === 'destroyer') {
             this.recoil = 10; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 3.0);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 10, 20, '#ff0000', 'destro_missile', 0));
+        } else if (this.config.id === 'abyss') {
+            this.recoil = 8; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 6, 4, '#000000', 'abyss_z', 1)); // 1 Bounce
         }
     }
 
@@ -583,9 +644,11 @@ class Tank {
             ctx.restore();
         }
 
-        if (this.config.id === 'destroyer' && this.destroAiming) {
+        if ((this.config.id === 'destroyer' || this.config.id === 'abyss') && this.destroAiming) {
+            let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : 'rgba(255, 0, 0, 0.1)';
+            let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : 'rgba(255, 0, 0, 0.6)';
             ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 80, 0, Math.PI*2);
-            ctx.fillStyle = 'rgba(255, 0, 0, 0.1)'; ctx.fill(); ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = aimColor; ctx.fill(); ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke();
             ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist);
             ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]);
         }
@@ -603,7 +666,6 @@ class Tank {
             ctx.restore();
         }
 
-        // Draw Phantom Purple Shock Effect
         if (this.phantomShockTimer > 0) {
             ctx.save();
             for(let i=0; i<3; i++) {
@@ -617,12 +679,10 @@ class Tank {
             ctx.restore();
         }
 
-        // Draw Phantom Mark Icons (Larger and glowing on 2nd stack)
         if (this.phantomMarks === 1 && images.phantomp && images.phantomp.complete) {
             ctx.drawImage(images.phantomp, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32);
         } else if (this.phantomMarks === 2 && images.phantomp2 && images.phantomp2.complete) {
             ctx.save();
-            // Pulsing glow effect
             ctx.shadowBlur = 15 + Math.sin(Date.now() / 150) * 10;
             ctx.shadowColor = '#9d00ff'; 
             ctx.drawImage(images.phantomp2, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32);
