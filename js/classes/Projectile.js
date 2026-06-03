@@ -8,7 +8,7 @@ class Projectile {
         this.dead = false; this.isFifth = false; 
         this.projectileHp = type === 'mg' ? 1 : 3;
         this.castId = castId; 
-        this.hasBounced = false; // Tracks if the projectile has ricocheted (Crucial for Abyss Z skill)
+        this.hasBounced = false; 
     }
 
     update() {
@@ -32,11 +32,9 @@ class Projectile {
             return;
         }
 
-        // Abyss X Skill Flight Path
         if (this.type === 'abyss_orb_throw') {
             createParticles(this.x, this.y, 2, '#1a0033', 2, 0.3);
             this.x += this.vx; this.y += this.vy;
-            // Check if it reached the target reticle distance
             if (Math.hypot(this.x - this.startX, this.y - this.startY) >= this.throwDist) {
                 this.x = this.startX + Math.cos(this.angle) * this.throwDist;
                 this.y = this.startY + Math.sin(this.angle) * this.throwDist;
@@ -108,7 +106,7 @@ class Projectile {
         }
 
         if (collided) {
-            this.hasBounced = true; // Sets flag for Abyss Z skill
+            this.hasBounced = true; 
             if (this.bounces > 0) { this.angle = Math.atan2(this.vy, this.vx); this.bounces--; } 
             else { this.triggerExplosion(); }
         } else if (this.life <= 0 && !this.dead) { this.triggerExplosion(); }
@@ -124,7 +122,6 @@ class Projectile {
             }
         }
 
-        // Particle generation on explosion
         if (this.type === 'mg' || this.type === 'bullet') {
             createParticles(this.x, this.y, 4, '#fff', 1, 0.3);
         } else if (this.type === 'toxic_bullet' || this.type === 'arrow') {
@@ -158,19 +155,17 @@ class Projectile {
             createParticles(this.x, this.y, 8, '#9d00ff', 1.5, 0.5);
             if (this.type === 'phantom_bounce') createKaboom(this.x, this.y, 1.0);
         } else if (this.type === 'abyss_orb_throw') {
-            // AoE Effect for Abyss X Landing
             players.forEach(tank => {
                 if (tank.owner !== this.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 75) {
                         tank.hp -= 3;
                         tank.isSlowed = true;
-                        tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 240); // 4 second slow (240 frames)
+                        tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 240); 
                         floatingTexts.push({x: tank.x, y: tank.y - 40, text: "GRAVITY CRUSH!", life: 50, color: '#ff0000'});
                     }
                 }
             });
-            // Spawn visual boom and deploy the physical Void Orb
-            hazards.push({ owner: this.owner, type: 'dark_boom', x: this.x, y: this.y, radius: 0, life: 150 });
+            hazards.push({ owner: this.owner, type: 'dark_boom', x: this.x, y: this.y, radius: 0, life: 150, maxLife: 150 });
             hazards.push({ owner: this.owner, type: 'void_orb', x: this.x, y: this.y, radius: 25, life: 999999, orbHp: 15 });
         } else if (this.type.startsWith('abyss_')) {
             createParticles(this.x, this.y, 8, '#4a0080', 1.5, 0.5);
@@ -246,10 +241,14 @@ class Projectile {
             ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000';
             ctx.drawImage(images.abyssOrb, -w/2, -h/2, w, h);
         } else if ((this.type === 'abyss_c' || this.type === 'abyss_rapid') && images.abyssProj.complete) {
-            const scale = this.type === 'abyss_rapid' ? 0.08 : 0.15; 
+            // FIX: Drastically reduced scale for smaller bolts
+            const scale = this.type === 'abyss_rapid' ? 0.05 : 0.09; 
             const w = images.abyssProj.width * scale;
             const h = images.abyssProj.height * scale;
             ctx.shadowBlur = 10; ctx.shadowColor = '#4a0080';
+            
+            // FIX: Flip the asset 180 degrees so it faces forward
+            ctx.rotate(Math.PI); 
             ctx.drawImage(images.abyssProj, -w/2, -h/2, w, h);
         } else if (this.type === 'abyss_z') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
