@@ -54,6 +54,7 @@ images.phantomp2.onload = onAssetLoad; images.phantomp2.src = 'assets/Phantomp2.
 // Abyss Assets
 images.abyssOrb.onload = onAssetLoad; images.abyssOrb.src = 'assets/AbyssOrbFinal.png';
 images.abyssProj.onload = onAssetLoad; images.abyssProj.src = 'assets/AbyssProjectile.png';
+images.auraThing.onload = onAssetLoad; images.auraThing.src = 'assets/aurathing.png';
 
 // --- GAME CONFIG & DATA ---
 const tanksData = [
