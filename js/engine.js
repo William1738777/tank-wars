@@ -77,6 +77,12 @@ function handleDeath(loserIndex) {
             loser.phantomMarks = 0;
             loser.phantomMarkTimer = 0;
             loser.phantomShockTimer = 0;
+
+            // Reset Abyss specials
+            loser.abyssCharges = 0;
+            loser.abyssCHeldTime = 0;
+            loser.isRapidFiring = false;
+            loser.rapidFireTimer = 0;
             
             updateHUD();
         }, 1500); 
@@ -200,6 +206,57 @@ function update() {
                 }
             }
         }
+
+        // --- ABYSS BLACK HOLE ---
+        if (h.type === 'black_hole') {
+            players.forEach(tank => {
+                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                    let dx = h.x - tank.x; let dy = h.y - tank.y;
+                    let dist = Math.hypot(dx, dy);
+                    if (dist < h.radius) {
+                        tank.x += (dx / dist) * 2; // Pull inward
+                        tank.y += (dy / dist) * 2;
+                        tank.hp -= 1 / 60; // 1 DMG per second
+                    }
+                }
+            });
+            if (h.life <= 1) { // Trigger boom on expire
+                hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 150, maxLife: 150 });
+                players.forEach(tank => {
+                    if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0 && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
+                        tank.hp -= 5; // 5 Burst Damage
+                        floatingTexts.push({x: tank.x, y: tank.y - 40, text: "EVENT HORIZON!", life: 50, color: '#ff0000'});
+                    }
+                });
+            }
+        }
+
+        // --- ABYSSAL DOMAIN ---
+        if (h.type === 'abyss_domain') {
+            h.tickTimer--;
+            players.forEach(tank => {
+                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
+                        tank.hp -= h.dps / 60; // Continuous scaling damage
+                        if (h.tickTimer <= 0) {
+                            tank.hp -= 2; // Pulse Damage
+                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "DOMAIN BURST!", life: 40, color: '#ff3333'});
+                        }
+                    }
+                }
+            });
+
+            if (h.tickTimer <= 0) {
+                h.dps *= 2; // Double damage every 2 seconds
+                h.tickTimer = 120; // Reset 2s timer
+                h.shockwaves = h.shockwaves || [];
+                h.shockwaves.push({ life: 60, maxLife: 60 });
+            }
+            if (h.shockwaves) {
+                h.shockwaves.forEach(s => s.life--);
+                h.shockwaves = h.shockwaves.filter(s => s.life > 0);
+            }
+        }
         
         h.life--; if (h.life <= 0) hazards.splice(i, 1);
     }
@@ -217,7 +274,6 @@ function update() {
         }
     });
 
-    // Array to track which shotgun casts have already applied a mark this frame
     let processedShotgunCasts = [];
 
     for (let i = 0; i < projectiles.length; i++) {
@@ -226,6 +282,40 @@ function update() {
 
         if (pA.type === 'destro_rocket' || pA.type === 'destro_up') continue;
 
+        // Projectile vs Hazard (Void Orb Interception)
+        hazards.forEach(h => {
+            if (h.type === 'void_orb' && !pA.dead) {
+                if (Math.hypot(pA.x - h.x, pA.y - h.y) < h.radius + pA.radius) {
+                    if (pA.type === 'abyss_z') {
+                        // Z Bounce triggers Black Hole
+                        hazards.push({ owner: pA.owner, type: 'black_hole', x: h.x, y: h.y, radius: 150, life: 240 });
+                        pA.triggerExplosion();
+                        h.life = 0;
+                    } else if (pA.type === 'abyss_rapid' && pA.owner === h.owner) {
+                        // Stacking rapid fire hits
+                        h.orbHp -= 1;
+                        pA.triggerExplosion();
+                        createParticles(h.x, h.y, 3, '#ff0000', 1.5, 0.3);
+                        if (h.orbHp <= 0) {
+                            h.life = 0;
+                            hazards.push({ owner: h.owner, type: 'abyss_domain', x: h.x, y: h.y, radius: 170, life: 720, dps: 0.5, tickTimer: 120 });
+                            floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
+                        }
+                    } else if (pA.owner !== h.owner) {
+                        // Enemy counterplay destroys orb
+                        h.orbHp -= pA.damage;
+                        pA.triggerExplosion();
+                        if (h.orbHp <= 0) {
+                            h.life = 0;
+                            createKaboom(h.x, h.y, 1.5);
+                            floatingTexts.push({x: h.x, y: h.y - 40, text: "ORB DESTROYED!", life: 50, color: '#777'});
+                        }
+                    }
+                }
+            }
+        });
+
+        // Projectile vs Player
         players.forEach((tank, tIndex) => {
             if (pA.owner !== tank.owner && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
                 
@@ -262,52 +352,48 @@ function update() {
                             if (Math.random() < 0.10) { tank.stunTimer = Math.max(tank.stunTimer, 30); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ZAPPED!", life: 40, color: '#00ffff'}); }
                         } else if (pA.type === 'destro_missile') {
                             tank.hp -= pA.damage; tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
+                        } else if (pA.type === 'abyss_z') {
+                            tank.hp -= pA.damage;
+                            if (pA.hasBounced) {
+                                hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 });
+                            } else {
+                                tank.isSlowed = true;
+                                tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 180); // 3 seconds
+                            }
+                        } else if (pA.type === 'abyss_rapid') {
+                            tank.hp -= pA.damage;
+                            let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
+                            tank.kbX = Math.cos(angle) * 1.5; tank.kbY = Math.sin(angle) * 1.5; tank.kbTimer = 5;
                         } else { 
                             tank.hp -= pA.damage; 
                         }
 
-                        // Apply Phantom Cooldown Refunds and Marks
+                        // Phantom Refunds and Marks
                         if (shooter && shooter.config.id === 'phantom') {
-                            // Cooldown Refunds
-                            if (pA.type === 'phantom_bounce') {
-                                shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); 
-                            }
-                            if (pA.type === 'phantom_sg') {
-                                shooter.cooldowns.c -= 500; 
-                            }
+                            if (pA.type === 'phantom_bounce') shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); 
+                            if (pA.type === 'phantom_sg') shooter.cooldowns.c -= 500; 
                             shooter.cooldowns.x -= 1000;
 
-                            // Mark Application Logic
                             let applyMark = false;
                             if (pA.type === 'phantom_bounce') {
                                 applyMark = true;
                             } else if (pA.type === 'phantom_sg') {
-                                // Ensure only one mark is applied per shotgun cast
-                                if (!processedShotgunCasts.includes(pA.castId)) {
-                                    applyMark = true;
-                                    processedShotgunCasts.push(pA.castId);
-                                }
+                                if (!processedShotgunCasts.includes(pA.castId)) { applyMark = true; processedShotgunCasts.push(pA.castId); }
                             }
 
                             if (applyMark) {
-                                tank.phantomMarkTimer = 300; // Reset 5-second decay (60fps * 5)
-                                tank.phantomMarks++;
-
+                                tank.phantomMarkTimer = 300; tank.phantomMarks++;
                                 if (tank.phantomMarks >= 3) {
-                                    tank.hp -= 5; // The burst damage
-                                    tank.phantomMarks = 0; // Reset marks
-                                    tank.phantomShockTimer = 30; // 0.5s visual shock effect
-                                    floatingTexts.push({
-                                        x: tank.x, 
-                                        y: tank.y - 55, 
-                                        text: "PLASMA ELECTROCUTION!", 
-                                        life: 60, 
-                                        color: '#9d00ff', 
-                                        fontSize: '14px' // Used custom fontSize property
-                                    });
+                                    tank.hp -= 5; tank.phantomMarks = 0; tank.phantomShockTimer = 30; 
+                                    floatingTexts.push({ x: tank.x, y: tank.y - 55, text: "PLASMA ELECTROCUTION!", life: 60, color: '#9d00ff', fontSize: '14px' });
                                     createParticles(tank.x, tank.y, 10, '#9d00ff', 2, 0.5);
                                 }
                             }
+                        }
+
+                        // Abyss Stacking Mechanic
+                        if (shooter && shooter.config.id === 'abyss') {
+                            shooter.abyssCharges = Math.min(50, (shooter.abyssCharges || 0) + 1);
                         }
                     }
 
@@ -371,6 +457,90 @@ function draw() {
             ctx.beginPath(); ctx.arc(h.x, h.y, h.radius, 0, Math.PI*2); ctx.fillStyle = '#fff'; ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff'; ctx.fill();
         } else if (h.type === 'destro_strike_manager' && images.target.complete) {
             h.launched.forEach(t => { let size = 30 + Math.sin(Date.now() / 100) * 5; ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size); });
+        } 
+        // --- ABYSS VISUAL TRANSLATIONS ---
+        else if (h.type === 'black_hole') {
+            let scale = Math.min(1, (240 - h.life) / 30); // Grow in
+            ctx.save(); ctx.translate(h.x, h.y);
+            // Event Horizon Floor Shadow
+            let grad = ctx.createRadialGradient(0, 0, 10, 0, 0, 150 * scale);
+            grad.addColorStop(0, '#000'); grad.addColorStop(0.3, 'rgba(15, 0, 0, 0.9)'); grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, 150 * scale, 0, Math.PI * 2); ctx.fill();
+            
+            // Accretion Disk (Tilted and Spinning)
+            ctx.rotate(Date.now() / 200);
+            ctx.scale(1, 0.4); 
+            ctx.strokeStyle = 'rgba(255, 20, 20, 0.4)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(0, 0, 120 * scale, 0, Math.PI * 2); ctx.stroke();
+            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 80 * scale, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+
+            // Core Void Orb
+            if (images.abyssOrb.complete) {
+                ctx.save(); ctx.translate(h.x, h.y);
+                ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000';
+                ctx.globalCompositeOperation = 'difference'; // Make it absorb light
+                ctx.drawImage(images.abyssOrb, -40 * scale, -40 * scale, 80 * scale, 80 * scale);
+                ctx.restore();
+            }
+        } else if (h.type === 'dark_boom') {
+            let p = 1 - (h.life / h.maxLife); 
+            ctx.save(); ctx.translate(h.x, h.y);
+            // Ambient Flash
+            if (p < 0.2) { ctx.fillStyle = `rgba(255,0,0,${1 - p*5})`; ctx.beginPath(); ctx.arc(0,0,300, 0, Math.PI*2); ctx.fill(); }
+            // Red Shockwave Ring
+            ctx.strokeStyle = `rgba(139,0,0,${1 - p})`; ctx.lineWidth = 10 * (1 - p); ctx.beginPath(); ctx.arc(0,0,150 * p, 0, Math.PI*2); ctx.stroke();
+            // Core Black/Red Blast
+            let cRadius = p < 0.3 ? p * 200 : 60 * (1 - p);
+            ctx.fillStyle = p < 0.1 ? '#fff' : '#000';
+            ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000';
+            ctx.beginPath(); ctx.arc(0,0, cRadius, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+        } else if (h.type === 'void_orb') {
+            if (images.abyssOrb.complete) {
+                ctx.save(); ctx.translate(h.x, h.y);
+                ctx.rotate(Date.now() / 500);
+                ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000';
+                ctx.drawImage(images.abyssOrb, -20, -20, 40, 40);
+                ctx.restore();
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; 
+                ctx.fillText(Math.ceil(h.orbHp), h.x, h.y - 30);
+            }
+        } else if (h.type === 'abyss_domain') {
+            ctx.save(); ctx.translate(h.x, h.y);
+            // Floor Aura
+            let gradD = ctx.createRadialGradient(0,0,20, 0,0,h.radius);
+            gradD.addColorStop(0, 'rgba(0,0,0,0.98)'); gradD.addColorStop(0.35, 'rgba(15,0,0,0.8)'); gradD.addColorStop(1, 'transparent');
+            ctx.fillStyle = gradD; ctx.beginPath(); ctx.arc(0,0,h.radius, 0, Math.PI*2); ctx.fill();
+            
+            // Domain Shockwaves
+            if (h.shockwaves) {
+                h.shockwaves.forEach(s => {
+                    let sp = 1 - (s.life / s.maxLife);
+                    ctx.strokeStyle = `rgba(255,0,0,${1 - sp})`; ctx.lineWidth = 15 * (1 - sp); ctx.beginPath(); ctx.arc(0,0,h.radius * sp, 0, Math.PI*2); ctx.stroke();
+                });
+            }
+
+            // Tilted Tumbling Rings
+            let time = Date.now() / 1000;
+            for(let i=1; i<=3; i++) {
+                ctx.save();
+                ctx.scale(1, 0.5); 
+                ctx.rotate(time * i + Math.sin(time)); // Morphing wobble
+                ctx.strokeStyle = i % 2 === 0 ? '#8b0000' : '#ff0000'; 
+                ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0,0,60 + i*30, 0, Math.PI*2); ctx.stroke();
+                ctx.restore();
+            }
+
+            // Dark Barrier Shell (Half-Dome)
+            ctx.beginPath(); ctx.arc(0, 0, h.radius * 0.8, Math.PI, 0); 
+            ctx.fillStyle = 'rgba(5, 0, 0, 0.8)'; ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)'; ctx.lineWidth = 2; ctx.stroke();
+
+            // Core
+            if (images.abyssOrb.complete) {
+                ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000'; ctx.drawImage(images.abyssOrb, -35, -35, 70, 70);
+            }
+            ctx.restore();
         }
     });
 
@@ -406,7 +576,7 @@ function draw() {
 
     ctx.textAlign = 'center';
     floatingTexts.forEach(t => { 
-        ctx.font = t.fontSize ? `bold ${t.fontSize} sans-serif` : 'bold 20px sans-serif'; // Apply custom fontSize if it exists
+        ctx.font = t.fontSize ? `bold ${t.fontSize} sans-serif` : 'bold 20px sans-serif'; 
         ctx.fillStyle = t.color || '#fff'; 
         ctx.globalAlpha = Math.max(0, t.life / 60); 
         ctx.fillText(t.text, t.x, t.y); 
