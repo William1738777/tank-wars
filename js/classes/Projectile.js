@@ -2,7 +2,14 @@ class Projectile {
     constructor(owner, x, y, angle, speed, radius, damage, color, type, bounces, castId = null) {
         this.owner = owner; this.x = x; this.y = y; this.angle = angle;
         this.vx = Math.cos(angle)*speed; this.vy = Math.sin(angle)*speed;
+        
+        // Added for Orion's Chronosphere tracking
+        this.originalVx = this.vx;
+        this.originalVy = this.vy;
+        this.isTimeDilated = false; 
+
         this.speed = speed; this.radius = radius; this.damage = damage; 
+        this.baseDamage = damage; // Used to track bonus damage for Orion
         this.color = color; this.type = type; this.bounces = bounces;
         this.life = type === 'missile' ? 70 : (type === 'arrow' ? 45 : 999); 
         this.dead = false; this.isFifth = false; 
@@ -65,6 +72,11 @@ class Projectile {
             createParticles(this.x, this.y, 1, 'rgba(157, 0, 255, 0.5)', 2, 0.3);
         } else if (this.type.startsWith('abyss_')) {
             createParticles(this.x, this.y, 1, 'rgba(74, 0, 128, 0.6)', 2, 0.3);
+        } else if (this.type === 'orion_c') {
+            createParticles(this.x, this.y, 1, 'rgba(255, 51, 204, 0.5)', 2, 0.2);
+        } else if (this.type === 'orion_z_lift') {
+            createParticles(this.x, this.y, 2, '#000000', 2, 0.3);
+            createParticles(this.x, this.y, 1, '#ff33cc', 1.5, 0.2);
         } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
             createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
         }
@@ -107,7 +119,16 @@ class Projectile {
 
         if (collided) {
             this.hasBounced = true; 
-            if (this.bounces > 0) { this.angle = Math.atan2(this.vy, this.vx); this.bounces--; } 
+            if (this.bounces > 0) { 
+                this.angle = Math.atan2(this.vy, this.vx); 
+                this.bounces--; 
+                
+                // Orion C Bounce Logic: +2 Damage per bounce, accompanied by a visual spark
+                if (this.type === 'orion_c') {
+                    this.damage += 2;
+                    createParticles(this.x, this.y, 5, '#ff33cc', 1.5, 0.4);
+                }
+            } 
             else { this.triggerExplosion(); }
         } else if (this.life <= 0 && !this.dead) { this.triggerExplosion(); }
     }
@@ -169,6 +190,12 @@ class Projectile {
             hazards.push({ owner: this.owner, type: 'void_orb', x: this.x, y: this.y, radius: 25, life: 999999, orbHp: 15 });
         } else if (this.type.startsWith('abyss_')) {
             createParticles(this.x, this.y, 8, '#4a0080', 1.5, 0.5);
+        } else if (this.type === 'orion_c') {
+            createKaboom(this.x, this.y, 1.2);
+            createParticles(this.x, this.y, 10, '#ff33cc', 1.5, 0.4);
+        } else if (this.type === 'orion_z_lift') {
+            createParticles(this.x, this.y, 15, '#ff33cc', 2, 0.5);
+            createParticles(this.x, this.y, 10, '#000000', 3, 0.5);
         } else {
             createKaboom(this.x, this.y, this.type === 'missile' ? 1.5 : 1.0);
         }
@@ -241,19 +268,30 @@ class Projectile {
             ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000';
             ctx.drawImage(images.abyssOrb, -w/2, -h/2, w, h);
         } else if ((this.type === 'abyss_c' || this.type === 'abyss_rapid') && images.abyssProj.complete) {
-            // FIX: Drastically reduced scale for smaller bolts
             const scale = this.type === 'abyss_rapid' ? 0.05 : 0.09; 
             const w = images.abyssProj.width * scale;
             const h = images.abyssProj.height * scale;
             ctx.shadowBlur = 10; ctx.shadowColor = '#4a0080';
-            
-            // FIX: Flip the asset 180 degrees so it faces forward
             ctx.rotate(Math.PI); 
             ctx.drawImage(images.abyssProj, -w/2, -h/2, w, h);
         } else if (this.type === 'abyss_z') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = '#000000'; ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000'; ctx.fill();
             ctx.strokeStyle = '#4a0080'; ctx.lineWidth = 2; ctx.stroke();
+        } else if (this.type === 'orion_c' && images.orionProj.complete) {
+            const scale = 0.15; 
+            const w = images.orionProj.width * scale;
+            const h = images.orionProj.height * scale;
+            
+            // Dynamic glow intensity: increases based on how many bounce damage stacks it has
+            let damageBonus = this.damage - (this.baseDamage || 4);
+            ctx.shadowBlur = 10 + (damageBonus * 3); 
+            ctx.shadowColor = '#ff33cc';
+            ctx.drawImage(images.orionProj, -w/2, -h/2, w, h);
+        } else if (this.type === 'orion_z_lift') {
+            ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
+            ctx.fillStyle = '#000000'; ctx.shadowBlur = 15; ctx.shadowColor = '#ff33cc'; ctx.fill();
+            ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2; ctx.stroke();
         } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = this.color; ctx.shadowBlur = 10; ctx.shadowColor = this.color; ctx.fill();
