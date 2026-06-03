@@ -80,6 +80,7 @@ const tanksData = [
 const sfx = {
     basicShot: new Audio('assets/TankBasicShot.mp3'),
     tankHit: new Audio('assets/TankHit.mp3'),
+    orionX: new Audio('assets/OrionX.mp3'),
     cluster: new Audio('assets/Cluster.mp3')
 };
 
