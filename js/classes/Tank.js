@@ -537,7 +537,7 @@ class Tank {
             this.cooldowns.x = now + this.maxCooldowns.x;
             setTimeout(() => {
             playSound(sfx.orionX);
-        }, 2500);
+        }, 2300);
             // Spawn Chronosphere Hazard directly on Orion
             hazards.push({ owner: this.owner, type: 'orion_chrono', x: this.x, y: this.y, radius: 175, life: 300, maxLife: 300 });
             return;
