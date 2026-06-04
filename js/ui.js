@@ -13,20 +13,34 @@ function startMode(mode) {
     document.getElementById('sp-menu').style.display = 'none';
     document.getElementById('select-screen').style.display = 'flex';
     
-    // If Arcade mode, the CPU randomly picks a tank and readies up instantly
     if (gameMode === 'ARCADE') {
-        p2Selection = Math.floor(Math.random() * tanksData.length);
-        document.getElementById('btn-p2-ready').style.display = 'none';
-        document.getElementById('p2-ready-text').innerText = 'CPU READY!';
-        document.getElementById('p2-ready-text').style.display = 'block';
-        document.getElementById('p2-arrow-left').style.display = 'none';
-        document.getElementById('p2-arrow-right').style.display = 'none';
-        document.getElementById('p2-title').innerText = 'PLAYER 2 (CPU)';
+        // CPU now allows tank selection!
+        document.getElementById('btn-p2-ready').style.display = 'block';
+        document.getElementById('p2-ready-text').style.display = 'none';
+        document.getElementById('p2-arrow-left').style.display = 'block';
+        document.getElementById('p2-arrow-right').style.display = 'block';
+        
+        // Add a dropdown to pick difficulty
+        document.getElementById('p2-title').innerHTML = `
+            PLAYER 2 (CPU) 
+            <select id="diff-select" style="background:#222; color:#fff; border:1px solid #555; margin-left:10px;">
+                <option value="EASY">EASY</option>
+                <option value="NORMAL" selected>NORMAL</option>
+                <option value="HARD">HARD</option>
+            </select>`;
+        
         document.getElementById('hud-p2-name').innerText = 'CPU';
-        p2Ready = true;
+        p2Ready = false;
+        
+        // Override the P2 ready button to grab the difficulty before starting
+        document.getElementById('btn-p2-ready').onclick = function() {
+            aiDifficulty = document.getElementById('diff-select').value;
+            toggleReady(2);
+        };
     } else {
         // Reset to normal 2P settings
         document.getElementById('btn-p2-ready').style.display = 'block';
+        document.getElementById('btn-p2-ready').onclick = function() { toggleReady(2); };
         document.getElementById('p2-ready-text').style.display = 'none';
         document.getElementById('p2-arrow-left').style.display = 'block';
         document.getElementById('p2-arrow-right').style.display = 'block';
@@ -38,6 +52,7 @@ function startMode(mode) {
     updateDisplays();
     drawMinimap();
 }
+
 function cycleTank(playerNum, dir) {
     if (playerNum === 1 && !p1Ready) p1Selection = (p1Selection + dir + tanksData.length) % tanksData.length;
     else if (playerNum === 2 && !p2Ready) p2Selection = (p2Selection + dir + tanksData.length) % tanksData.length;
