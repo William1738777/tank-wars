@@ -3,7 +3,7 @@ class Tank {
         this.owner = owner; this.config = config; 
         this.x = x; this.y = y; this.angle = angle; 
         this.isAI = isAI;
-        this.difficulty = difficulty; // 'EASY', 'NORMAL', or 'HARD'
+        this.difficulty = difficulty; // 'EASY', 'NORMAL', 'HARD', or 'HARD_1'
         
         this.speed = 2.5 * (config.speedMod || 1); 
         this.rotSpeed = 0.045 * (config.speedMod || 1); 
@@ -86,7 +86,7 @@ class Tank {
         // Lead distance scales with difficulty
         let leadDist = 0;
         if (this.difficulty === 'NORMAL') leadDist = dist / 15;
-        else if (this.difficulty === 'HARD') leadDist = dist / 10; 
+        else if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') leadDist = dist / 10; 
         
         let predictedX = target.x + (targetVx * leadDist);
         let predictedY = target.y + (targetVy * leadDist);
@@ -95,7 +95,7 @@ class Tank {
         let aimWobble = 0;
         if (this.difficulty === 'EASY') aimWobble = Math.sin(frameCount * 0.02) * 0.6;
         else if (this.difficulty === 'NORMAL') aimWobble = Math.sin(frameCount * 0.03) * 0.25;
-        // Hard mode has 0 wobble (laser accuracy)
+        // Hard modes have 0 wobble (laser accuracy)
         
         if (myOrb) aimWobble = 0; 
 
@@ -106,19 +106,26 @@ class Tank {
         keys[this.controls.up] = false; keys[this.controls.down] = false; keys[this.controls.left] = false; keys[this.controls.right] = false;
         keys[this.controls.c] = false; keys[this.controls.x] = false; keys[this.controls.z] = false;
 
-        // --- 3. DIFFICULTY: REACTIVE DODGING (HARD MODE ONLY) ---
+        // --- 3. DIFFICULTY: REACTIVE DODGING ---
         let dodgeAngle = null;
-        if (this.difficulty === 'HARD') {
+        let dodgeAngleOffset = 0; // Used for HARD_1 Orbital Dodging
+
+        if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
             for (let p of projectiles) {
                 if (p.owner !== this.owner && !p.dead) {
                     let pdx = this.x - p.x; let pdy = this.y - p.y;
                     let pDist = Math.hypot(pdx, pdy);
-                    if (pDist < 250) { // Threat detection radius
-                        // Dot product to see if bullet is traveling towards us
+                    if (pDist < 250) { 
                         let dot = (p.vx * -pdx + p.vy * -pdy) / (pDist * p.speed);
                         if (dot > 0.85) { 
-                            // Calculate a perpendicular escape angle
-                            dodgeAngle = Math.atan2(p.vy, p.vx) + (Math.random() > 0.5 ? Math.PI/2 : -Math.PI/2);
+                            if (this.difficulty === 'HARD_1') {
+                                // HARD_1: Determine which side the bullet is on, and set a slight rotation offset to curve backwards
+                                let cross = p.vx * -pdy - p.vy * -pdx; 
+                                dodgeAngleOffset = cross > 0 ? 0.4 : -0.4;
+                            } else {
+                                // HARD: Calculate a perpendicular escape angle and drive straight into it
+                                dodgeAngle = Math.atan2(p.vy, p.vx) + (Math.random() > 0.5 ? Math.PI/2 : -Math.PI/2);
+                            }
                             break; 
                         }
                     }
@@ -128,27 +135,34 @@ class Tank {
 
         // --- 4. MOVEMENT, WALL AVOIDANCE, & GEOMETRY PLAYS ---
         let obstacleAhead = false;
+        let obstacleBehind = false;
         let sensorDist = 80;
+        
+        // Forward Whiskers
         let lookAheadX = this.x + Math.cos(this.angle) * sensorDist;
         let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
+        
+        // Reverse Whiskers (For HARD_1 backing up)
+        let lookBehindX = this.x - Math.cos(this.angle) * sensorDist;
+        let lookBehindY = this.y - Math.sin(this.angle) * sensorDist;
 
         for (let w of currentMap.walls) {
-            if (lookAheadX > w.x - 30 && lookAheadX < w.x + w.w + 30 && lookAheadY > w.y - 30 && lookAheadY < w.y + w.h + 30) {
-                obstacleAhead = true; break;
-            }
+            if (lookAheadX > w.x - 30 && lookAheadX < w.x + w.w + 30 && lookAheadY > w.y - 30 && lookAheadY < w.y + w.h + 30) obstacleAhead = true;
+            if (lookBehindX > w.x - 30 && lookBehindX < w.x + w.w + 30 && lookBehindY > w.y - 30 && lookBehindY < w.y + w.h + 30) obstacleBehind = true;
         }
-        if (!obstacleAhead) {
-            for (let r of currentMap.rocks) {
-                if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 30) { obstacleAhead = true; break; }
-            }
+        for (let r of currentMap.rocks) {
+            if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 30) obstacleAhead = true;
+            if (Math.hypot(lookBehindX - r.x, lookBehindY - r.y) < r.r + 30) obstacleBehind = true;
         }
 
-        // Geometry Plays: If Hard mode + bouncing tank + wall in the way, bank the shot!
         let bankingShot = false;
-        if (this.difficulty === 'HARD' && obstacleAhead && (this.config.id === 'phantom' || this.config.id === 'pyro' || this.config.id === 'orion')) {
-            targetAngle += 0.6; // Skew aim slightly to bank off the detected wall
+        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && obstacleAhead && (this.config.id === 'phantom' || this.config.id === 'pyro' || this.config.id === 'orion')) {
+            targetAngle += 0.6; 
             bankingShot = true;
         }
+
+        // Apply HARD_1 orbital offset if dodging
+        targetAngle += dodgeAngleOffset;
 
         // Aim Rotation Execution
         let angleDiff = targetAngle - this.angle; 
@@ -158,15 +172,26 @@ class Tank {
         else if (angleDiff < -0.1) keys[this.controls.left] = true;
 
         if (!this.destroAiming) {
-            if (dodgeAngle !== null) {
-                // Execute Hard Mode Dodge
+            if (dodgeAngle !== null && this.difficulty === 'HARD') {
+                // Execute standard Hard Mode Dodge
                 let diff = dodgeAngle - this.angle;
                 diff = Math.atan2(Math.sin(diff), Math.cos(diff));
                 if (diff > 0.2) keys[this.controls.right] = true;
                 else if (diff < -0.2) keys[this.controls.left] = true;
                 keys[this.controls.up] = true;
+            } else if (this.difficulty === 'HARD_1') {
+                // Execute HARD_1 Kiting Logic
+                if (obstacleBehind) {
+                    // Backed into a corner! Scramble forward and turn.
+                    keys[this.controls.up] = true; keys[this.controls.down] = false; 
+                    keys[this.controls.left] = true; keys[this.controls.right] = false;
+                } else {
+                    // Perfect Kiting distance management
+                    if (dist < 320) keys[this.controls.down] = true; // Reverse heavily if close
+                    else if (dist > 450) keys[this.controls.up] = true; // Chase if too far
+                }
             } else if (obstacleAhead && !bankingShot) {
-                // Avoid Wall
+                // Avoid Wall (Easy/Normal/Hard)
                 keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.left] = true; keys[this.controls.right] = false;
             } else {
                 // Standard Positioning
@@ -181,9 +206,15 @@ class Tank {
                 }
             }
 
-            if (this.x === this.lastX && this.y === this.lastY && keys[this.controls.up] && !bankingShot) {
+            // Anti-Stuck Timer
+            let isStuckMoving = (keys[this.controls.up] || keys[this.controls.down]);
+            if (this.x === this.lastX && this.y === this.lastY && isStuckMoving && !bankingShot) {
                 this.stuckTimer = (this.stuckTimer || 0) + 1;
-                if (this.stuckTimer > 20) { keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.left] = true; }
+                if (this.stuckTimer > 20) { 
+                    keys[this.controls.up] = !keys[this.controls.up]; // Invert current throttle
+                    keys[this.controls.down] = !keys[this.controls.down]; 
+                    keys[this.controls.left] = true; 
+                }
             } else { this.stuckTimer = 0; }
             
         } else {
@@ -194,12 +225,11 @@ class Tank {
         this.lastX = this.x; this.lastY = this.y;
 
         // --- 5. SHOOTING LOGIC (SCALED BY DIFFICULTY) ---
-        let triggerHappy = this.difficulty === 'HARD' ? 0.08 : (this.difficulty === 'NORMAL' ? 0.04 : 0.01);
-        let acceptableAngle = this.difficulty === 'HARD' ? 0.2 : 0.4;
+        let triggerHappy = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.08 : (this.difficulty === 'NORMAL' ? 0.04 : 0.01);
+        let acceptableAngle = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.3 : 0.4;
 
         if (Math.abs(angleDiff) < acceptableAngle && dist < 700 && (!obstacleAhead || bankingShot)) {
             
-            // Easy mode shoots 50% less often
             if (this.difficulty === 'EASY' && frameCount % 2 === 0) return; 
 
             keys[this.controls.c] = true; 
