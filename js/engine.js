@@ -14,6 +14,9 @@ let projectiles = []; let particles = []; let flashes = []; let hazards = []; le
 let screenShakeTimer = 0;
 let screenShakeIntensity = 0;
 
+// --- NEW: Global Tracker for AI Difficulty ---
+let aiDifficulty = 'NORMAL';
+
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -46,7 +49,9 @@ function startGame() {
     
     players = [
         new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false),
-        new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE')
+        
+        // --- NEW: Pass aiDifficulty if it's Arcade mode ---
+        new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL')
     ];
     
     projectiles = []; particles = []; flashes = []; hazards = []; floatingTexts = [];
