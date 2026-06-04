@@ -1,7 +1,9 @@
 class Tank {
-    constructor(owner, config, x, y, angle, controls, isAI = false) {
+    constructor(owner, config, x, y, angle, controls, isAI = false, difficulty = 'NORMAL') {
         this.owner = owner; this.config = config; 
-        this.x = x; this.y = y; this.angle = angle; this.isAI = isAI;
+        this.x = x; this.y = y; this.angle = angle; 
+        this.isAI = isAI;
+        this.difficulty = difficulty; // 'EASY', 'NORMAL', or 'HARD'
         
         this.speed = 2.5 * (config.speedMod || 1); 
         this.rotSpeed = 0.045 * (config.speedMod || 1); 
@@ -64,29 +66,159 @@ class Tank {
 
     think() {
         if (!players[0] || players[0].isDead || this.stunTimer > 0 || this.dashState === 2) return;
-        const target = players[0]; const dx = target.x - this.x; const dy = target.y - this.y;
-        const dist = Math.hypot(dx, dy); const targetAngle = Math.atan2(dy, dx);
         
+        let target = players[0]; 
+        const now = Date.now();
+
+        // --- 1. ABYSS TARGETING OVERRIDE ---
+        let myOrb = null;
+        if (this.config.id === 'abyss') {
+            myOrb = hazards.find(h => h.type === 'void_orb' && h.owner === this.owner);
+            if (myOrb) target = myOrb; 
+        }
+
+        // --- 2. DIFFICULTY: PREDICTIVE AIMING & INACCURACY ---
+        let targetVx = target.x - (target.lastX || target.x);
+        let targetVy = target.y - (target.lastY || target.y);
+        
+        let dist = Math.hypot(target.x - this.x, target.y - this.y);
+        
+        // Lead distance scales with difficulty
+        let leadDist = 0;
+        if (this.difficulty === 'NORMAL') leadDist = dist / 15;
+        else if (this.difficulty === 'HARD') leadDist = dist / 10; 
+        
+        let predictedX = target.x + (targetVx * leadDist);
+        let predictedY = target.y + (targetVy * leadDist);
+
+        // Wobble scales inversely with difficulty
+        let aimWobble = 0;
+        if (this.difficulty === 'EASY') aimWobble = Math.sin(frameCount * 0.02) * 0.6;
+        else if (this.difficulty === 'NORMAL') aimWobble = Math.sin(frameCount * 0.03) * 0.25;
+        // Hard mode has 0 wobble (laser accuracy)
+        
+        if (myOrb) aimWobble = 0; 
+
+        let dx = predictedX - this.x;
+        let dy = predictedY - this.y;
+        let targetAngle = Math.atan2(dy, dx) + aimWobble;
+
         keys[this.controls.up] = false; keys[this.controls.down] = false; keys[this.controls.left] = false; keys[this.controls.right] = false;
         keys[this.controls.c] = false; keys[this.controls.x] = false; keys[this.controls.z] = false;
 
-        let angleDiff = targetAngle - this.angle; angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-        if (angleDiff > 0.1) keys[this.controls.right] = true; else if (angleDiff < -0.1) keys[this.controls.left] = true;
-        if (dist > 350) keys[this.controls.up] = true; else if (dist < 150) keys[this.controls.down] = true; else if (Math.random() < 0.05) keys[this.controls.up] = true;
+        // --- 3. DIFFICULTY: REACTIVE DODGING (HARD MODE ONLY) ---
+        let dodgeAngle = null;
+        if (this.difficulty === 'HARD') {
+            for (let p of projectiles) {
+                if (p.owner !== this.owner && !p.dead) {
+                    let pdx = this.x - p.x; let pdy = this.y - p.y;
+                    let pDist = Math.hypot(pdx, pdy);
+                    if (pDist < 250) { // Threat detection radius
+                        // Dot product to see if bullet is traveling towards us
+                        let dot = (p.vx * -pdx + p.vy * -pdy) / (pDist * p.speed);
+                        if (dot > 0.85) { 
+                            // Calculate a perpendicular escape angle
+                            dodgeAngle = Math.atan2(p.vy, p.vx) + (Math.random() > 0.5 ? Math.PI/2 : -Math.PI/2);
+                            break; 
+                        }
+                    }
+                }
+            }
+        }
 
-        if (this.x === this.lastX && this.y === this.lastY && keys[this.controls.up]) {
-            this.stuckTimer = (this.stuckTimer || 0) + 1;
-            if (this.stuckTimer > 20) { keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.left] = true; }
-        } else { this.stuckTimer = 0; }
+        // --- 4. MOVEMENT, WALL AVOIDANCE, & GEOMETRY PLAYS ---
+        let obstacleAhead = false;
+        let sensorDist = 80;
+        let lookAheadX = this.x + Math.cos(this.angle) * sensorDist;
+        let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
+
+        for (let w of currentMap.walls) {
+            if (lookAheadX > w.x - 30 && lookAheadX < w.x + w.w + 30 && lookAheadY > w.y - 30 && lookAheadY < w.y + w.h + 30) {
+                obstacleAhead = true; break;
+            }
+        }
+        if (!obstacleAhead) {
+            for (let r of currentMap.rocks) {
+                if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 30) { obstacleAhead = true; break; }
+            }
+        }
+
+        // Geometry Plays: If Hard mode + bouncing tank + wall in the way, bank the shot!
+        let bankingShot = false;
+        if (this.difficulty === 'HARD' && obstacleAhead && (this.config.id === 'phantom' || this.config.id === 'pyro' || this.config.id === 'orion')) {
+            targetAngle += 0.6; // Skew aim slightly to bank off the detected wall
+            bankingShot = true;
+        }
+
+        // Aim Rotation Execution
+        let angleDiff = targetAngle - this.angle; 
+        angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+        
+        if (angleDiff > 0.1) keys[this.controls.right] = true; 
+        else if (angleDiff < -0.1) keys[this.controls.left] = true;
+
+        if (!this.destroAiming) {
+            if (dodgeAngle !== null) {
+                // Execute Hard Mode Dodge
+                let diff = dodgeAngle - this.angle;
+                diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+                if (diff > 0.2) keys[this.controls.right] = true;
+                else if (diff < -0.2) keys[this.controls.left] = true;
+                keys[this.controls.up] = true;
+            } else if (obstacleAhead && !bankingShot) {
+                // Avoid Wall
+                keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.left] = true; keys[this.controls.right] = false;
+            } else {
+                // Standard Positioning
+                if (myOrb) {
+                    if (dist > 250) keys[this.controls.up] = true;
+                    else if (dist < 100) keys[this.controls.down] = true;
+                } else {
+                    let desiredDist = this.difficulty === 'HARD' ? (this.config.id === 'dreadnaught' || this.config.id === 'destroyer' ? 450 : 200) : 150;
+                    if (dist > desiredDist + 100) keys[this.controls.up] = true; 
+                    else if (dist < desiredDist) keys[this.controls.down] = true; 
+                    else if (Math.random() < (this.difficulty === 'EASY' ? 0.02 : 0.05)) keys[this.controls.up] = true;
+                }
+            }
+
+            if (this.x === this.lastX && this.y === this.lastY && keys[this.controls.up] && !bankingShot) {
+                this.stuckTimer = (this.stuckTimer || 0) + 1;
+                if (this.stuckTimer > 20) { keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.left] = true; }
+            } else { this.stuckTimer = 0; }
+            
+        } else {
+            // Rooted while aiming artillery
+            keys[this.controls.up] = false; keys[this.controls.down] = false; keys[this.controls.left] = false; keys[this.controls.right] = false;
+        }
+        
         this.lastX = this.x; this.lastY = this.y;
 
-        if (Math.abs(angleDiff) < 0.3 && dist < 650) {
+        // --- 5. SHOOTING LOGIC (SCALED BY DIFFICULTY) ---
+        let triggerHappy = this.difficulty === 'HARD' ? 0.08 : (this.difficulty === 'NORMAL' ? 0.04 : 0.01);
+        let acceptableAngle = this.difficulty === 'HARD' ? 0.2 : 0.4;
+
+        if (Math.abs(angleDiff) < acceptableAngle && dist < 700 && (!obstacleAhead || bankingShot)) {
+            
+            // Easy mode shoots 50% less often
+            if (this.difficulty === 'EASY' && frameCount % 2 === 0) return; 
+
             keys[this.controls.c] = true; 
-            if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
-                if (this.destroAiming) { keys[this.controls.x] = true; if (this.destroAimDist >= dist - 40) keys[this.controls.x] = false; } 
-                else if (Math.random() < 0.02 && dist > 200) { keys[this.controls.x] = true; }
-            } else if (Math.random() < 0.03) { keys[this.controls.x] = true; }
-            if (dist < 400 && Math.random() < 0.02) keys[this.controls.z] = true;
+            
+            if (this.config.id === 'abyss' && myOrb) {
+                if (now > this.cooldowns.z) keys[this.controls.z] = true;
+            } else {
+                if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
+                    if (this.destroAiming) { 
+                        keys[this.controls.x] = true; 
+                        if (this.destroAimDist >= dist - 40) keys[this.controls.x] = false; 
+                    } 
+                    else if (Math.random() < triggerHappy && dist > 200 && now > this.cooldowns.x) { 
+                        keys[this.controls.x] = true; 
+                    }
+                } else if (Math.random() < triggerHappy) { keys[this.controls.x] = true; }
+                
+                if (dist < 450 && Math.random() < triggerHappy) keys[this.controls.z] = true;
+            }
         }
     }
 
@@ -440,7 +572,6 @@ class Tank {
                         projectiles.push(orbThrow);
                         createMuzzleFlash(this.x, this.y, this.angle, 2.0);
 
-                        // 🔴 NEW: Reduce Z cooldown by 3.5 seconds when Void Orb is thrown
                         this.cooldowns.z -= 3500;
                         if (this.cooldowns.z > Date.now()) {
                             floatingTexts.push({x: this.x, y: this.y - 60, text: "-3.5s Z-CD!", life: 40, color: '#ff0000'});
@@ -504,7 +635,6 @@ class Tank {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
         } else if (this.config.id === 'orion') {
-            // Orion's Shockwave Missile (Base 4 dmg, bounces 3 times)
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 5, 4, '#ff33cc', 'orion_c', 3));
         } else {
@@ -536,9 +666,8 @@ class Tank {
             if (now < this.cooldowns.x) return;
             this.cooldowns.x = now + this.maxCooldowns.x;
             setTimeout(() => {
-            playSound(sfx.orionX);
-        }, 2300);
-            // Spawn Chronosphere Hazard directly on Orion
+                playSound(sfx.orionX);
+            }, 2500);
             hazards.push({ owner: this.owner, type: 'orion_chrono', x: this.x, y: this.y, radius: 175, life: 300, maxLife: 300 });
             return;
         }
@@ -702,7 +831,6 @@ class Tank {
             let shadowScale = Math.max(0.2, 1 - (this.zHeight / 200));
             let shadowAlpha = Math.max(0.1, 0.6 - (this.zHeight / 300));
             ctx.beginPath();
-            // Shadow is an ellipse
             ctx.ellipse(this.x, this.y, this.radius * shadowScale * 1.5, this.radius * shadowScale * 0.8, 0, 0, Math.PI * 2);
             ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha})`;
             ctx.fill();
@@ -718,13 +846,11 @@ class Tank {
             ctx.fillRect(-25, -45, (this.energy / 100) * 50, 6); ctx.restore();
         }
 
-        // Apply visual Z rotation if tumbling in the air
         ctx.rotate(this.angle + this.zRotation);
 
         ctx.shadowBlur = this.dashState === 2 || this.dashState === 3 ? 30 : 15;
         ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : this.config.color;
         
-        // 3. Temporarily increase scale if airborne (moves closer to camera)
         let visualScaleMod = this.scaleMod;
         if (this.zHeight > 0) {
             visualScaleMod += (this.zHeight / 400); // Maxes out at around 1.5x scale
@@ -745,10 +871,7 @@ class Tank {
             }
         }
         
-        // Add artificial drop shadow if airborne to separate from background
-        if (this.zHeight > 0) {
-            ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
-        }
+        if (this.zHeight > 0) ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
 
         ctx.drawImage(imgToDraw, -w / 2, -h / 2, w, h); 
         ctx.filter = 'none';
