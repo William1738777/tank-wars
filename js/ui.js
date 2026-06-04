@@ -26,7 +26,8 @@ function startMode(mode) {
             <select id="diff-select" style="background:#222; color:#fff; border:1px solid #555; margin-left:10px;">
                 <option value="EASY">EASY</option>
                 <option value="NORMAL" selected>NORMAL</option>
-                <option value="HARD">HARD</option>
+                <option value="HARD">HARD (Aggressive)</option>
+                <option value="HARD_1">HARD 1 (Kiting)</option>
             </select>`;
         
         document.getElementById('hud-p2-name').innerText = 'CPU';
