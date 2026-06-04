@@ -406,7 +406,7 @@ function update() {
         let pA = projectiles[i]; if (pA.dead) continue;
         pA.update();
 
-        // 🔴 NEW: Add vibrant red burning trail to empowered Abyss shots
+        // 閥 NEW: Add vibrant red burning trail to empowered Abyss shots
         if (pA.type === 'abyss_rapid_empowered' && frameCount % 2 === 0) {
             createParticles(pA.x, pA.y, 1, '#ff0000', 1.5, 0.3);
         }
@@ -451,15 +451,17 @@ function update() {
                 if (Math.hypot(pA.x - h.x, pA.y - h.y) < h.radius + pA.radius) {
                     if (pA.type === 'abyss_z') {
                         hazards.push({ owner: pA.owner, type: 'black_hole', x: h.x, y: h.y, radius: 150, life: 240 });
+                        playSound(sfx.abyssBlackHole); // <-- NEW: Black Hole Sound
                         pA.triggerExplosion(); h.life = 0;
                     } else if ((pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') && pA.owner === h.owner) {
                         h.orbHp -= 1; pA.triggerExplosion(); createParticles(h.x, h.y, 3, '#ff0000', 1.5, 0.3);
                         if (h.orbHp <= 0) {
                             h.life = 0;
                             hazards.push({ owner: h.owner, type: 'abyss_domain', x: h.x, y: h.y, radius: 170, life: 720, dps: 0.5, tickTimer: 120 });
+                            playSound(sfx.abyssDom); // <-- NEW: Domain Expansion Sound
                             floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
                             
-                            // 🔴 NEW: 50% Cooldown Refund on X when Domain Pops
+                            // 閥 NEW: 50% Cooldown Refund on X when Domain Pops
                             let domainOwner = players.find(p => p.owner === h.owner);
                             if (domainOwner) {
                                 let cdReduction = domainOwner.maxCooldowns.x * 0.5;
@@ -519,14 +521,17 @@ function update() {
                             floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ANTI-GRAV LIFT!", life: 50, color: '#ff33cc'});
                         } else if (pA.type === 'abyss_z') {
                             tank.hp -= pA.damage;
-                            if (pA.hasBounced) { hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 }); } 
+                            if (pA.hasBounced) { 
+                                hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 }); 
+                                playSound(sfx.abyssBlackHole); // <-- NEW: Black Hole Sound
+                            } 
                             else { tank.isSlowed = true; tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 180); }
                         } else if (pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') {
                             tank.hp -= pA.damage;
                             let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
                             tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
                             
-                            // 🔴 NEW: Abyssal Slow Stacking (max 10 stacks for 80% slow)
+                            // 閥 NEW: Abyssal Slow Stacking (max 10 stacks for 80% slow)
                             if (pA.type === 'abyss_rapid_empowered') {
                                 tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1);
                                 tank.abyssSlowTimer = 180; // 3 seconds before expiring
