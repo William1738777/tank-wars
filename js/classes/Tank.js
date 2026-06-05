@@ -166,7 +166,6 @@ class Tank {
         let moveX = 0;
         let moveY = 0;
 
-        // Sub-Vector A: Core Spatial Positioning (Kiting, Chasing, and Cover Navigation)
         if (seekingCover) {
             let distToCover = Math.hypot(tacticalTargetX - this.x, tacticalTargetY - this.y);
             if (distToCover > 30) {
@@ -179,14 +178,12 @@ class Tank {
         } else if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
             if (isHitAndRunTank) {
                 if (!cReady) {
-                    // Turn and burn away from player path
                     moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer;
                 } else {
                     if (distToPlayer > 300) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
                     else if (distToPlayer < 150) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
                 }
             } else {
-                // Reverse Kiting behaviors
                 if (distToPlayer < 320) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
                 else if (distToPlayer > 450) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
             }
@@ -197,7 +194,6 @@ class Tank {
             else if (Math.random() < (this.difficulty === 'EASY' ? 0.02 : 0.05)) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
         }
 
-        // Sub-Vector B: Consistent Reactive Dodge Forces (Removes frame jitter)
         if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
             for (let p of projectiles) {
                 if (p.owner !== this.owner && !p.dead) {
@@ -205,14 +201,10 @@ class Tank {
                     if (pDist < 250) {
                         let dot = (p.vx * -(this.x - p.x) + p.vy * -(this.y - p.y)) / (pDist * p.speed);
                         if (dot > 0.85) {
-                            // Calculate lateral deflection vectors relative to incoming projectiles
                             let perpX = -p.vy / p.speed;
                             let perpY = p.vx / p.speed;
-                            
-                            // Deflect smoothly away based on cross characteristics
                             let cross = p.vx * -(this.y - p.y) - p.vy * -(this.x - p.x);
                             let sideDir = cross > 0 ? 1 : -1;
-                            
                             moveX += perpX * sideDir * 2.5;
                             moveY += perpY * sideDir * 2.5;
                             break;
@@ -222,24 +214,30 @@ class Tank {
             }
         }
 
-        // Sub-Vector C: Proximity Obstacle Avoidance Forces
-        let sensorDist = 80;
+        // Sub-Vector C: Proximity Obstacle Avoidance Forces (Invisible Cushion Removed)
+        let sensorDist = this.radius + 5; 
         let lookAheadX = this.x + Math.cos(this.angle) * sensorDist;
         let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
         let obstacleAhead = false;
 
-        if (lookAheadX < 50 || lookAheadX > canvas.width - 50 || lookAheadY < 50 || lookAheadY > canvas.height - 50) obstacleAhead = true;
+        // Dynamic boundaries checking utilizing tank dimensions instead of a 50px global deadzone
+        if (lookAheadX < this.radius + 5 || lookAheadX > canvas.width - (this.radius + 5) || 
+            lookAheadY < this.radius + 5 || lookAheadY > canvas.height - (this.radius + 5)) {
+            obstacleAhead = true;
+        }
+
         for (let w of currentMap.walls) {
-            if (lookAheadX > w.x - 30 && lookAheadX < w.x + w.w + 30 && lookAheadY > w.y - 30 && lookAheadY < w.y + w.h + 30) {
+            if (lookAheadX > w.x - 5 && lookAheadX < w.x + w.w + 5 && 
+                lookAheadY > w.y - 5 && lookAheadY < w.y + w.h + 5) {
                 obstacleAhead = true;
                 let wallCenterX = w.x + w.w / 2;
                 let wallCenterY = w.y + w.h / 2;
-                moveX += (this.x - wallCenterX) * 0.05;
-                moveY += (this.y - wallCenterY) * 0.05;
+                moveX += (this.x - wallCenterX) * 0.1;
+                moveY += (this.y - wallCenterY) * 0.1;
             }
         }
         for (let r of currentMap.rocks) {
-            if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 30) {
+            if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 5) {
                 obstacleAhead = true;
                 let pushAngle = Math.atan2(this.y - r.y, this.x - r.x);
                 moveX += Math.cos(pushAngle) * 2.0;
@@ -251,20 +249,17 @@ class Tank {
         if (!this.destroAiming) {
             let finalNavAngle = (moveX === 0 && moveY === 0) ? aimAtPlayerAngle : Math.atan2(moveY, moveX);
             
-            // Adjust Bank Shot Modifiers
             let bankingShot = false;
             if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && obstacleAhead && ['phantom', 'pyro', 'orion'].includes(this.config.id)) {
                 if (!isHitAndRunTank || cReady) { finalNavAngle += 0.6; bankingShot = true; }
             }
 
-            // Smooth angular tracking interpolation
             let angleDiff = finalNavAngle - this.angle;
             angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
 
             if (angleDiff > 0.1) keys[this.controls.right] = true;
             else if (angleDiff < -0.1) keys[this.controls.left] = true;
 
-            // Execute forward/reverse throttle based on rotational path alignment
             if (moveX !== 0 || moveY !== 0) {
                 if (Math.abs(angleDiff) < Math.PI / 2.2) {
                     keys[this.controls.up] = true;
@@ -273,7 +268,6 @@ class Tank {
                 }
             }
 
-            // Anti-Stuck Fail-Safe Logic
             let isStuckMoving = (keys[this.controls.up] || keys[this.controls.down]);
             if (this.x === this.lastX && this.y === this.lastY && isStuckMoving && !bankingShot) {
                 this.stuckTimer = (this.stuckTimer || 0) + 1;
@@ -298,11 +292,10 @@ class Tank {
             if (this.difficulty === 'EASY' && frameCount % 2 === 0) return; 
             if (seekingCover && Math.random() > 0.3) return; 
 
-            // Verify Line of Sight to confirm player isn't hiding completely behind walls
             let isShotClear = this.isLineOfSightClear(this.x, this.y, target.x, target.y);
 
             if (isShotClear) {
-                keys[this.controls.c] = true; // Main attack confirmed clear!
+                keys[this.controls.c] = true; 
                 
                 if (this.config.id === 'abyss' && myOrb) {
                     if (now > this.cooldowns.z) keys[this.controls.z] = true;
@@ -332,13 +325,11 @@ class Tank {
         if (this.phantomMarkTimer > 0) { this.phantomMarkTimer--; if (this.phantomMarkTimer <= 0) this.phantomMarks = 0; }
         if (this.phantomShockTimer > 0) this.phantomShockTimer--;
         
-        // Orion Portal Decay Timer
         if (this.portalTimer > 0) {
             this.portalTimer--;
             if (this.portalTimer <= 0) {
                 this.portalA = null;
                 this.portalB = null;
-                // Start the 18s cooldown NOW, as the portals have expired
                 this.cooldowns.z = Date.now() + 18000;
             }
         }
@@ -351,9 +342,7 @@ class Tank {
             } else { this.isGhost = false; }
         }
 
-        // --- Z-Axis Gravity Lift Effect Handling ---
         if (this.zHeight > 0) {
-            // Cannot be hit, cannot act, rotates helplessly
             this.stunTimer = Math.max(this.stunTimer, 2); 
             this.zRotation += 0.05;
         } else {
@@ -613,21 +602,18 @@ class Tank {
                 }
             }
 
-            // Orion Z Logic (Hold vs Tap)
             if (this.config.id === 'orion') {
                 if (keys[this.controls.z] && now > this.cooldowns.z) {
                     this.zHoldTimer++;
                     this.zHeldLastFrame = true;
-                    // Held for 0.25s: Fire Gravity Lift
                     if (this.zHoldTimer === 15) {
                         this.recoil = 8;
                         const tip = this.getTip();
                         createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
                         projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 6, 3, '#ff33cc', 'orion_z_lift', 0));
-                        this.cooldowns.z = now + this.maxCooldowns.z; // Gravity Lift instantly triggers the 18s CD
+                        this.cooldowns.z = now + this.maxCooldowns.z; 
                     }
                 } else if (!keys[this.controls.z] && this.zHeldLastFrame) {
-                    // Key released before 0.25s: Drop Portal
                     if (this.zHoldTimer > 0 && this.zHoldTimer < 15 && now > this.cooldowns.z) {
                         if (!this.portalA) {
                             this.portalA = { x: this.x, y: this.y };
@@ -635,7 +621,7 @@ class Tank {
                         } else if (!this.portalB) {
                             this.portalB = { x: this.x, y: this.y };
                             createParticles(this.x, this.y, 15, '#ff33cc', 2, 0.5);
-                            this.portalTimer = 600; // 10 seconds duration (60 fps * 10)
+                            this.portalTimer = 600; 
                         }
                     }
                     this.zHeldLastFrame = false;
@@ -712,7 +698,6 @@ class Tank {
 
     fireC(now) {
         this.cooldowns.c = now + this.maxCooldowns.c; 
-        
         this.recoil = 4; const tip = this.getTip();
         if (this.config.id === 'scorpion') { this.burstsLeft = 3; this.burstTimer = 0; } 
         else if (this.config.id === 'dreadnaught') {
@@ -766,9 +751,7 @@ class Tank {
         if (this.config.id === 'orion') {
             if (now < this.cooldowns.x) return;
             this.cooldowns.x = now + this.maxCooldowns.x;
-            setTimeout(() => {
-                playSound(sfx.orionX);
-            }, 2500);
+            setTimeout(() => { playSound(sfx.orionX); }, 2500);
             hazards.push({ owner: this.owner, type: 'orion_chrono', x: this.x, y: this.y, radius: 175, life: 300, maxLife: 300 });
             return;
         }
@@ -851,7 +834,7 @@ class Tank {
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 10, 20, '#ff0000', 'destro_missile', 0));
         } else if (this.config.id === 'abyss') {
             this.recoil = 8; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
-            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 6, 4, '#000000', 'abyss_z', 1)); // 1 Bounce
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 6, 4, '#000000', 'abyss_z', 1)); 
         }
     }
 
@@ -862,19 +845,9 @@ class Tank {
         if (this.poisons.length > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI*2); ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill(); }
 
         if (this.config.id === 'pyro' && this.fireShieldActive) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.radius + 45, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255, 69, 0, 0.15)'; 
-            ctx.fill();
-            ctx.strokeStyle = '#ffaa00';
-            ctx.lineWidth = 3;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = '#ff4500';
-            ctx.setLineDash([10, 10]);
-            ctx.lineDashOffset = -Date.now() / 20; 
-            ctx.stroke();
-            ctx.restore();
+            ctx.save(); ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 45, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 69, 0, 0.15)'; ctx.fill(); ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 3;
+            ctx.shadowBlur = 15; ctx.shadowColor = '#ff4500'; ctx.setLineDash([10, 10]); ctx.lineDashOffset = -Date.now() / 20; ctx.stroke(); ctx.restore();
         }
 
         if ((this.config.id === 'destroyer' || this.config.id === 'abyss') && this.destroAiming) {
@@ -890,8 +863,7 @@ class Tank {
             ctx.save();
             for(let i=0; i<3; i++) {
                 if (Math.random() > 0.3) {
-                    ctx.beginPath();
-                    ctx.moveTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
+                    ctx.beginPath(); ctx.moveTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
                     ctx.lineTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
                     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; ctx.stroke();
                 }
@@ -903,8 +875,7 @@ class Tank {
             ctx.save();
             for(let i=0; i<3; i++) {
                 if (Math.random() > 0.3) {
-                    ctx.beginPath();
-                    ctx.moveTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
+                    ctx.beginPath(); ctx.moveTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
                     ctx.lineTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
                     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.shadowBlur = 10; ctx.shadowColor = '#9d00ff'; ctx.stroke();
                 }
@@ -915,29 +886,20 @@ class Tank {
         if (this.phantomMarks === 1 && images.phantomp && images.phantomp.complete) {
             ctx.drawImage(images.phantomp, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32);
         } else if (this.phantomMarks === 2 && images.phantomp2 && images.phantomp2.complete) {
-            ctx.save();
-            ctx.shadowBlur = 15 + Math.sin(Date.now() / 150) * 10;
-            ctx.shadowColor = '#9d00ff'; 
-            ctx.drawImage(images.phantomp2, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32);
-            ctx.restore();
+            ctx.save(); ctx.shadowBlur = 15 + Math.sin(Date.now() / 150) * 10; ctx.shadowColor = '#9d00ff'; 
+            ctx.drawImage(images.phantomp2, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32); ctx.restore();
         }
         
         if (this.stunTimer > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 8, 0, Math.PI*2); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3; ctx.stroke(); }
 
-        // --- ORION Z-AXIS RENDER ILLUSION ---
         ctx.save(); 
-        
-        // 1. Draw the shrinking, fading ground shadow exactly at (this.x, this.y)
         if (this.zHeight > 0) {
             let shadowScale = Math.max(0.2, 1 - (this.zHeight / 200));
             let shadowAlpha = Math.max(0.1, 0.6 - (this.zHeight / 300));
-            ctx.beginPath();
-            ctx.ellipse(this.x, this.y, this.radius * shadowScale * 1.5, this.radius * shadowScale * 0.8, 0, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha})`;
-            ctx.fill();
+            ctx.beginPath(); ctx.ellipse(this.x, this.y, this.radius * shadowScale * 1.5, this.radius * shadowScale * 0.8, 0, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha})`; ctx.fill();
         }
 
-        // 2. Translate the context UP the screen by zHeight to draw the tank sprite
         ctx.translate(this.x, this.y - this.zHeight); 
         
         if (this.config.id === 'seraph') {
@@ -953,9 +915,7 @@ class Tank {
         ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : this.config.color;
         
         let visualScaleMod = this.scaleMod;
-        if (this.zHeight > 0) {
-            visualScaleMod += (this.zHeight / 400); // Maxes out at around 1.5x scale
-        }
+        if (this.zHeight > 0) visualScaleMod += (this.zHeight / 400);
 
         const w = this.config.img.width * 0.12 * visualScaleMod; 
         const h = this.config.img.height * 0.12 * visualScaleMod;
@@ -964,8 +924,7 @@ class Tank {
         if (this.config.id === 'phantom') {
             if (this.isGhost) {
                 if (images.phantomB && images.phantomB.complete) imgToDraw = images.phantomB;
-                ctx.globalAlpha = 0.4; 
-                ctx.filter = 'brightness(1.5)';
+                ctx.globalAlpha = 0.4; ctx.filter = 'brightness(1.5)';
             } else {
                 if (images.phantomA && images.phantomA.complete) imgToDraw = images.phantomA;
                 ctx.filter = 'brightness(0.7)';
@@ -975,8 +934,6 @@ class Tank {
         if (this.zHeight > 0) ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
 
         ctx.drawImage(imgToDraw, -w / 2, -h / 2, w, h); 
-        ctx.filter = 'none';
-        ctx.globalAlpha = 1.0;
-        ctx.restore();
+        ctx.filter = 'none'; ctx.globalAlpha = 1.0; ctx.restore();
     }
 }
