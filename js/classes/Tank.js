@@ -64,13 +64,43 @@ class Tank {
         floatingTexts.push({x: this.x, y: this.y - 40, text: "SHIELD UP!", life: 60, color: '#ffaa00'});
     }
 
+    // Helper method to verify clean lines of sight before discharging weaponry
+    isLineOfSightClear(x1, y1, x2, y2) {
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        let distance = Math.hypot(dx, dy);
+        let steps = Math.ceil(distance / 16); // Check spatial steps every 16 pixels
+        
+        for (let i = 1; i < steps; i++) {
+            let t = i / steps;
+            let checkX = x1 + dx * t;
+            let checkY = y1 + dy * t;
+            
+            // Check Map Obstacles
+            for (let w of currentMap.walls) {
+                if (checkX >= w.x && checkX <= w.x + w.w && checkY >= w.y && checkY <= w.y + w.h) {
+                    return false;
+                }
+            }
+            // Check Map Rocks
+            for (let r of currentMap.rocks) {
+                if (Math.hypot(checkX - r.x, checkY - r.y) < r.r) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     think() {
         if (!players[0] || players[0].isDead || this.stunTimer > 0 || this.dashState === 2) return;
         
         let target = players[0]; 
         const now = Date.now();
 
-        // Check if tank is a Hit-and-Run class (Phantom, Pyro, Scorpion)
+        // Clear keys cleanly at the beginning to prevent logical inputs bleeding together
+        for (let k in this.controls) { keys[this.controls[k]] = false; }
+
         let isHitAndRunTank = ['phantom', 'pyro', 'scorpion'].includes(this.config.id);
         let cReady = now >= this.cooldowns.c;
 
@@ -81,54 +111,42 @@ class Tank {
             if (myOrb) target = myOrb; 
         }
 
-        // --- 2. TACTICAL TERRAIN ANALYSIS (HARD MODES ONLY) ---
+        // --- 2. TACTICAL COVER ANALYSIS ---
         let isLowHp = (this.hp / this.maxHp) < 0.35;
         let tacticalTargetX = target.x;
         let tacticalTargetY = target.y;
         let seekingCover = false;
 
-        if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
-            if (isLowHp) {
-                seekingCover = true;
-                let bestCoverDist = Infinity;
-                let bestCoverX = this.x;
-                let bestCoverY = this.y;
+        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && isLowHp) {
+            seekingCover = true;
+            let bestCoverDist = Infinity;
+            let bestCoverX = this.x;
+            let bestCoverY = this.y;
 
-                // Evaluate Walls for Cover
-                for (let w of currentMap.walls) {
-                    let centerX = w.x + w.w / 2;
-                    let centerY = w.y + w.h / 2;
-                    
-                    // Calculate a point 60 pixels behind the wall, away from the player
-                    let angleFromPlayer = Math.atan2(centerY - target.y, centerX - target.x);
-                    let coverX = centerX + Math.cos(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
-                    let coverY = centerY + Math.sin(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
-                    
-                    let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
-                    
-                    // Make sure the cover point isn't off the map
-                    if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
-                        if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
-                    }
+            for (let w of currentMap.walls) {
+                let centerX = w.x + w.w / 2;
+                let centerY = w.y + w.h / 2;
+                let angleFromPlayer = Math.atan2(centerY - target.y, centerX - target.x);
+                let coverX = centerX + Math.cos(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
+                let coverY = centerY + Math.sin(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
+                let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
+                if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
+                    if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
                 }
-
-                // Evaluate Rocks for Cover
-                for (let r of currentMap.rocks) {
-                    let angleFromPlayer = Math.atan2(r.y - target.y, r.x - target.x);
-                    let coverX = r.x + Math.cos(angleFromPlayer) * (r.r + 60);
-                    let coverY = r.y + Math.sin(angleFromPlayer) * (r.r + 60);
-                    
-                    let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
-                    if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
-                        if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
-                    }
-                }
-
-                if (bestCoverDist < Infinity) { tacticalTargetX = bestCoverX; tacticalTargetY = bestCoverY; }
             }
+            for (let r of currentMap.rocks) {
+                let angleFromPlayer = Math.atan2(r.y - target.y, r.x - target.x);
+                let coverX = r.x + Math.cos(angleFromPlayer) * (r.r + 60);
+                let coverY = r.y + Math.sin(angleFromPlayer) * (r.r + 60);
+                let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
+                if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
+                    if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
+                }
+            }
+            if (bestCoverDist < Infinity) { tacticalTargetX = bestCoverX; tacticalTargetY = bestCoverY; }
         }
 
-        // --- 3. PREDICTIVE AIMING & DODGING ---
+        // --- 3. PREDICTIVE AIM COMPUTATION ---
         let targetVx = target.x - (target.lastX || target.x);
         let targetVy = target.y - (target.lastY || target.y);
         let distToPlayer = Math.hypot(target.x - this.x, target.y - this.y);
@@ -140,137 +158,122 @@ class Tank {
         let aimWobble = this.difficulty === 'EASY' ? Math.sin(frameCount * 0.02) * 0.6 : (this.difficulty === 'NORMAL' ? Math.sin(frameCount * 0.03) * 0.25 : 0);
         if (myOrb) aimWobble = 0; 
 
-        // Core Aim Vector (Always track player for shooting logic)
         let dxAim = predictedX - this.x;
         let dyAim = predictedY - this.y;
         let aimAtPlayerAngle = Math.atan2(dyAim, dxAim) + aimWobble;
 
-        // Reactive Dodging Angle Generation
-        let dodgeAngleOffset = 0; 
-        let dodgeAngle = null;
+        // --- 4. VECTOR BLENDED MOVEMENT FORCES ---
+        let moveX = 0;
+        let moveY = 0;
 
+        // Sub-Vector A: Core Spatial Positioning (Kiting, Chasing, and Cover Navigation)
+        if (seekingCover) {
+            let distToCover = Math.hypot(tacticalTargetX - this.x, tacticalTargetY - this.y);
+            if (distToCover > 30) {
+                moveX = (tacticalTargetX - this.x) / distToCover;
+                moveY = (tacticalTargetY - this.y) / distToCover;
+            }
+        } else if (myOrb) {
+            if (distToPlayer > 250) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
+            else if (distToPlayer < 100) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
+        } else if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
+            if (isHitAndRunTank) {
+                if (!cReady) {
+                    // Turn and burn away from player path
+                    moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer;
+                } else {
+                    if (distToPlayer > 300) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
+                    else if (distToPlayer < 150) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
+                }
+            } else {
+                // Reverse Kiting behaviors
+                if (distToPlayer < 320) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
+                else if (distToPlayer > 450) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
+            }
+        } else {
+            let desiredDist = 150;
+            if (distToPlayer > desiredDist + 100) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
+            else if (distToPlayer < desiredDist) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
+            else if (Math.random() < (this.difficulty === 'EASY' ? 0.02 : 0.05)) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
+        }
+
+        // Sub-Vector B: Consistent Reactive Dodge Forces (Removes frame jitter)
         if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
             for (let p of projectiles) {
                 if (p.owner !== this.owner && !p.dead) {
-                    let pdx = this.x - p.x; let pdy = this.y - p.y;
-                    let pDist = Math.hypot(pdx, pdy);
-                    if (pDist < 250) { 
-                        let dot = (p.vx * -pdx + p.vy * -pdy) / (pDist * p.speed);
-                        if (dot > 0.85) { 
-                            if (this.difficulty === 'HARD_1') {
-                                let cross = p.vx * -pdy - p.vy * -pdx; 
-                                dodgeAngleOffset = cross > 0 ? 0.4 : -0.4;
-                            } else {
-                                dodgeAngle = Math.atan2(p.vy, p.vx) + (Math.random() > 0.5 ? Math.PI/2 : -Math.PI/2);
-                            }
-                            break; 
+                    let pDist = Math.hypot(this.x - p.x, this.y - p.y);
+                    if (pDist < 250) {
+                        let dot = (p.vx * -(this.x - p.x) + p.vy * -(this.y - p.y)) / (pDist * p.speed);
+                        if (dot > 0.85) {
+                            // Calculate lateral deflection vectors relative to incoming projectiles
+                            let perpX = -p.vy / p.speed;
+                            let perpY = p.vx / p.speed;
+                            
+                            // Deflect smoothly away based on cross characteristics
+                            let cross = p.vx * -(this.y - p.y) - p.vy * -(this.x - p.x);
+                            let sideDir = cross > 0 ? 1 : -1;
+                            
+                            moveX += perpX * sideDir * 2.5;
+                            moveY += perpY * sideDir * 2.5;
+                            break;
                         }
                     }
                 }
             }
         }
 
-        // Determine Final Navigation Angle
-        let targetAngle = aimAtPlayerAngle;
-
-        // 🔴 TURN-AND-BURN LOGIC: If fast tank and gun is down, turn away!
-        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && isHitAndRunTank && !cReady && !myOrb && !this.destroAiming) {
-            if (seekingCover) {
-                targetAngle = Math.atan2(tacticalTargetY - this.y, tacticalTargetX - this.x); // Sprint to cover
-            } else {
-                targetAngle = Math.atan2(this.y - predictedY, this.x - predictedX); // Sprint away from player
-            }
-        } 
-        
-        targetAngle += dodgeAngleOffset; // Apply orbital dodge curve
-
-        // Bank Shot Geometry
-        let obstacleAhead = false;
-        let obstacleBehind = false;
+        // Sub-Vector C: Proximity Obstacle Avoidance Forces
         let sensorDist = 80;
         let lookAheadX = this.x + Math.cos(this.angle) * sensorDist;
         let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
-        let lookBehindX = this.x - Math.cos(this.angle) * sensorDist;
-        let lookBehindY = this.y - Math.sin(this.angle) * sensorDist;
+        let obstacleAhead = false;
 
         if (lookAheadX < 50 || lookAheadX > canvas.width - 50 || lookAheadY < 50 || lookAheadY > canvas.height - 50) obstacleAhead = true;
-        if (lookBehindX < 50 || lookBehindX > canvas.width - 50 || lookBehindY < 50 || lookBehindY > canvas.height - 50) obstacleBehind = true;
-
         for (let w of currentMap.walls) {
-            if (lookAheadX > w.x - 30 && lookAheadX < w.x + w.w + 30 && lookAheadY > w.y - 30 && lookAheadY < w.y + w.h + 30) obstacleAhead = true;
-            if (lookBehindX > w.x - 30 && lookBehindX < w.x + w.w + 30 && lookBehindY > w.y - 30 && lookBehindY < w.y + w.h + 30) obstacleBehind = true;
+            if (lookAheadX > w.x - 30 && lookAheadX < w.x + w.w + 30 && lookAheadY > w.y - 30 && lookAheadY < w.y + w.h + 30) {
+                obstacleAhead = true;
+                let wallCenterX = w.x + w.w / 2;
+                let wallCenterY = w.y + w.h / 2;
+                moveX += (this.x - wallCenterX) * 0.05;
+                moveY += (this.y - wallCenterY) * 0.05;
+            }
         }
         for (let r of currentMap.rocks) {
-            if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 30) obstacleAhead = true;
-            if (Math.hypot(lookBehindX - r.x, lookBehindY - r.y) < r.r + 30) obstacleBehind = true;
-        }
-
-        let bankingShot = false;
-        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && obstacleAhead && (this.config.id === 'phantom' || this.config.id === 'pyro' || this.config.id === 'orion')) {
-            if (!isHitAndRunTank || cReady) {
-                targetAngle += 0.6; bankingShot = true;
+            if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 30) {
+                obstacleAhead = true;
+                let pushAngle = Math.atan2(this.y - r.y, this.x - r.x);
+                moveX += Math.cos(pushAngle) * 2.0;
+                moveY += Math.sin(pushAngle) * 2.0;
             }
         }
 
-        keys[this.controls.up] = false; keys[this.controls.down] = false; keys[this.controls.left] = false; keys[this.controls.right] = false;
-        keys[this.controls.c] = false; keys[this.controls.x] = false; keys[this.controls.z] = false;
-
-        // Rotation Execution
-        let angleDiff = targetAngle - this.angle; 
-        angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-        if (angleDiff > 0.1) keys[this.controls.right] = true; 
-        else if (angleDiff < -0.1) keys[this.controls.left] = true;
-
-        // --- 4. MOVEMENT LOGIC ---
+        // --- 5. STEERING ENGINE ---
         if (!this.destroAiming) {
-            if (dodgeAngle !== null && this.difficulty === 'HARD') {
-                let diff = dodgeAngle - this.angle; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-                if (diff > 0.2) keys[this.controls.right] = true; else if (diff < -0.2) keys[this.controls.left] = true;
-                keys[this.controls.up] = true;
-            } else if (seekingCover) {
-                let distToTactical = Math.hypot(tacticalTargetX - this.x, tacticalTargetY - this.y);
-                if (distToTactical > 30) {
-                    let coverAngleDiff = Math.atan2(tacticalTargetY - this.y, tacticalTargetX - this.x) - this.angle;
-                    coverAngleDiff = Math.atan2(Math.sin(coverAngleDiff), Math.cos(coverAngleDiff));
-                    if (Math.abs(coverAngleDiff) < Math.PI / 2) {
-                        if (!obstacleAhead) keys[this.controls.up] = true;
-                        else { keys[this.controls.down] = true; keys[this.controls.left] = true; } 
-                    } else {
-                        if (!obstacleBehind) keys[this.controls.down] = true; 
-                        else { keys[this.controls.up] = true; keys[this.controls.right] = true; }
-                    }
-                }
-            } else if (obstacleAhead && (!isHitAndRunTank || cReady) && !bankingShot) {
-                keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.left] = true; keys[this.controls.right] = false;
-            } else if (obstacleAhead && isHitAndRunTank && !cReady) {
-                keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.right] = true; // Turn away from wall while fleeing
-            } else {
-                // Combat Positioning
-                if (myOrb) {
-                    if (distToPlayer > 250) keys[this.controls.up] = true;
-                    else if (distToPlayer < 100) keys[this.controls.down] = true;
-                } else if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
-                    if (isHitAndRunTank) {
-                        if (!cReady) {
-                            keys[this.controls.up] = true; // Fleeing forward
-                        } else {
-                            if (distToPlayer > 300) keys[this.controls.up] = true; // Joust approach
-                            else if (distToPlayer < 150) keys[this.controls.down] = true;
-                        }
-                    } else {
-                        // Reverse Kiting (Grizzly, Dreadnaught, Destroyer, Seraph, Orion)
-                        if (distToPlayer < 320 && !obstacleBehind) keys[this.controls.down] = true; 
-                        else if (distToPlayer > 450) keys[this.controls.up] = true; 
-                    }
-                } else {
-                    let desiredDist = 150;
-                    if (distToPlayer > desiredDist + 100) keys[this.controls.up] = true; 
-                    else if (distToPlayer < desiredDist) keys[this.controls.down] = true; 
-                    else if (Math.random() < (this.difficulty === 'EASY' ? 0.02 : 0.05)) keys[this.controls.up] = true;
+            let finalNavAngle = (moveX === 0 && moveY === 0) ? aimAtPlayerAngle : Math.atan2(moveY, moveX);
+            
+            // Adjust Bank Shot Modifiers
+            let bankingShot = false;
+            if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && obstacleAhead && ['phantom', 'pyro', 'orion'].includes(this.config.id)) {
+                if (!isHitAndRunTank || cReady) { finalNavAngle += 0.6; bankingShot = true; }
+            }
+
+            // Smooth angular tracking interpolation
+            let angleDiff = finalNavAngle - this.angle;
+            angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+
+            if (angleDiff > 0.1) keys[this.controls.right] = true;
+            else if (angleDiff < -0.1) keys[this.controls.left] = true;
+
+            // Execute forward/reverse throttle based on rotational path alignment
+            if (moveX !== 0 || moveY !== 0) {
+                if (Math.abs(angleDiff) < Math.PI / 2.2) {
+                    keys[this.controls.up] = true;
+                } else if (Math.abs(angleDiff) > (Math.PI * 0.7) && !seekingCover) {
+                    keys[this.controls.down] = true;
                 }
             }
 
-            // Anti-Stuck Timer
+            // Anti-Stuck Fail-Safe Logic
             let isStuckMoving = (keys[this.controls.up] || keys[this.controls.down]);
             if (this.x === this.lastX && this.y === this.lastY && isStuckMoving && !bankingShot) {
                 this.stuckTimer = (this.stuckTimer || 0) + 1;
@@ -280,42 +283,42 @@ class Tank {
                     keys[this.controls.left] = true; 
                 }
             } else { this.stuckTimer = 0; }
-            
-        } else {
-            keys[this.controls.up] = false; keys[this.controls.down] = false; keys[this.controls.left] = false; keys[this.controls.right] = false;
         }
-        
+
         this.lastX = this.x; this.lastY = this.y;
 
-        // --- 5. COMBAT & SHOOTING LOGIC ---
-        // 🔴 Calculate combat angle so jousting tanks don't shoot backwards while fleeing!
+        // --- 6. TARGET LINE OF SIGHT & WEAPONS TRIGGERING ---
         let combatAngleDiff = aimAtPlayerAngle - this.angle;
         combatAngleDiff = Math.atan2(Math.sin(combatAngleDiff), Math.cos(combatAngleDiff));
 
         let triggerHappy = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.08 : (this.difficulty === 'NORMAL' ? 0.04 : 0.01);
         let acceptableCombatAngle = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.3 : 0.4;
 
-        if (Math.abs(combatAngleDiff) < acceptableCombatAngle && distToPlayer < 700 && (!obstacleAhead || bankingShot)) {
-            
+        if (Math.abs(combatAngleDiff) < acceptableCombatAngle && distToPlayer < 700) {
             if (this.difficulty === 'EASY' && frameCount % 2 === 0) return; 
-            if (seekingCover && Math.random() > 0.3) return; // Shoot less often when running for life
+            if (seekingCover && Math.random() > 0.3) return; 
 
-            keys[this.controls.c] = true; 
-            
-            if (this.config.id === 'abyss' && myOrb) {
-                if (now > this.cooldowns.z) keys[this.controls.z] = true;
-            } else {
-                if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
-                    if (this.destroAiming) { 
-                        keys[this.controls.x] = true; 
-                        if (this.destroAimDist >= distToPlayer - 40) keys[this.controls.x] = false; 
-                    } 
-                    else if (Math.random() < triggerHappy && distToPlayer > 200 && now > this.cooldowns.x) { 
-                        keys[this.controls.x] = true; 
-                    }
-                } else if (Math.random() < triggerHappy) { keys[this.controls.x] = true; }
+            // Verify Line of Sight to confirm player isn't hiding completely behind walls
+            let isShotClear = this.isLineOfSightClear(this.x, this.y, target.x, target.y);
+
+            if (isShotClear) {
+                keys[this.controls.c] = true; // Main attack confirmed clear!
                 
-                if (distToPlayer < 450 && Math.random() < triggerHappy) keys[this.controls.z] = true;
+                if (this.config.id === 'abyss' && myOrb) {
+                    if (now > this.cooldowns.z) keys[this.controls.z] = true;
+                } else {
+                    if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
+                        if (this.destroAiming) { 
+                            keys[this.controls.x] = true; 
+                            if (this.destroAimDist >= distToPlayer - 40) keys[this.controls.x] = false; 
+                        } 
+                        else if (Math.random() < triggerHappy && distToPlayer > 200 && now > this.cooldowns.x) { 
+                            keys[this.controls.x] = true; 
+                        }
+                    } else if (Math.random() < triggerHappy) { keys[this.controls.x] = true; }
+                    
+                    if (distToPlayer < 450 && Math.random() < triggerHappy) keys[this.controls.z] = true;
+                }
             }
         }
     }
