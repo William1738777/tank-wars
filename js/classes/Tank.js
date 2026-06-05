@@ -98,13 +98,13 @@ class Tank {
         let target = players[0]; 
         const now = Date.now();
 
-        // Clear keys cleanly at the beginning to prevent logical inputs bleeding together
+        // Clear inputs cleanly at the beginning of each frame to prevent lingering inputs
         for (let k in this.controls) { keys[this.controls[k]] = false; }
 
         let isHitAndRunTank = ['phantom', 'pyro', 'scorpion'].includes(this.config.id);
         let cReady = now >= this.cooldowns.c;
 
-        // --- 1. ABYSS TARGETING OVERRIDE ---
+        // --- 1. SPECIALIZED TARGETING OVERRIDES ---
         let myOrb = null;
         if (this.config.id === 'abyss') {
             myOrb = hazards.find(h => h.type === 'void_orb' && h.owner === this.owner);
@@ -126,20 +126,20 @@ class Tank {
             for (let w of currentMap.walls) {
                 let centerX = w.x + w.w / 2;
                 let centerY = w.y + w.h / 2;
-                let angleFromPlayer = Math.atan2(centerY - target.y, centerX - target.x);
-                let coverX = centerX + Math.cos(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
-                let coverY = centerY + Math.sin(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
+                let angleFromPlayer = Math.atan2(centerY - players[0].y, centerX - players[0].x);
+                let coverX = centerX + Math.cos(angleFromPlayer) * (Math.max(w.w, w.h) + 65);
+                let coverY = centerY + Math.sin(angleFromPlayer) * (Math.max(w.w, w.h) + 65);
                 let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
-                if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
+                if (coverX > 40 && coverX < canvas.width - 40 && coverY > 40 && coverY < canvas.height - 40) {
                     if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
                 }
             }
             for (let r of currentMap.rocks) {
-                let angleFromPlayer = Math.atan2(r.y - target.y, r.x - target.x);
-                let coverX = r.x + Math.cos(angleFromPlayer) * (r.r + 60);
-                let coverY = r.y + Math.sin(angleFromPlayer) * (r.r + 60);
+                let angleFromPlayer = Math.atan2(r.y - players[0].y, r.x - players[0].x);
+                let coverX = r.x + Math.cos(angleFromPlayer) * (r.r + 65);
+                let coverY = r.y + Math.sin(angleFromPlayer) * (r.r + 65);
                 let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
-                if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
+                if (coverX > 40 && coverX < canvas.width - 40 && coverY > 40 && coverY < canvas.height - 40) {
                     if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
                 }
             }
@@ -149,9 +149,10 @@ class Tank {
         // --- 3. PREDICTIVE AIM COMPUTATION ---
         let targetVx = target.x - (target.lastX || target.x);
         let targetVy = target.y - (target.lastY || target.y);
-        let distToPlayer = Math.hypot(target.x - this.x, target.y - this.y);
-        let leadDist = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? distToPlayer / 10 : distToPlayer / 15; 
+        let distToTarget = Math.hypot(target.x - this.x, target.y - this.y);
+        let distToPlayer = Math.hypot(players[0].x - this.x, players[0].y - this.y);
         
+        let leadDist = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? distToTarget / 10 : distToTarget / 15; 
         let predictedX = target.x + (targetVx * leadDist);
         let predictedY = target.y + (targetVy * leadDist);
 
@@ -166,53 +167,198 @@ class Tank {
         let moveX = 0;
         let moveY = 0;
 
+        // Establish an orbiting directional pressure that changes cadence contextually
+        let orbitDirection = (Math.floor(frameCount / 140) % 2 === 0) ? 1 : -1;
+        let dxRealPlayer = players[0].x - this.x;
+        let dyRealPlayer = players[0].y - this.y;
+        let perpPlayerX = -dyRealPlayer / (distToPlayer || 1);
+        let perpPlayerY = dxRealPlayer / (distToPlayer || 1);
+
         if (seekingCover) {
             let distToCover = Math.hypot(tacticalTargetX - this.x, tacticalTargetY - this.y);
-            if (distToCover > 30) {
+            if (distToCover > 25) {
                 moveX = (tacticalTargetX - this.x) / distToCover;
                 moveY = (tacticalTargetY - this.y) / distToCover;
             }
         } else if (myOrb) {
-            if (distToPlayer > 250) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
-            else if (distToPlayer < 100) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
+            // Maneuver dynamically in relation to the Void Orb
+            if (distToTarget > 250) { moveX = dxAim / distToTarget; moveY = dyAim / distToTarget; }
+            else if (distToTarget < 120) { moveX = -dxAim / distToTarget; moveY = -dyAim / distToTarget; }
+            // Add a slight orbit pressure around the orb to keep movement dynamic
+            moveX += perpPlayerX * orbitDirection * 0.5;
+            moveY += perpPlayerY * orbitDirection * 0.5;
         } else if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
+            // PROACTIVE CIRCLE-STRAFING ORBIT MATRIX
             if (isHitAndRunTank) {
                 if (!cReady) {
-                    moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer;
+                    // Back out rapidly while maintaining lateral strafing arcs
+                    moveX = (-dxRealPlayer / distToPlayer) * 0.8 + perpPlayerX * orbitDirection * 1.5;
+                    moveY = (-dyRealPlayer / distToPlayer) * 0.8 + perpPlayerY * orbitDirection * 1.5;
                 } else {
-                    if (distToPlayer > 300) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
-                    else if (distToPlayer < 150) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
+                    let radialWeight = (distToPlayer > 280) ? 0.8 : (distToPlayer < 140 ? -0.8 : 0);
+                    moveX = (dxRealPlayer / distToPlayer) * radialWeight + perpPlayerX * orbitDirection * 1.6;
+                    moveY = (dyRealPlayer / distToPlayer) * radialWeight + perpPlayerY * orbitDirection * 1.6;
                 }
             } else {
-                if (distToPlayer < 320) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
-                else if (distToPlayer > 450) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
+                // Juggernaut pacing (Dreadnaught, Orion, Destroyer, etc.)
+                let radialWeight = (distToPlayer < 300) ? -0.9 : (distToPlayer > 440 ? 0.9 : 0);
+                moveX = (dxRealPlayer / distToPlayer) * radialWeight + perpPlayerX * orbitDirection * 1.2;
+                moveY = (dyRealPlayer / distToPlayer) * radialWeight + perpPlayerY * orbitDirection * 1.2;
             }
         } else {
-            let desiredDist = 150;
-            if (distToPlayer > desiredDist + 100) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
-            else if (distToPlayer < desiredDist) { moveX = -dxAim / distToPlayer; moveY = -dyAim / distToPlayer; }
-            else if (Math.random() < (this.difficulty === 'EASY' ? 0.02 : 0.05)) { moveX = dxAim / distToPlayer; moveY = dyAim / distToPlayer; }
+            // Normal/Easy balanced distance scaling
+            let desiredDist = 180;
+            if (distToPlayer > desiredDist + 100) { moveX = dxRealPlayer / distToPlayer; moveY = dyRealPlayer / distToPlayer; }
+            else if (distToPlayer < desiredDist) { moveX = -dxRealPlayer / distToPlayer; moveY = -dyRealPlayer / distToPlayer; }
+            else if (Math.random() < (this.difficulty === 'EASY' ? 0.02 : 0.05)) { moveX = dxRealPlayer / distToPlayer; moveY = dyRealPlayer / distToPlayer; }
         }
 
+        // SMOOTH MULTI-THREAT PROJECTILE EVASION RING
         if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
+            let totalDodgeX = 0;
+            let totalDodgeY = 0;
+            let activeThreatsCount = 0;
+
             for (let p of projectiles) {
                 if (p.owner !== this.owner && !p.dead) {
                     let pDist = Math.hypot(this.x - p.x, this.y - p.y);
-                    if (pDist < 250) {
+                    // Expanded threat detection field to match reaction speeds to turnaround time
+                    if (pDist < 450) {
                         let dot = (p.vx * -(this.x - p.x) + p.vy * -(this.y - p.y)) / (pDist * p.speed);
-                        if (dot > 0.85) {
+                        if (dot > 0.78) {
                             let perpX = -p.vy / p.speed;
                             let perpY = p.vx / p.speed;
                             let cross = p.vx * -(this.y - p.y) - p.vy * -(this.x - p.x);
                             let sideDir = cross > 0 ? 1 : -1;
-                            moveX += perpX * sideDir * 2.5;
-                            moveY += perpY * sideDir * 2.5;
-                            break;
+                            
+                            // Calculate proximity force multiplier (nearer threats trigger maximum velocity scaling)
+                            let distanceFactor = (450 - pDist) / 450;
+                            totalDodgeX += perpX * sideDir * 3.5 * distanceFactor;
+                            totalDodgeY += perpY * sideDir * 3.5 * distanceFactor;
+                            activeThreatsCount++;
                         }
                     }
                 }
             }
+
+            // Blend threat steering inputs cleanly to preserve fluid motion profiles
+            if (activeThreatsCount > 0) {
+                moveX += totalDodgeX / activeThreatsCount;
+                moveY += totalDodgeY / activeThreatsCount;
+            }
         }
+
+        // ANTI-SCRAPE OBSTACLE CUSHION ENGINE
+        let sensorDist = this.radius + 8; 
+        let lookAheadX = this.x + Math.cos(this.angle) * sensorDist;
+        let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
+        let obstacleAhead = false;
+
+        if (lookAheadX < this.radius + 6 || lookAheadX > canvas.width - (this.radius + 6) || 
+            lookAheadY < this.radius + 6 || lookAheadY > canvas.height - (this.radius + 6)) {
+            obstacleAhead = true;
+        }
+
+        for (let w of currentMap.walls) {
+            // Expanded query range to detect corners and avoid micro-stuck scraping states
+            if (lookAheadX > w.x - 6 && lookAheadX < w.x + w.w + 6 && 
+                lookAheadY > w.y - 6 && lookAheadY < w.y + w.h + 6) {
+                obstacleAhead = true;
+                let wallCenterX = w.x + w.w / 2;
+                let wallCenterY = w.y + w.h / 2;
+                // Amplified normal vector force away from obstacle volume
+                moveX += (this.x - wallCenterX) * 0.35;
+                moveY += (this.y - wallCenterY) * 0.35;
+            }
+        }
+        for (let r of currentMap.rocks) {
+            if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 6) {
+                obstacleAhead = true;
+                let pushAngle = Math.atan2(this.y - r.y, this.x - r.x);
+                moveX += Math.cos(pushAngle) * 3.2;
+                moveY += Math.sin(pushAngle) * 3.2;
+            }
+        }
+
+        // --- 5. KINEMATIC STEERING ENGINE & REVERSE TRANSMISSION ---
+        if (!this.destroAiming) {
+            let finalNavAngle = (moveX === 0 && moveY === 0) ? aimAtPlayerAngle : Math.atan2(moveY, moveX);
+            
+            let bankingShot = false;
+            if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && obstacleAhead && ['phantom', 'pyro', 'orion'].includes(this.config.id)) {
+                if (!isHitAndRunTank || cReady) { finalNavAngle += 0.6; bankingShot = true; }
+            }
+
+            let angleDiff = finalNavAngle - this.angle;
+            angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+
+            // Default forward steering evaluation
+            if (angleDiff > 0.08) keys[this.controls.right] = true;
+            else if (angleDiff < -0.08) keys[this.controls.left] = true;
+
+            if (moveX !== 0 || moveY !== 0) {
+                // If destination vector falls within the forward arc, activate forward acceleration
+                if (Math.abs(angleDiff) < Math.PI / 2.0) {
+                    keys[this.controls.up] = true;
+                } else if (!seekingCover) {
+                    // REVERSE GEAR ENGAGEMENT: Lock inverse controls to accelerate backwards instantaneously
+                    keys[this.controls.down] = true;
+                    
+                    // Invert lateral inputs to align steering geometry while executing reverse maneuvers
+                    if (angleDiff > 0.08) { keys[this.controls.right] = false; keys[this.controls.left] = true; }
+                    else if (angleDiff < -0.08) { keys[this.controls.left] = false; keys[this.controls.right] = true; }
+                }
+            }
+
+            let isStuckMoving = (keys[this.controls.up] || keys[this.controls.down]);
+            if (this.x === this.lastX && this.y === this.lastY && isStuckMoving && !bankingShot) {
+                this.stuckTimer = (this.stuckTimer || 0) + 1;
+                if (this.stuckTimer > 20) { 
+                    keys[this.controls.up] = !keys[this.controls.up]; 
+                    keys[this.controls.down] = !keys[this.controls.down]; 
+                    keys[this.controls.left] = true; 
+                }
+            } else { this.stuckTimer = 0; }
+        }
+
+        this.lastX = this.x; this.lastY = this.y;
+
+        // --- 6. TARGET LINE OF SIGHT & WEAPONS TRIGGERING ---
+        let combatAngleDiff = aimAtPlayerAngle - this.angle;
+        combatAngleDiff = Math.atan2(Math.sin(combatAngleDiff), Math.cos(combatAngleDiff));
+
+        let triggerHappy = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.08 : (this.difficulty === 'NORMAL' ? 0.04 : 0.01);
+        let acceptableCombatAngle = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.35 : 0.45;
+
+        // Handle structural combat targeting checks
+        if (Math.abs(combatAngleDiff) < acceptableCombatAngle && distToPlayer < 720) {
+            if (this.difficulty === 'EASY' && frameCount % 2 === 0) return; 
+            if (seekingCover && Math.random() > 0.3) return; 
+
+            let isShotClear = this.isLineOfSightClear(this.x, this.y, target.x, target.y);
+
+            if (isShotClear || (this.config.id === 'abyss' && myOrb)) {
+                keys[this.controls.c] = true; 
+                
+                if (this.config.id === 'abyss' && myOrb) {
+                    // Secure and detonate the Void Orb via Event Horizon once generated
+                    if (now > this.cooldowns.z) keys[this.controls.z] = true;
+                } else {
+                    if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
+                        if (this.destroAiming) { 
+                            keys[this.controls.x] = true; 
+                            if (this.destroAimDist >= distToPlayer - 40) keys[this.controls.x] = false; 
+                        } 
+                        else if (Math.random() < triggerHappy && distToPlayer > 200 && now > this.cooldowns.x) { 
+                            keys[this.controls.x] = true; 
+                        }
+                    } else if (Math.random() < triggerHappy) { keys[this.controls.x] = true; }
+                    
+                    if (distToPlayer < 450 && Math.random() < triggerHappy) keys[this.controls.z] = true;
+                }
+            }
+        }
+    }
 
         // Sub-Vector C: Proximity Obstacle Avoidance Forces (Invisible Cushion Removed)
         let sensorDist = this.radius + 5; 
