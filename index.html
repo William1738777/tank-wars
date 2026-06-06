@@ -69,6 +69,19 @@
         <div id="victory-screen" class="overlay">
             <h1 id="victory-title">PLAYER WINS!</h1>
             <p class="subtitle">MATCH COMPLETE</p>
+            
+            <!-- NEW: Dynamic Statistics Panel -->
+            <div id="victory-stats" style="display: flex; gap: 40px; margin: 20px 0; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 1px solid #555;">
+                <div style="text-align: left; color: #00aaff;">
+                    <h3>PLAYER 1 STATS</h3>
+                    <div id="stats-p1" style="font-size: 1.1rem; line-height: 1.5; color: #ccc;"></div>
+                </div>
+                <div style="text-align: left; color: #ff3333;">
+                    <h3>PLAYER 2 STATS</h3>
+                    <div id="stats-p2" style="font-size: 1.1rem; line-height: 1.5; color: #ccc;"></div>
+                </div>
+            </div>
+
             <button onclick="location.reload()">Play Again</button>
         </div>
 
