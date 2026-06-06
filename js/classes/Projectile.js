@@ -11,7 +11,7 @@ class Projectile {
         this.baseDamage = damage; 
         this.color = color; this.type = type; this.bounces = bounces;
         
-        this.life = type === 'tempest_z' ? 480 : (type === 'missile' ? 70 : (type === 'arrow' ? 45 : 999)); 
+        this.life = type === 'tempest_z' ? 480 : (type === 'missile' ? 70 : (type === 'arrow' ? 45 : (type === 'blackout_c' ? 40 : 999))); 
         this.dead = false; this.isFifth = false; 
         this.projectileHp = type === 'mg' ? 1 : 3;
         this.castId = castId; 
@@ -81,6 +81,8 @@ class Projectile {
         } else if (this.type === 'tempest_x') {
             createParticles(this.x + (Math.random()-0.5)*25, this.y + (Math.random()-0.5)*25, 2, '#ffffff', 1.5, 0.3);
             createParticles(this.x, this.y, 1, '#aaffff', 2.5, 0.4);
+        } else if (this.type === 'blackout_c') {
+            createParticles(this.x, this.y, 1, '#00ff00', 1.5, 0.2);
         } else if (this.type === 'tempest_z') {
             createParticles(this.x, this.y, 1, '#aaffff', 2, 0.5);
             if (Math.random() > 0.5) createParticles(this.x, this.y, 1, '#ffffff', 1, 0.3);
@@ -185,6 +187,9 @@ class Projectile {
                     }
                 }
             });
+        } else if (this.type === 'blackout_c') {
+            createKaboom(this.x, this.y, 1.2);
+            createParticles(this.x, this.y, 10, '#00ff00', 1.5, 0.4);
         } else if (this.type === 'firebolt') {
             createKaboom(this.x, this.y, 1.2);
             createParticles(this.x, this.y, 10, '#ff0000', 1.5, 0.4);
@@ -259,6 +264,12 @@ class Projectile {
             ctx.rotate(Math.PI/2); 
             const w = images.destroRocket.width * 0.15; const h = images.destroRocket.height * 0.15;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ffaa00'; ctx.drawImage(images.destroRocket, -w/2, -h/2, w, h);
+        } else if (this.type === 'blackout_c' && images.blackoutProjectile && images.blackoutProjectile.complete) {
+            const scale = 0.15;
+            const w = images.blackoutProjectile.width * scale;
+            const h = images.blackoutProjectile.height * scale;
+            ctx.shadowBlur = 15; ctx.shadowColor = '#00ff00';
+            ctx.drawImage(images.blackoutProjectile, -w/2, -h/2, w, h);
         } else if (this.type === 'firebolt' && images.firebolt.complete) {
             const scale = 0.15;
             const w = images.firebolt.width * scale;
