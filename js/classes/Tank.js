@@ -15,6 +15,7 @@ class Tank {
         this.controls = controls; this.isDead = false;
         this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
+        this.dashAngle = 0; // Restored just in case UI scans for it
         
         this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
         this.electrocutedTimer = 0;
@@ -27,8 +28,8 @@ class Tank {
 
         // Tempest Internal Trackers
         this.tempestStacks = 0; 
-        this.tempestShieldHp = 0;
-        this.tempestShieldTimer = 0;
+        this.tempestShieldHp = 0; // RESTORED
+        this.tempestShieldTimer = 0; // RESTORED
 
         this.tempestSpeedStacks = 0; 
         this.tempestSpeedTimer = 0;
@@ -278,7 +279,6 @@ class Tank {
         if (this.isDead) return;
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
-        // --- NEW: Tempest Orbital Passive Mechanics ---
         if (this.config.id === 'tempest') {
             if (this.tempestSpeedTimer > 0) {
                 this.tempestSpeedTimer--;
@@ -292,6 +292,12 @@ class Tank {
                 if (this.tempestCSpdTimer <= 0) {
                     this.tempestCSpdStacks = 0;
                 }
+            }
+            
+            // --- RESTORED: Shield Decay Loop ---
+            if (this.tempestShieldTimer > 0) {
+                this.tempestShieldTimer--;
+                if (this.tempestShieldTimer <= 0) { this.tempestShieldHp = 0; }
             }
             
             let orbitalSpeed = 0.03 * (1 + (this.tempestSpeedStacks * 1.0));
@@ -312,20 +318,18 @@ class Tank {
                     hitboxes.forEach((hb, index) => {
                         if (Math.hypot(enemy.x - hb.x, enemy.y - hb.y) < enemy.radius + 20) {
                             if (now > this.tempestOrbitalCooldowns[index]) {
-                                enemy.hp -= 4; // Nerf to 4
+                                enemy.hp -= 4; 
                                 if (typeof recordDamage === 'function') recordDamage(this.owner, 4);
                                 this.tempestOrbitalCooldowns[index] = now + 250; 
                                 
-                                // Flashy Contact VFX
                                 flashes.push({ x: enemy.x, y: enemy.y, radius: 15, maxRadius: 60, life: 1.0, color: '#aaffff' });
                                 createParticles(enemy.x, enemy.y, 8, '#ffffff', 2, 0.6);
                                 createParticles(enemy.x, enemy.y, 8, '#00ffff', 3, 0.4);
                                 floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-4", life: 30, color: '#aaffff'});
                                 
-                                // Gain Stacks on Contact
                                 this.tempestStacks = Math.min(9, (this.tempestStacks || 0) + 0.5);
                                 this.tempestCSpdStacks = Math.min(5, (this.tempestCSpdStacks || 0) + 1);
-                                this.tempestCSpdTimer = 300; // 5 Seconds
+                                this.tempestCSpdTimer = 300; 
                                 
                                 if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
                             }
@@ -534,6 +538,37 @@ class Tank {
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.3, 14, 3, 3, '#00ff66', 'toxic_bullet', 0));
                 this.burstsLeft--; this.burstTimer = 6; this.recoil = 2;
             }
+        }
+
+        if (this.dashState === 3 && this.stunTimer <= 0) {
+            currentSpeed = 16; this.dashTimer--;
+            if (frameCount % 3 === 0) { hazards.push({ owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, radius: 30, life: 300, maxLife: 300 }); }
+            players.forEach(enemy => {
+                if (enemy.owner !== this.owner && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
+                    if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
+                        enemy.hp -= 15; this.ghostHitTanks.push(enemy.owner);
+                        if (typeof recordDamage === 'function') recordDamage(this.owner, 15, false, true); 
+                        createParticles(enemy.x, enemy.y, 10, '#ff4500', 2, 0.5);
+                        floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-15 BURN!", life: 40, color: '#ff3300'});
+                        if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; handleDeath(enemy.owner === 1 ? 0 : 1); }
+                    }
+                }
+            });
+            this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
+            if (this.dashTimer <= 0) { this.dashState = 0; this.isGhosting = false; }
+            this.checkWallCollisions(); this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x)); this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+            return; 
+        }
+
+        if (this.dashState === 1 && this.stunTimer <= 0) {
+            this.dashTimer--; createParticles(this.x - Math.cos(this.angle)*20, this.y - Math.sin(this.angle)*20, 2, this.config.color, 1, 0.5);
+            if (this.dashTimer <= 0) { this.dashState = 2; this.dashTimer = 15; createKaboom(this.x - Math.cos(this.angle)*25, this.y - Math.sin(this.angle)*25, 0.5); }
+            return; 
+        }
+        
+        if (this.dashState === 2 && this.stunTimer <= 0) {
+            currentSpeed = 12; this.dashTimer--; createParticles(this.x, this.y, 1, '#fff', 3, 0.4); 
+            if (this.dashTimer <= 0) { this.dashState = 0; if (this.config.id === 'pyro') this.flameTimer = 300; }
         }
 
         if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
@@ -850,6 +885,43 @@ class Tank {
                 }
             }
             ctx.restore();
+        }
+
+        // --- RESTORED: Tempest Shield Render ---
+        if (this.config.id === 'tempest' && this.tempestShieldHp > 0) {
+            ctx.save();
+            let hpRatio = Math.min(1, this.tempestShieldHp / 30); 
+            let speedMult = 1 + hpRatio; 
+            let thickness = 3 + hpRatio * 5; 
+            
+            ctx.translate(this.x, this.y);
+            
+            ctx.rotate((frameCount * 0.15) * speedMult);
+            ctx.shadowBlur = 10 + (hpRatio * 15);
+            ctx.shadowColor = '#aaffff';
+            ctx.strokeStyle = `rgba(170, 255, 255, ${0.5 + hpRatio * 0.5})`;
+            ctx.lineWidth = thickness;
+            ctx.lineCap = 'round';
+            
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius + 15 + (hpRatio * 10), (i * Math.PI * 2 / 3), (i * Math.PI * 2 / 3) + Math.PI / 2);
+                ctx.stroke();
+            }
+            
+            ctx.rotate(-(frameCount * 0.25) * speedMult);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.4 + hpRatio * 0.4})`;
+            ctx.lineWidth = thickness * 0.6;
+            for (let i = 0; i < 4; i++) {
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius + 5 + (hpRatio * 5), (i * Math.PI * 2 / 4), (i * Math.PI * 2 / 4) + Math.PI / 3);
+                ctx.stroke();
+            }
+            ctx.restore();
+            
+            if (Math.random() < 0.3 + (hpRatio * 0.4)) {
+                createParticles(this.x + (Math.random()-0.5)*40, this.y + (Math.random()-0.5)*40, 1, '#ffffff', 1.5, 0.5);
+            }
         }
 
         if (this.poisons.length > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI*2); ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill(); }
