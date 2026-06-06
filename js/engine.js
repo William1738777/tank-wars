@@ -59,8 +59,6 @@ function startGame() {
     
     players = [
         new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false),
-        
-        // --- NEW: Pass aiDifficulty if it's Arcade mode ---
         new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL')
     ];
     
@@ -117,6 +115,9 @@ function handleDeath(loserIndex) {
             loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
             loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
             
+            // Tempest tracking resets
+            loser.tempestStacks = 0; loser.nextCIsDash = false; loser.tempestShieldHp = 0; loser.typhoonMarks = 0;
+            
             // Reset Orion fields explicitly
             loser.zHeight = 0; loser.zRotation = 0;
             loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
@@ -165,13 +166,36 @@ function update() {
 
     updateHUD(); updateCooldownUI();
 
-    // Decrease global screen shake timer
     if (screenShakeTimer > 0) screenShakeTimer--;
 
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
         
-        if (h.type === 'dark_boom') {
+        // --- NEW: Tempest Whirlwind Trap Logic ---
+        if (h.type === 'whirlwind_trap') {
+            if (h.targetTank && !h.targetTank.isDead) {
+                // Pin the tank physically to the center of the trap
+                h.x = h.targetTank.x;
+                h.y = h.targetTank.y;
+                h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); // Prevent actions
+                h.targetTank.kbTimer = 0; // Nullify external knockbacks
+                h.targetTank.zRotation += 0.2; // Spin helplessly
+                
+                // Triggers exactly every 0.5 seconds (30 frames)
+                if (h.life % 30 === 0) {
+                    let progress = 1 - (h.life / h.maxLife); // Scales from 0.0 to 1.0 over 6s
+                    let dmg = 0.5 + (1.3 * progress); // Rolling damage 0.5 up to 1.8
+                    h.targetTank.hp -= dmg;
+                    if (typeof recordDamage === 'function') recordDamage(h.owner, dmg);
+                    floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
+                }
+                
+                // Add ferocious chaotic particle bursts
+                createParticles(h.x + (Math.random()-0.5)*100, h.y + (Math.random()-0.5)*100, 2, '#ffffff', 2, 0.5);
+                createParticles(h.x, h.y, 1, '#aaffff', 3, 0.4);
+            }
+        }
+        else if (h.type === 'dark_boom') {
             if (!h.initialized) {
                 h.particles = [];
                 for (let j = 0; j < 35; j++) {
@@ -239,26 +263,21 @@ function update() {
                 });
             }
         }
-        
-        // --- ORION CHRONOSPHERE POTENTIAL LOGIC MATRIX ---
         else if (h.type === 'orion_chrono') {
             let age = h.maxLife - h.life;
-            h.isFullyCharged = age >= 90; // 1.5 seconds charge window at 60fps
+            h.isFullyCharged = age >= 90; 
             
-            // Loop through all currently active projectiles inside the bubble
             projectiles.forEach(proj => {
                 let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
                 if (dist < h.radius) {
                     if (h.isFullyCharged) {
                         proj.isTimeDilated = true;
-                        // Smoothly decay velocity until matching a total dead stop frame
                         proj.vx *= 0.92;
                         proj.vy *= 0.92;
                     }
                 }
             });
 
-            // At the final expiration frame, reflect everything back at original speed
             if (h.life === 1) {
                 createParticles(h.x, h.y, 40, '#ff33cc', 2.5, 0.6);
                 triggerScreenShake(15, 6);
@@ -266,29 +285,15 @@ function update() {
                 projectiles.forEach(proj => {
                     let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
                     if (dist < h.radius && proj.isTimeDilated) {
-                        
-                        // Orion's specific Slingshot payload properties
-                        if (proj.type === 'orion_c') {
-                            proj.damage += 5;
-                            proj.speed *= 1.5; // Extreme Slingshot Acceleration Triggered
-                        }
-
-                        // Reflect trajectory angle 180 degrees directly back to sender
-                        proj.vx = -Math.cos(proj.angle) * proj.speed;
-                        proj.vy = -Math.sin(proj.angle) * proj.speed;
-                        proj.angle = Math.atan2(proj.vy, proj.vx);
-                        
-                        // Switch code signature mapping so it hurts its creator instead
-                        proj.owner = h.owner; 
-                        proj.isTimeDilated = false;
-                        
+                        if (proj.type === 'orion_c') { proj.damage += 5; proj.speed *= 1.5; }
+                        proj.vx = -Math.cos(proj.angle) * proj.speed; proj.vy = -Math.sin(proj.angle) * proj.speed;
+                        proj.angle = Math.atan2(proj.vy, proj.vx); proj.owner = h.owner; proj.isTimeDilated = false;
                         createParticles(proj.x, proj.y, 4, '#ff33cc', 1, 0.3);
                     }
                 });
             }
         }
-        
-        if (h.type === 'fire_trail') {
+        else if (h.type === 'fire_trail') {
             players.forEach(tank => { if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) { if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) tank.inFireTrail = true; } });
         } else if (h.type === 'mine') {
             h.age++; if (h.age > 120 && !h.triggering) h.visible = false;
@@ -349,64 +354,55 @@ function update() {
     }
 
     players.forEach((tank, tIndex) => {
-        // --- ORION Z-AXIS GRAVITY LIFT PHYSICS LOOP ---
+        // --- Z-AXIS GRAVITY LIFT PHYSICS LOOP ---
         if (tank.zHeightActive) {
             tank.zFrameCounter++;
             
-            // Check if captured by Orion's active Chronosphere *during* the air animation
             let insideChronosphere = hazards.some(h => h.type === 'orion_chrono' && h.isFullyCharged && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius);
             
             if (insideChronosphere && !tank.chronoIntercepted && tank.zFrameCounter < tank.zMaxDuration) {
                 tank.chronoIntercepted = true;
-                tank.zMaxDuration += 120; // Freeze/extend flight duration for an extra 2.0s
-                tank.zHeight += 150; // Push tank even higher up into sky perspective layers
+                tank.zMaxDuration += 120; 
+                tank.zHeight += 150; 
                 floatingTexts.push({x: tank.x, y: tank.y - 80, text: "TIME-DILATED SUSPENSION!", life: 60, color: '#ff33cc', fontSize: '15px'});
             }
 
-            // Map a seamless parabole progression arc matrix across duration frames
             let progress = tank.zFrameCounter / tank.zMaxDuration;
             
             if (progress <= 1.0) {
                 if (tank.chronoIntercepted) {
-                    // Hover at maximum distorted height matrix with violent visual shaking offsets
                     if (progress > 0.2 && progress < 0.8) {
                         tank.zHeight = tank.zHeightBaseMax + 150 + Math.sin(frameCount * 0.4) * 8;
                     } else if (progress >= 0.8) {
-                        // Accelerate fall downward from apex
                         let fallProgress = (progress - 0.8) / 0.2;
                         tank.zHeight = (tank.zHeightBaseMax + 150) * (1 - fallProgress * fallProgress);
                     }
                 } else {
-                    // Standard gravity arc profile
                     tank.zHeight = Math.sin(progress * Math.PI) * tank.zHeightBaseMax;
                 }
             }
 
             if (progress >= 1.0 || tank.zHeight <= 0) {
-                // The tank has crashed back down into map geometry coordinates
+                // The tank has crashed back down into map geometry
                 tank.zHeight = 0;
                 tank.zHeightActive = false;
-                tank.stunTimer = 0; // Break freeze state lock
+                tank.stunTimer = 0; 
                 
                 let startHp = tank.hp;
                 
-                if (tank.chronoIntercepted) {
-                    // Massive Wombo Combo execution payload triggered
+                if (tank.knockupSource === 'tempest') {
+                    // Safe landing from Tempest Typhoon
+                    tank.knockupSource = null; 
+                } else if (tank.chronoIntercepted) {
                     tank.hp -= 40;
-                    tank.afterStunSlow = 180; // Cripple velocity by 90% for 3s (180 frames)
+                    tank.afterStunSlow = 180; 
                     tank.fireSlowTimer = 180; 
-                    triggerScreenShake(24, 12); // Extreme visual impact vibration
-                    
-                    // Spawn custom particle impact rings and heavy earth crumbles
+                    triggerScreenShake(24, 12); 
                     createParticles(tank.x, tank.y, 35, '#ff33cc', 2.5, 0.8);
                     createParticles(tank.x, tank.y, 25, '#222222', 4, 1);
-                    
                     floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ORBITAL ANNIHILATION!", life: 80, color: '#ff33cc', fontSize: '24px'});
-                    
-                    // Introduce a wild spinning animation that tapers off over frames
                     tank.zRotation = 12.5; 
                 } else {
-                    // Standard Drop execution parameters
                     tank.hp -= 25;
                     triggerScreenShake(12, 5);
                     createParticles(tank.x, tank.y, 15, '#ff33cc', 1.5, 0.5);
@@ -414,13 +410,12 @@ function update() {
                 }
                 
                 let damageTaken = startHp - tank.hp;
-                if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken); // Attribute to opposite owner
+                if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken); 
 
                 if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
             }
         }
 
-        // Dissipate wild spinning mechanics over ground frames
         if (!tank.zHeightActive && tank.zRotation > 0.01) {
             tank.zRotation *= 0.88;
         }
@@ -432,17 +427,15 @@ function update() {
             tank.hp -= (1 / 60) * multiplier;
             let damageTaken = startHp - tank.hp;
             
-            if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken, false, true); // Pyro Dash 3 is an X Skill
+            if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken, false, true); 
 
             if (Math.random() < 0.1) createParticles(tank.x, tank.y, 1, '#ff3300', 1.5, 0.3);
             if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
         } else { tank.fireTrailTicks = 0; }
     });
 
-    // --- GLOBAL ORION QUANTUM PORTALS WARP MATRIX (TANKS) ---
     players.forEach(orionTank => {
         if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
-            // Check if Orion Tank himself hitches onto the portal transport nodes
             if (!orionTank.isDead && orionTank.zHeight === 0) {
                 let distTankToA = Math.hypot(orionTank.x - orionTank.portalA.x, orionTank.y - orionTank.portalA.y);
                 let distTankToB = Math.hypot(orionTank.x - orionTank.portalB.x, orionTank.y - orionTank.portalB.y);
@@ -465,46 +458,53 @@ function update() {
 
     for (let i = 0; i < projectiles.length; i++) {
         let pA = projectiles[i]; if (pA.dead) continue;
+        
+        // --- NEW: Tempest Z-Skill Synergy Logic (Windcutter Convergence) ---
+        if (pA.type === 'tempest_z') {
+            // Actively scan the map to see if the Tempest caught someone in a Whirlwind Trap
+            let activeTrap = hazards.find(h => h.type === 'whirlwind_trap' && h.owner === pA.owner);
+            if (activeTrap && activeTrap.targetTank && !activeTrap.targetTank.isDead) {
+                // Determine angle directly to the trapped tank to force merging
+                let targetAngle = Math.atan2(activeTrap.y - pA.y, activeTrap.x - pA.x);
+                let angleDiff = targetAngle - pA.angle;
+                angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+                
+                // Curve aggressively inward to create the folding crescent visual
+                pA.angle += angleDiff * 0.05; 
+                pA.vx = Math.cos(pA.angle) * pA.speed;
+                pA.vy = Math.sin(pA.angle) * pA.speed;
+            }
+        }
+
         pA.update();
 
-        // 閥 NEW: Add vibrant red burning trail to empowered Abyss shots
         if (pA.type === 'abyss_rapid_empowered' && frameCount % 2 === 0) {
             createParticles(pA.x, pA.y, 1, '#ff0000', 1.5, 0.3);
         }
 
-        // --- GLOBAL ORION QUANTUM PORTALS WARP MATRIX (PROJECTILES) ---
         players.forEach(orionTank => {
             if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
-                // Check if Orion C Projectile collides with either active portal anchor
                 if (pA.type === 'orion_c' && !pA.dead) {
                     let distToA = Math.hypot(pA.x - orionTank.portalA.x, pA.y - orionTank.portalA.y);
                     let distToB = Math.hypot(pA.x - orionTank.portalB.x, pA.y - orionTank.portalB.y);
                     
                     if (distToA < 25 && !pA.justWarped) {
                         pA.x = orionTank.portalB.x; pA.y = orionTank.portalB.y;
-                        pA.damage += 5; 
-                        pA.speed *= 1.25; // Portal Speed Boost Injection
-                        pA.vx = Math.cos(pA.angle) * pA.speed;
-                        pA.vy = Math.sin(pA.angle) * pA.speed;
-                        pA.justWarped = true; 
+                        pA.damage += 5; pA.speed *= 1.25; 
+                        pA.vx = Math.cos(pA.angle) * pA.speed; pA.vy = Math.sin(pA.angle) * pA.speed; pA.justWarped = true; 
                         createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
                     } else if (distToB < 25 && !pA.justWarped) {
                         pA.x = orionTank.portalA.x; pA.y = orionTank.portalA.y;
-                        pA.damage += 5; 
-                        pA.speed *= 1.25; // Portal Speed Boost Injection
-                        pA.vx = Math.cos(pA.angle) * pA.speed;
-                        pA.vy = Math.sin(pA.angle) * pA.speed;
-                        pA.justWarped = true;
+                        pA.damage += 5; pA.speed *= 1.25; 
+                        pA.vx = Math.cos(pA.angle) * pA.speed; pA.vy = Math.sin(pA.angle) * pA.speed; pA.justWarped = true;
                         createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
                     }
-                    if (distToA > 40 && distToB > 40) pA.justWarped = false; // Reset toggle outside exit field parameters
+                    if (distToA > 40 && distToB > 40) pA.justWarped = false; 
                 }
             }
         });
 
         if (pA.type === 'destro_rocket' || pA.type === 'destro_up') continue;
-
-        // Skip standard ground damage calculations entirely if the target projectile is caught in status lock suspension
         if (pA.isTimeDilated) continue;
 
         hazards.forEach(h => {
@@ -512,17 +512,15 @@ function update() {
                 if (Math.hypot(pA.x - h.x, pA.y - h.y) < h.radius + pA.radius) {
                     if (pA.type === 'abyss_z') {
                         hazards.push({ owner: pA.owner, type: 'black_hole', x: h.x, y: h.y, radius: 150, life: 240 });
-                        playSound(sfx.abyssBlackHole); // <-- NEW: Black Hole Sound
-                        pA.triggerExplosion(); h.life = 0;
+                        playSound(sfx.abyssBlackHole); pA.triggerExplosion(); h.life = 0;
                     } else if ((pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') && pA.owner === h.owner) {
                         h.orbHp -= 1; pA.triggerExplosion(); createParticles(h.x, h.y, 3, '#ff0000', 1.5, 0.3);
                         if (h.orbHp <= 0) {
                             h.life = 0;
                             hazards.push({ owner: h.owner, type: 'abyss_domain', x: h.x, y: h.y, radius: 170, life: 720, dps: 0.5, tickTimer: 120 });
-                            playSound(sfx.abyssDom); // <-- NEW: Domain Expansion Sound
+                            playSound(sfx.abyssDom); 
                             floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
                             
-                            // 閥 NEW: 50% Cooldown Refund on X when Domain Pops
                             let domainOwner = players.find(p => p.owner === h.owner);
                             if (domainOwner) {
                                 let cdReduction = domainOwner.maxCooldowns.x * 0.5;
@@ -544,8 +542,6 @@ function update() {
         players.forEach((tank, tIndex) => {
             if (pA.owner !== tank.owner && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
                 if (tank.config.id === 'phantom' && tank.isGhost) return;
-
-                // CRITICAL EXCLUSION DEFENSE LAYER: Airborne targets are safe from standard surface level shells
                 if (tank.zHeight > 0) return;
 
                 if (Math.hypot(pA.x - tank.x, pA.y - tank.y) < tank.radius + pA.radius) {
@@ -572,32 +568,55 @@ function update() {
                         } else if (pA.type === 'destro_missile') {
                             tank.hp -= pA.damage; tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
                         } else if (pA.type === 'orion_z_lift') {
-                            // Inject zero gravity suspension payload variables to the hit target tank profile
-                            tank.hp -= pA.damage;
-                            tank.zHeightActive = true;
-                            tank.zFrameCounter = 0;
-                            tank.zMaxDuration = 150; // 2.5 seconds base hangtime at 60fps
-                            tank.zHeightBaseMax = 160; 
-                            tank.chronoIntercepted = false;
-                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ANTI-GRAV LIFT!", life: 50, color: '#ff33cc'});
+                            tank.hp -= pA.damage; tank.zHeightActive = true; tank.zFrameCounter = 0; tank.zMaxDuration = 150; 
+                            tank.zHeightBaseMax = 160; tank.chronoIntercepted = false; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ANTI-GRAV LIFT!", life: 50, color: '#ff33cc'});
                         } else if (pA.type === 'abyss_z') {
                             tank.hp -= pA.damage;
-                            if (pA.hasBounced) { 
-                                hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 }); 
-                                playSound(sfx.abyssBlackHole); // <-- NEW: Black Hole Sound
-                            } 
+                            if (pA.hasBounced) { hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 }); playSound(sfx.abyssBlackHole); } 
                             else { tank.isSlowed = true; tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 180); }
                         } else if (pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') {
-                            tank.hp -= pA.damage;
-                            let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
+                            tank.hp -= pA.damage; let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
                             tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
-                            
-                            // 閥 NEW: Abyssal Slow Stacking (max 10 stacks for 80% slow)
-                            if (pA.type === 'abyss_rapid_empowered') {
-                                tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1);
-                                tank.abyssSlowTimer = 180; // 3 seconds before expiring
+                            if (pA.type === 'abyss_rapid_empowered') { tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1); tank.abyssSlowTimer = 180; }
+                        } 
+                        // --- NEW: Tempest Collision & Stack Engine Logic ---
+                        else if (pA.type === 'tempest_c') {
+                            tank.hp -= pA.damage;
+                            if (shooter && shooter.config.id === 'tempest') {
+                                shooter.tempestStacks = Math.min(9, (shooter.tempestStacks || 0) + 1);
+                                floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "+1 STACK", life: 30, color: '#aaffff', fontSize: '14px'});
                             }
-                        } else { tank.hp -= pA.damage; }
+                        } else if (pA.type === 'tempest_x') {
+                            tank.hp -= pA.damage;
+                            if (shooter && shooter.config.id === 'tempest') {
+                                shooter.tempestShieldHp = Math.min(30, (shooter.tempestShieldHp || 0) + 10);
+                                shooter.tempestShieldTimer = 960; // 16 Seconds
+                                shooter.matchStats.shieldGenerated += 10;
+                            }
+                            
+                            // Safe Knockup Mechanics (bypassing Orion's drop execution)
+                            if (!tank.zHeightActive) {
+                                tank.zHeightActive = true;
+                                tank.zFrameCounter = 0;
+                                tank.zMaxDuration = 30; // 0.5s air time
+                                tank.zHeightBaseMax = 50; 
+                                tank.chronoIntercepted = false;
+                                tank.knockupSource = 'tempest'; 
+                            }
+                            
+                            // Stack debuff icons on target
+                            tank.typhoonMarks = (tank.typhoonMarks || 0) + 1;
+                            
+                            // TRAP EXECUTION
+                            if (tank.typhoonMarks >= 3) {
+                                tank.typhoonMarks = 0;
+                                hazards.push({ owner: pA.owner, type: 'whirlwind_trap', x: tank.x, y: tank.y, radius: 80, life: 360, maxLife: 360, targetTank: tank });
+                                floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
+                            }
+                        } else if (pA.type === 'tempest_z') {
+                            tank.hp -= pA.damage; // Z is pure slow damage unless combo is met
+                        }
+                        else { tank.hp -= pA.damage; }
 
                         if (shooter && shooter.config.id === 'phantom') {
                             if (pA.type === 'phantom_bounce') shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); 
@@ -608,18 +627,10 @@ function update() {
                             else if (pA.type === 'phantom_sg') { if (!processedShotgunCasts.includes(pA.castId)) { applyMark = true; processedShotgunCasts.push(pA.castId); } }
 
                             if (applyMark) {
-                                tank.phantomMarkTimer = 300; 
-                                tank.phantomMarks++;
-                                
-                                // Check if the current mark count is a multiple of 3
+                                tank.phantomMarkTimer = 300; tank.phantomMarks++;
                                 if (tank.phantomMarks % 3 === 0) {
-                                    // Hits 3 and 6 give +3 damage. Hits 9, 12, 15+ give +5 damage.
                                     let procDamage = tank.phantomMarks <= 6 ? 3 : 5; 
-                                    
-                                    tank.hp -= procDamage; 
-                                    tank.phantomShockTimer = 30;
-                                    
-                                    // Dynamic text to show the scaling damage
+                                    tank.hp -= procDamage; tank.phantomShockTimer = 30;
                                     floatingTexts.push({ x: tank.x, y: tank.y - 55, text: `PLASMA ELECTROCUTION! (-${procDamage})`, life: 60, color: '#9d00ff', fontSize: '14px' });
                                     createParticles(tank.x, tank.y, 10, '#9d00ff', 2, 0.5);
                                 }
@@ -627,10 +638,9 @@ function update() {
                         }
                     }
                     
-                    // --- UNIVERSAL DAMAGE RECORDING HOOK FOR ALL PROJECTILE SHOTS ---
                     let damageTaken = startHp - tank.hp;
                     if (damageTaken > 0) {
-                        let isXSkill = ['phantom_sg', 'arrow', 'rocket', 'seraph_x', 'mg', 'toxic_bullet'].includes(pA.type);
+                        let isXSkill = ['phantom_sg', 'arrow', 'rocket', 'seraph_x', 'mg', 'toxic_bullet', 'tempest_x'].includes(pA.type);
                         recordDamage(pA.owner, damageTaken, pA.hasBounced, isXSkill);
                     }
 
@@ -662,18 +672,35 @@ function draw() {
     if (gameState === 'MENU' || gameState === 'SELECT') return;
 
     ctx.save();
-    // Execute structural camera shakes across global viewport coordinates
     if (screenShakeTimer > 0) {
-        let dx = (Math.random() - 0.5) * screenShakeIntensity;
-        let dy = (Math.random() - 0.5) * screenShakeIntensity;
-        ctx.translate(dx, dy);
+        let dx = (Math.random() - 0.5) * screenShakeIntensity; let dy = (Math.random() - 0.5) * screenShakeIntensity; ctx.translate(dx, dy);
     }
 
     if (images[currentMap.bgImg].complete) ctx.drawImage(images[currentMap.bgImg], 0, 0, canvas.width, canvas.height);
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     hazards.forEach(h => {
-        if (h.type === 'fire_trail') {
+        // --- NEW: Tempest Whirlwind Trap Drawing ---
+        if (h.type === 'whirlwind_trap') {
+            if (images.tempestTyphoon && images.tempestTyphoon.complete) {
+                let age = h.maxLife - h.life;
+                ctx.save();
+                ctx.translate(h.x, h.y);
+                
+                // Rapidly flipping and spinning giant trap visual
+                ctx.scale(frameCount % 2 === 0 ? -1 : 1, 1);
+                ctx.rotate(frameCount * 0.4);
+                
+                let scale = 0.6 + Math.sin(age * 0.1) * 0.05; // Pulses in size slightly as it spins
+                const w = images.tempestTyphoon.width * scale;
+                const h_img = images.tempestTyphoon.height * scale;
+                
+                ctx.shadowBlur = 30; ctx.shadowColor = '#aaffff';
+                ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
+                ctx.restore();
+            }
+        }
+        else if (h.type === 'fire_trail') {
             let lifeRatio = h.life / h.maxLife; let p = 1 - lifeRatio; 
             ctx.save(); ctx.translate(h.x, h.y); ctx.globalCompositeOperation = 'screen';
             let scale = 1.0; let alpha = 1.0; let c1, c2, c3;
@@ -785,20 +812,16 @@ function draw() {
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.fillText(Math.ceil(h.orbHp), h.x, h.y - 30);
             }
         }
-        
-        // --- RENDERING ORION'S CHRONOSPHERE ---
         else if (h.type === 'orion_chrono') {
             let age = h.maxLife - h.life;
             ctx.save(); ctx.translate(h.x, h.y);
             
             if (age < 90) {
-                // Phase 1: Charge up ring filling space from inside out
                 let chargeRatio = age / 90;
                 ctx.beginPath(); ctx.arc(0, 0, h.radius * chargeRatio, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(255, 51, 204, 0.12)'; ctx.fill();
                 ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 1.5; ctx.stroke();
             } else {
-                // Phase 2: Active Dilation Field rendering properties
                 ctx.beginPath(); ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
                 let pulseGlow = 15 + Math.sin(frameCount * 0.08) * 6;
                 ctx.shadowBlur = pulseGlow; ctx.shadowColor = '#ff33cc';
@@ -811,7 +834,6 @@ function draw() {
                 ctx.fillStyle = chronoGrad; ctx.fill();
                 ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2.5; ctx.stroke();
                 
-                // Draw fast moving clock hand traces inside sphere space
                 ctx.rotate(age * 0.02);
                 ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0, -h.radius + 15);
                 ctx.strokeStyle = 'rgba(255, 51, 204, 0.3)'; ctx.lineWidth = 2; ctx.stroke();
@@ -840,7 +862,6 @@ function draw() {
                 ctx.fillStyle = '#000000'; ctx.fill();
                 ctx.restore();
                 
-                // Draw connecting particle thread lines if both portals are operating
                 if (frameCount % 4 === 0) {
                     let randRatio = Math.random();
                     let px = p.portalA.x + (p.portalB.x - p.portalA.x) * randRatio;
@@ -874,10 +895,31 @@ function draw() {
 
     projectiles.forEach(p => p.draw()); players.forEach(p => p.draw());
 
-    players.forEach(p => {
-        if (p.config.id === 'seraph' && p.zFiring && p.beamEndX !== undefined && !p.isDead) {
-            ctx.beginPath(); ctx.moveTo(p.beamStartX, p.beamStartY); ctx.lineTo(p.beamEndX, p.beamEndY); ctx.strokeStyle = '#fff'; ctx.lineWidth = 10 + Math.random() * 5; ctx.shadowBlur = 20; ctx.shadowColor = '#00ffff'; ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(p.beamStartX, p.beamStartY); ctx.lineTo(p.beamEndX, p.beamEndY); ctx.strokeStyle = '#e0ffff'; ctx.lineWidth = 4; ctx.shadowBlur = 0; ctx.stroke();
+    // --- NEW: Render Tempest Debuff Icons On Enemies ---
+    players.forEach(tank => {
+        if (tank.typhoonMarks > 0 && !tank.isDead) {
+            ctx.save();
+            ctx.translate(tank.x + tank.radius + 15, tank.y - tank.radius - 15);
+            ctx.shadowBlur = 10; ctx.shadowColor = '#aaffff';
+            
+            if (images.tempestTyphoon && images.tempestTyphoon.complete) {
+                let w = 24, h_img = 24;
+                ctx.save();
+                ctx.scale(frameCount % 2 === 0 ? -1 : 1, 1);
+                ctx.rotate(frameCount * 0.2);
+                ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
+                ctx.restore();
+            }
+            
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left';
+            ctx.fillText(tank.typhoonMarks, 15, 6);
+            ctx.restore();
+        }
+        
+        // Seraph Lightning draw
+        if (tank.config.id === 'seraph' && tank.zFiring && tank.beamEndX !== undefined && !tank.isDead) {
+            ctx.beginPath(); ctx.moveTo(tank.beamStartX, tank.beamStartY); ctx.lineTo(tank.beamEndX, tank.beamEndY); ctx.strokeStyle = '#fff'; ctx.lineWidth = 10 + Math.random() * 5; ctx.shadowBlur = 20; ctx.shadowColor = '#00ffff'; ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(tank.beamStartX, tank.beamStartY); ctx.lineTo(tank.beamEndX, tank.beamEndY); ctx.strokeStyle = '#e0ffff'; ctx.lineWidth = 4; ctx.shadowBlur = 0; ctx.stroke();
         }
     });
 
