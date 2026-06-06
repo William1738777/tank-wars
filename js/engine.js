@@ -552,10 +552,19 @@ function update() {
                             else if (pA.type === 'phantom_sg') { if (!processedShotgunCasts.includes(pA.castId)) { applyMark = true; processedShotgunCasts.push(pA.castId); } }
 
                             if (applyMark) {
-                                tank.phantomMarkTimer = 300; tank.phantomMarks++;
-                                if (tank.phantomMarks >= 3) {
-                                    tank.hp -= 5; tank.phantomMarks = 0; tank.phantomShockTimer = 30;
-                                    floatingTexts.push({ x: tank.x, y: tank.y - 55, text: "PLASMA ELECTROCUTION!", life: 60, color: '#9d00ff', fontSize: '14px' });
+                                tank.phantomMarkTimer = 300; 
+                                tank.phantomMarks++;
+                                
+                                // Check if the current mark count is a multiple of 3
+                                if (tank.phantomMarks % 3 === 0) {
+                                    // Hits 3 and 6 give +3 damage. Hits 9, 12, 15+ give +5 damage.
+                                    let procDamage = tank.phantomMarks <= 6 ? 3 : 5; 
+                                    
+                                    tank.hp -= procDamage; 
+                                    tank.phantomShockTimer = 30;
+                                    
+                                    // Dynamic text to show the scaling damage
+                                    floatingTexts.push({ x: tank.x, y: tank.y - 55, text: `PLASMA ELECTROCUTION! (-${procDamage})`, life: 60, color: '#9d00ff', fontSize: '14px' });
                                     createParticles(tank.x, tank.y, 10, '#9d00ff', 2, 0.5);
                                 }
                             }
