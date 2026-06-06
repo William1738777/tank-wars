@@ -581,7 +581,7 @@ function update() {
                         } else if (pA.type === 'tempest_z') {
                             tank.hp -= pA.damage;
                             if (shooter && shooter.config.id === 'tempest') {
-                                shooter.tempestZStacks = Math.min(5, (shooter.tempestZStacks || 0) + 1);
+                                shooter.tempestZStacks = Math.min(10, (shooter.tempestZStacks || 0) + 1);
                                 shooter.tempestZTimer = 180; // 3 seconds to decay
                                 floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "ORBIT ACCEL!", life: 30, color: '#ffffff', fontSize: '14px'});
                             }
@@ -809,6 +809,7 @@ function draw() {
         }
     });
 
+    // --- DRAWING ORION QUANTUM PORTAL ANCHORS ---
     players.forEach(p => {
         if (p.config.id === 'orion' && p.portalA) {
             ctx.save(); ctx.translate(p.portalA.x, p.portalA.y);
