@@ -3,16 +3,14 @@ class Projectile {
         this.owner = owner; this.x = x; this.y = y; this.angle = angle;
         this.vx = Math.cos(angle)*speed; this.vy = Math.sin(angle)*speed;
         
-        // Added for Orion's Chronosphere tracking
         this.originalVx = this.vx;
         this.originalVy = this.vy;
         this.isTimeDilated = false; 
 
         this.speed = speed; this.radius = radius; this.damage = damage; 
-        this.baseDamage = damage; // Used to track bonus damage for Orion
+        this.baseDamage = damage; 
         this.color = color; this.type = type; this.bounces = bounces;
         
-        // NEW: Tempest Z-Skill lasts exactly 8 seconds (480 frames at 60fps)
         this.life = type === 'tempest_z' ? 480 : (type === 'missile' ? 70 : (type === 'arrow' ? 45 : 999)); 
         this.dead = false; this.isFifth = false; 
         this.projectileHp = type === 'mg' ? 1 : 3;
@@ -62,7 +60,6 @@ class Projectile {
         this.lastX = this.x; this.lastY = this.y;
         this.x += this.vx; this.y += this.vy; this.life--;
 
-        // Particle generation during flight
         if (this.type === 'seraph_c' || this.type === 'seraph_x' || this.type === 'seraph_spark') {
             createParticles(this.x + (Math.random()-0.5)*15, this.y + (Math.random()-0.5)*15, 1, '#00ffff', 1.5, 0.3);
             if (Math.random() > 0.5) createParticles(this.x, this.y, 1, '#fff', 2, 0.2);
@@ -82,7 +79,6 @@ class Projectile {
         } else if (this.type === 'tempest_c') {
             createParticles(this.x, this.y, 1, 'rgba(170, 255, 255, 0.5)', 1.5, 0.2);
         } else if (this.type === 'tempest_x') {
-            // Heavy chaotic wind shenanigans around the tornado
             createParticles(this.x + (Math.random()-0.5)*25, this.y + (Math.random()-0.5)*25, 2, '#ffffff', 1.5, 0.3);
             createParticles(this.x, this.y, 1, '#aaffff', 2.5, 0.4);
         } else if (this.type === 'tempest_z') {
@@ -134,10 +130,9 @@ class Projectile {
                 this.angle = Math.atan2(this.vy, this.vx); 
                 this.bounces--; 
                 
-                // Orion C Bounce Logic: +2 Damage, Speed Boost, Vibrancy
                 if (this.type === 'orion_c') {
                     this.damage += 2;
-                    this.speed *= 1.25; // Massively accelerate upon bounce
+                    this.speed *= 1.25;
                     this.vx = Math.cos(this.angle) * this.speed;
                     this.vy = Math.sin(this.angle) * this.speed;
                     createParticles(this.x, this.y, 5, '#ff33cc', 1.5, 0.4);
@@ -312,7 +307,7 @@ class Projectile {
             ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2; ctx.stroke();
         } 
         
-        // --- NEW: Tempest Visuals ---
+        // --- NEW: Tempest Visuals (Fixed Tornado Flip) ---
         else if (this.type === 'tempest_c' && images.tempestProj.complete) {
             const scale = 0.15; 
             const w = images.tempestProj.width * scale; 
@@ -322,13 +317,13 @@ class Projectile {
         } else if (this.type === 'tempest_x' && images.tempestTyphoon.complete) {
             const scale = 0.2; 
             const w = images.tempestTyphoon.width * scale; 
-            const h = images.tempestTyphoon.height * scale;
+            const h_img = images.tempestTyphoon.height * scale;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ffffff';
             
-            // Invert the frame every tick to simulate rapid wind rotation
+            // Revert rotation to base angle to keep it upright, just flip it horizontally
+            ctx.rotate(-this.angle);
             ctx.scale(frameCount % 2 === 0 ? -1 : 1, 1);
-            ctx.rotate(frameCount * 0.3); // Add constant rotation for chaos
-            ctx.drawImage(images.tempestTyphoon, -w/2, -h/2, w, h);
+            ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
         } else if (this.type === 'tempest_z' && images.tempestWindCutter.complete) {
             const scale = 0.18; 
             const w = images.tempestWindCutter.width * scale; 
