@@ -84,6 +84,11 @@ class Projectile {
         } else if (this.type === 'tempest_z') {
             createParticles(this.x, this.y, 1, '#aaffff', 2, 0.5);
             if (Math.random() > 0.5) createParticles(this.x, this.y, 1, '#ffffff', 1, 0.3);
+            
+            // --- NEW: Friction Slowdown & Expanding Hitbox Radius ---
+            this.vx *= 0.985;
+            this.vy *= 0.985;
+            this.radius += 0.12;
         } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
             createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
         }
@@ -307,7 +312,6 @@ class Projectile {
             ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2; ctx.stroke();
         } 
         
-        // --- NEW: Tempest Visuals (Fixed Tornado Flip) ---
         else if (this.type === 'tempest_c' && images.tempestProj.complete) {
             const scale = 0.15; 
             const w = images.tempestProj.width * scale; 
@@ -322,12 +326,15 @@ class Projectile {
             
             // Revert rotation to base angle to keep it upright, just flip it horizontally
             ctx.rotate(-this.angle);
-            ctx.scale(frameCount % 2 === 0 ? -1 : 1, 1);
+            ctx.scale(Math.floor(frameCount / 6) % 2 === 0 ? -1 : 1, 1);
             ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
         } else if (this.type === 'tempest_z' && images.tempestWindCutter.complete) {
-            const scale = 0.18; 
-            const w = images.tempestWindCutter.width * scale; 
-            const h = images.tempestWindCutter.height * scale;
+            // --- NEW: Dynamic Render Scaling matching the physical radius ---
+            const baseScale = 0.18; 
+            const dynamicScale = baseScale * (this.radius / 12); // Assuming 12 was the starting radius
+            
+            const w = images.tempestWindCutter.width * dynamicScale; 
+            const h = images.tempestWindCutter.height * dynamicScale;
             ctx.shadowBlur = 20; ctx.shadowColor = '#aaffff';
             ctx.drawImage(images.tempestWindCutter, -w/2, -h/2, w, h);
         } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up') {
