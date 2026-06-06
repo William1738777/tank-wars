@@ -135,13 +135,18 @@ function updateCooldownUI() {
         const pPrefix = index === 0 ? 'p1' : 'p2';
         const skills = ['c', 'x', 'z'];
         
-        // Handling Ammo text for X skill (Dreadnaught Machine Gun)
+        // Handling Ammo text for X skill (Dreadnaught Machine Gun & Tempest Stacks)
         let ammoTextXEl = document.getElementById(`${pPrefix}-ammo-x`);
         if (ammoTextXEl) {
             if (p.config.id === 'dreadnaught') {
                 ammoTextXEl.innerText = p.mgReloading ? '0' : Math.floor(p.mgAmmo);
                 ammoTextXEl.style.color = p.mgReloading ? '#ff3333' : 'gold';
                 if (!p.mgReloading) p.maxCooldowns.x = 100;
+            } else if (p.config.id === 'tempest') {
+                // NEW: Tempest Stack Display
+                let stacks = p.tempestStacks || 0;
+                ammoTextXEl.innerText = `${stacks}/9`;
+                ammoTextXEl.style.color = stacks >= 3 ? '#aaffff' : '#777777';
             } else {
                 ammoTextXEl.innerText = '';
             }
