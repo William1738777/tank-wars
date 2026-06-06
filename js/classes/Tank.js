@@ -15,7 +15,7 @@ class Tank {
         this.controls = controls; this.isDead = false;
         this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
-        this.dashAngle = 0; // Restored just in case UI scans for it
+        this.dashAngle = 0; 
         
         this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
         this.electrocutedTimer = 0;
@@ -26,28 +26,24 @@ class Tank {
         this.zHeight = 0;
         this.zRotation = 0;
 
-        // Tempest Internal Trackers
         this.tempestStacks = 0; 
-        this.tempestShieldHp = 0; // RESTORED
-        this.tempestShieldTimer = 0; // RESTORED
-
+        this.tempestShieldHp = 0; 
+        this.tempestShieldTimer = 0; 
         this.tempestSpeedStacks = 0; 
         this.tempestSpeedTimer = 0;
         this.tempestOrbitalAngle = 0;
         this.tempestOrbitalCooldowns = [0, 0, 0];
         this.passiveAuraRadius = 200; 
 
-        // New: C-Skill Attack Speed Buff Trackers
         this.tempestCSpdStacks = 0;
         this.tempestCSpdTimer = 0;
 
-        // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
 
         this.maxCooldowns = { 
-            c: config.id === 'tempest' ? 1000 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500)))), 
-            x: config.id === 'tempest' ? 300 : (config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : 8000))))), 
-            z: config.id === 'tempest' ? 24000 : (config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : 10000)))))
+            c: config.id === 'tempest' ? 1000 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : (config.id === 'blackout' ? 3000 : 1500))))), 
+            x: config.id === 'tempest' ? 300 : (config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : (config.id === 'blackout' ? 12000 : 8000))))))), 
+            z: config.id === 'tempest' ? 24000 : (config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : (config.id === 'blackout' ? 1000 : 10000)))))))
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
@@ -72,6 +68,12 @@ class Tank {
 
         this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
         this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
+        
+        // Blackout Internal Trackers
+        this.blackoutAfterimage = null;
+        this.blackoutXHeld = false;
+        this.blackoutHoldTimer = 0;
+        this.interceptLaserTarget = null;
     }
 
     addPoison(dps, durationFrames) { this.poisons.push({ dps: dps, life: durationFrames }); }
@@ -88,7 +90,7 @@ class Tank {
         let target = players[0]; 
         const now = Date.now();
 
-        let isHitAndRunTank = ['phantom', 'pyro', 'scorpion', 'tempest'].includes(this.config.id);
+        let isHitAndRunTank = ['phantom', 'pyro', 'scorpion', 'tempest', 'blackout'].includes(this.config.id);
         let cReady = now >= this.cooldowns.c;
 
         let myOrb = null;
@@ -277,6 +279,35 @@ class Tank {
 
     update() {
         if (this.isDead) return;
+        
+        // --- NEW: Blackout Active Defense Interceptor ---
+        if (this.config.id === 'blackout') {
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                let proj = projectiles[i];
+                if (proj.owner !== this.owner && !proj.dead) {
+                    let distToProj = Math.hypot(this.x - proj.x, this.y - proj.y);
+                    if (distToProj <= 250) {
+                        let enemyTank = players.find(p => p.owner === proj.owner);
+                        if (enemyTank) {
+                            let distToEnemy = Math.hypot(this.x - enemyTank.x, this.y - enemyTank.y);
+                            if (distToEnemy > 350) {
+                                // Intercept!
+                                proj.dead = true;
+                                createParticles(proj.x, proj.y, 10, '#00ff00', 1.5, 0.4);
+                                
+                                // Laser Visuals handled by flashing lines in draw
+                                this.interceptLaserTarget = { x: proj.x, y: proj.y, timer: 10 };
+                            }
+                        }
+                    }
+                }
+            }
+            if (this.interceptLaserTarget) {
+                this.interceptLaserTarget.timer--;
+                if (this.interceptLaserTarget.timer <= 0) this.interceptLaserTarget = null;
+            }
+        }
+
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
         if (this.config.id === 'tempest') {
@@ -294,7 +325,6 @@ class Tank {
                 }
             }
             
-            // --- RESTORED: Shield Decay Loop ---
             if (this.tempestShieldTimer > 0) {
                 this.tempestShieldTimer--;
                 if (this.tempestShieldTimer <= 0) { this.tempestShieldHp = 0; }
@@ -663,11 +693,71 @@ class Tank {
                 
                 let isMoving = keys[this.controls.up] || keys[this.controls.down] || keys[this.controls.left] || keys[this.controls.right];
                 if (isMoving && this.destroAiming) { this.destroAiming = false; this.destroAimDist = 100; }
-            } else if (this.config.id !== 'dreadnaught') {
+            } else if (this.config.id === 'blackout') {
+                if (keys[this.controls.z] && !this.destroLocked) {
+                    let activeMarks = hazards.filter(h => h.owner === this.owner && h.type === 'blackout_mark');
+                    if (activeMarks.length < 3) {
+                        this.destroAiming = true; 
+                        this.destroAimDist = Math.min(600, this.destroAimDist + 6);
+                    }
+                } else if (!keys[this.controls.z] && this.destroAiming) {
+                    this.destroAiming = false; 
+                    this.cooldowns.z = now + this.maxCooldowns.z;
+                    
+                    let targetX = this.x + Math.cos(this.angle) * this.destroAimDist; 
+                    let targetY = this.y + Math.sin(this.angle) * this.destroAimDist;
+                    
+                    // Spawn dormant hazard mark
+                    hazards.push({ owner: this.owner, type: 'blackout_mark', x: targetX, y: targetY, radius: 40, life: 999999, active: false });
+                    
+                    this.destroAimDist = 100;
+                }
+                
+                let isMoving = keys[this.controls.up] || keys[this.controls.down] || keys[this.controls.left] || keys[this.controls.right];
+                if (isMoving && this.destroAiming) { this.destroAiming = false; this.destroAimDist = 100; }
+                
+                // Blackout X-Skill Logic (Afterimage Teleport)
+                if (keys[this.controls.x]) {
+                    if (!this.blackoutXHeld) {
+                        this.blackoutXHeld = true;
+                        this.blackoutHoldTimer = 0;
+                    } else {
+                        this.blackoutHoldTimer++;
+                        if (this.blackoutHoldTimer > 30) {
+                            // Held down for 0.5s: Clear afterimage
+                            if (this.blackoutAfterimage) {
+                                createParticles(this.blackoutAfterimage.x, this.blackoutAfterimage.y, 10, '#00ff00', 2, 0.5);
+                                this.blackoutAfterimage = null;
+                            }
+                        }
+                    }
+                } else if (this.blackoutXHeld) {
+                    this.blackoutXHeld = false;
+                    if (this.blackoutHoldTimer <= 30 && now > this.cooldowns.x) {
+                        if (!this.blackoutAfterimage) {
+                            // Set Afterimage
+                            this.blackoutAfterimage = { x: this.x, y: this.y, angle: this.angle };
+                            createParticles(this.x, this.y, 15, '#00ff00', 1.5, 0.4);
+                            this.cooldowns.x = now + 500; // tiny cd to prevent double tap
+                        } else {
+                            // Teleport Back
+                            createParticles(this.x, this.y, 15, '#00ff00', 2.0, 0.5); // Leave location
+                            this.x = this.blackoutAfterimage.x;
+                            this.y = this.blackoutAfterimage.y;
+                            this.angle = this.blackoutAfterimage.angle;
+                            createParticles(this.x, this.y, 15, '#00ff00', 2.0, 0.5); // Arrive location
+                            playSound(sfx.teleport || sfx.basicShot);
+                            
+                            this.cooldowns.x = now + this.maxCooldowns.x; // Full 12s cd
+                            this.cooldowns.c = 0; // Instantly reset Snipe
+                        }
+                    }
+                }
+            } else if (this.config.id !== 'dreadnaught' && this.config.id !== 'blackout') {
                 if (keys[this.controls.x]) { if (!this.xHeld) { this.fireX(now); this.xHeld = true; } } else { this.xHeld = false; }
             }
 
-            if (this.config.id !== 'seraph' && this.config.id !== 'orion') { if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now); }
+            if (this.config.id !== 'seraph' && this.config.id !== 'orion' && this.config.id !== 'blackout') { if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now); }
         }
     }
 
@@ -715,6 +805,9 @@ class Tank {
         } else if (this.config.id === 'phantom') {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
+        } else if (this.config.id === 'blackout') {
+            createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 28, 5, 20, '#00ff00', 'blackout_c', 0));
         } else if (this.config.id === 'orion') {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 5, 4, '#ff33cc', 'orion_c', 3));
@@ -851,6 +944,58 @@ class Tank {
     draw() {
         if (this.isDead) return;
         if (this.invulnTimer > 0 && Math.floor(this.invulnTimer / 10) % 2 === 0) return;
+        
+        if (this.config.id === 'blackout') {
+            // Draw Afterimage
+            if (this.blackoutAfterimage) {
+                ctx.save();
+                ctx.translate(this.blackoutAfterimage.x, this.blackoutAfterimage.y);
+                ctx.rotate(this.blackoutAfterimage.angle);
+                ctx.globalAlpha = 0.5;
+                ctx.filter = 'sepia(1) hue-rotate(90deg) saturate(3)'; // Greenish tint
+                const w = this.config.img.width * 0.12 * this.scaleMod; 
+                const h = this.config.img.height * 0.12 * this.scaleMod;
+                ctx.drawImage(this.config.img, -w / 2, -h / 2, w, h);
+                ctx.restore();
+            }
+            
+            // Draw Range Indicators
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 250, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0, 255, 0, 0.15)'; // Inner Green
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 350, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.15)'; // Outer Red
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+            
+            // Draw Interceptor Laser
+            if (this.interceptLaserTarget) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(this.interceptLaserTarget.x, this.interceptLaserTarget.y);
+                ctx.strokeStyle = '#00ff00';
+                ctx.lineWidth = 1;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#00ff00';
+                ctx.stroke();
+                ctx.restore();
+            }
+            
+            // Draw Z Aiming Reticle
+            if (this.destroAiming) {
+                ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 40, 0, Math.PI*2);
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.1)'; ctx.fill(); ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)'; ctx.lineWidth = 2; ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist);
+                ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]);
+            }
+        }
         
         if (this.config.id === 'tempest') {
             ctx.save();
