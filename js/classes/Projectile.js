@@ -84,8 +84,6 @@ class Projectile {
         } else if (this.type === 'tempest_z') {
             createParticles(this.x, this.y, 1, '#aaffff', 2, 0.5);
             if (Math.random() > 0.5) createParticles(this.x, this.y, 1, '#ffffff', 1, 0.3);
-            
-            // --- NEW: Friction Slowdown & Expanding Hitbox Radius ---
             this.vx *= 0.985;
             this.vy *= 0.985;
             this.radius += 0.12;
@@ -94,37 +92,41 @@ class Projectile {
         }
 
         let collided = false;
-        if (this.x - this.radius < 0) { this.x = this.radius; this.vx *= -1; collided = true; } 
-        else if (this.x + this.radius > canvas.width) { this.x = canvas.width - this.radius; this.vx *= -1; collided = true; }
-        if (this.y - this.radius < 0) { this.y = this.radius; this.vy *= -1; collided = true; } 
-        else if (this.y + this.radius > canvas.height) { this.y = canvas.height - this.radius; this.vy *= -1; collided = true; }
+        
+        // --- NEW: Tempest Z ignores all Map Geometry and Canvas Bounds ---
+        if (this.type !== 'tempest_z') {
+            if (this.x - this.radius < 0) { this.x = this.radius; this.vx *= -1; collided = true; } 
+            else if (this.x + this.radius > canvas.width) { this.x = canvas.width - this.radius; this.vx *= -1; collided = true; }
+            if (this.y - this.radius < 0) { this.y = this.radius; this.vy *= -1; collided = true; } 
+            else if (this.y + this.radius > canvas.height) { this.y = canvas.height - this.radius; this.vy *= -1; collided = true; }
 
-        if (!collided) {
-            for (let w of currentMap.walls) {
-                if (this.x + this.radius > w.x && this.x - this.radius < w.x + w.w &&
-                    this.y + this.radius > w.y && this.y - this.radius < w.y + w.h) {
-                    let hitHoriz = this.lastX + this.radius <= w.x || this.lastX - this.radius >= w.x + w.w;
-                    let hitVert = this.lastY + this.radius <= w.y || this.lastY - this.radius >= w.y + w.h;
-                    if (hitHoriz) { this.vx *= -1; this.x = this.lastX < w.x ? w.x - this.radius : w.x + w.w + this.radius; }
-                    if (hitVert) { this.vy *= -1; this.y = this.lastY < w.y ? w.y - this.radius : w.y + w.h + this.radius; }
-                    if (!hitHoriz && !hitVert) { this.vx *= -1; this.vy *= -1; }
-                    collided = true; break;
+            if (!collided) {
+                for (let w of currentMap.walls) {
+                    if (this.x + this.radius > w.x && this.x - this.radius < w.x + w.w &&
+                        this.y + this.radius > w.y && this.y - this.radius < w.y + w.h) {
+                        let hitHoriz = this.lastX + this.radius <= w.x || this.lastX - this.radius >= w.x + w.w;
+                        let hitVert = this.lastY + this.radius <= w.y || this.lastY - this.radius >= w.y + w.h;
+                        if (hitHoriz) { this.vx *= -1; this.x = this.lastX < w.x ? w.x - this.radius : w.x + w.w + this.radius; }
+                        if (hitVert) { this.vy *= -1; this.y = this.lastY < w.y ? w.y - this.radius : w.y + w.h + this.radius; }
+                        if (!hitHoriz && !hitVert) { this.vx *= -1; this.vy *= -1; }
+                        collided = true; break;
+                    }
                 }
             }
-        }
-        
-        if (!collided) {
-            for (let r of currentMap.rocks) {
-                let dx = this.x - r.x; let dy = this.y - r.y;
-                let dist = Math.hypot(dx, dy);
-                if (dist < this.radius + r.r) {
-                    let nx = dx / dist; let ny = dy / dist;
-                    let dot = this.vx * nx + this.vy * ny;
-                    this.vx = this.vx - 2 * dot * nx;
-                    this.vy = this.vy - 2 * dot * ny;
-                    this.x += nx * ((this.radius + r.r) - dist);
-                    this.y += ny * ((this.radius + r.r) - dist);
-                    collided = true; break;
+            
+            if (!collided) {
+                for (let r of currentMap.rocks) {
+                    let dx = this.x - r.x; let dy = this.y - r.y;
+                    let dist = Math.hypot(dx, dy);
+                    if (dist < this.radius + r.r) {
+                        let nx = dx / dist; let ny = dy / dist;
+                        let dot = this.vx * nx + this.vy * ny;
+                        this.vx = this.vx - 2 * dot * nx;
+                        this.vy = this.vy - 2 * dot * ny;
+                        this.x += nx * ((this.radius + r.r) - dist);
+                        this.y += ny * ((this.radius + r.r) - dist);
+                        collided = true; break;
+                    }
                 }
             }
         }
@@ -324,14 +326,12 @@ class Projectile {
             const h_img = images.tempestTyphoon.height * scale;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ffffff';
             
-            // Revert rotation to base angle to keep it upright, just flip it horizontally
             ctx.rotate(-this.angle);
             ctx.scale(Math.floor(frameCount / 6) % 2 === 0 ? -1 : 1, 1);
             ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
         } else if (this.type === 'tempest_z' && images.tempestWindCutter.complete) {
-            // --- NEW: Dynamic Render Scaling matching the physical radius ---
             const baseScale = 0.18; 
-            const dynamicScale = baseScale * (this.radius / 12); // Assuming 12 was the starting radius
+            const dynamicScale = baseScale * (this.radius / 12); 
             
             const w = images.tempestWindCutter.width * dynamicScale; 
             const h = images.tempestWindCutter.height * dynamicScale;
