@@ -26,6 +26,14 @@ class Tank {
         this.zHeight = 0;
         this.zRotation = 0;
 
+        // --- NEW: Match Statistics Tracker ---
+        this.matchStats = {
+            totalDamage: 0,
+            bouncedDamage: 0,
+            xSkillDamage: 0,
+            shieldGenerated: 0
+        };
+
         this.maxCooldowns = { 
             c: config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500))), 
             x: config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : 8000)))), 
@@ -61,6 +69,7 @@ class Tank {
 
     activateFireShield() {
         this.fireShieldActive = true; this.fireShieldHp = 20; this.fireShieldTimer = 300; 
+        this.matchStats.shieldGenerated += 20; // STATS TRACKING
         floatingTexts.push({x: this.x, y: this.y - 40, text: "SHIELD UP!", life: 60, color: '#ffaa00'});
     }
 
