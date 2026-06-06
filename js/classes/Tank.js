@@ -909,13 +909,22 @@ class Tank {
             ctx.restore();
         }
 
-        if (this.phantomMarks === 1 && images.phantomp && images.phantomp.complete) {
-            ctx.drawImage(images.phantomp, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32);
-        } else if (this.phantomMarks === 2 && images.phantomp2 && images.phantomp2.complete) {
+        if (this.phantomMarks > 0) {
             ctx.save();
             ctx.shadowBlur = 15 + Math.sin(Date.now() / 150) * 10;
             ctx.shadowColor = '#9d00ff'; 
-            ctx.drawImage(images.phantomp2, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32);
+            
+            let icon = (images.phantomp2 && images.phantomp2.complete) ? images.phantomp2 : images.phantomp;
+            if (icon && icon.complete) {
+                ctx.drawImage(icon, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32);
+            }
+            
+            ctx.shadowBlur = 5;
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 18px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(this.phantomMarks, this.x - this.radius + 10, this.y - this.radius - 3);
+            
             ctx.restore();
         }
         
