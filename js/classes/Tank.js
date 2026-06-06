@@ -42,8 +42,8 @@ class Tank {
 
         this.maxCooldowns = { 
             c: config.id === 'tempest' ? 1000 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : (config.id === 'blackout' ? 3000 : 1500))))), 
-            x: config.id === 'tempest' ? 300 : (config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : (config.id === 'blackout' ? 12000 : 8000))))))), 
-            z: config.id === 'tempest' ? 24000 : (config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : (config.id === 'blackout' ? 1000 : 10000)))))))
+            x: config.id === 'tempest' ? 300 : (config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : (config.id === 'blackout' ? 12000 : 8000)))))), 
+            z: config.id === 'tempest' ? 24000 : (config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : (config.id === 'blackout' ? 1000 : 10000))))))
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
@@ -695,11 +695,8 @@ class Tank {
                 if (isMoving && this.destroAiming) { this.destroAiming = false; this.destroAimDist = 100; }
             } else if (this.config.id === 'blackout') {
                 if (keys[this.controls.z] && !this.destroLocked) {
-                    let activeMarks = hazards.filter(h => h.owner === this.owner && h.type === 'blackout_mark');
-                    if (activeMarks.length < 3) {
-                        this.destroAiming = true; 
-                        this.destroAimDist = Math.min(600, this.destroAimDist + 6);
-                    }
+                    this.destroAiming = true; 
+                    this.destroAimDist = Math.min(600, this.destroAimDist + 6);
                 } else if (!keys[this.controls.z] && this.destroAiming) {
                     this.destroAiming = false; 
                     this.cooldowns.z = now + this.maxCooldowns.z;
@@ -707,8 +704,14 @@ class Tank {
                     let targetX = this.x + Math.cos(this.angle) * this.destroAimDist; 
                     let targetY = this.y + Math.sin(this.angle) * this.destroAimDist;
                     
-                    // Spawn dormant hazard mark
-                    hazards.push({ owner: this.owner, type: 'blackout_mark', x: targetX, y: targetY, radius: 40, life: 999999, active: false });
+                    let activeMarks = hazards.filter(h => h.owner === this.owner && h.type === 'blackout_mark');
+                    if (activeMarks.length >= 3) {
+                        let oldest = activeMarks[0];
+                        let idx = hazards.indexOf(oldest);
+                        if (idx !== -1) hazards.splice(idx, 1);
+                    }
+                    
+                    hazards.push({ owner: this.owner, type: 'blackout_mark', x: targetX, y: targetY, radius: 40, life: 999999, triggered: false, triggerTimer: 120 });
                     
                     this.destroAimDist = 100;
                 }
@@ -890,7 +893,7 @@ class Tank {
         
         if (this.config.id === 'grizzly') {
             playSound(sfx.cluster); const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
-            for (let i = 0; i < 5; i++) projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle - 0.4 + (0.8 / 4) * i, 8, 4, 6, '#ff6600', 'rocket', 3));
+            for (let i = 0; i < 5 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle - 0.4 + (0.8 / 4) * i, 8, 4, 6, '#ff6600', 'rocket', 3));
         } else if (this.config.id === 'seraph') {
             const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 10, 6, 3, '#00ffff', 'seraph_x', 1));
