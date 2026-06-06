@@ -820,6 +820,7 @@ function draw() {
         }
     });
 
+    // --- DRAWING ORION QUANTUM PORTAL ANCHORS ---
     players.forEach(p => {
         if (p.config.id === 'orion' && p.portalA) {
             ctx.save(); ctx.translate(p.portalA.x, p.portalA.y);
@@ -881,6 +882,7 @@ function draw() {
             if (images.tempestTyphoon && images.tempestTyphoon.complete) {
                 let w = 24, h_img = 24;
                 ctx.save();
+                // --- FIXED TUMBLING DEBUFF: ONLY SCALE INVERSION, NO ROTATION ---
                 ctx.scale(Math.floor(frameCount / 6) % 2 === 0 ? -1 : 1, 1);
                 ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
                 ctx.restore();
