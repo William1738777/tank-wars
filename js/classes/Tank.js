@@ -15,6 +15,7 @@ class Tank {
         this.controls = controls; this.isDead = false;
         this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
+        this.dashAngle = 0; 
         
         this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
         this.electrocutedTimer = 0;
@@ -30,7 +31,7 @@ class Tank {
         this.tempestZTimer = 0;
         this.tempestOrbitalAngle = 0;
         this.tempestOrbitalCooldowns = [0, 0, 0];
-        this.passiveAuraRadius = 250;
+        this.passiveAuraRadius = 220; // Brought slightly closer (was 250)
 
         // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
@@ -279,8 +280,8 @@ class Tank {
                 }
             }
             
-            // Base speed + 70% per stack
-            let orbitalSpeed = 0.03 * (1 + (this.tempestZStacks * 0.70));
+            // Base speed + 100% per stack
+            let orbitalSpeed = 0.03 * (1 + (this.tempestZStacks * 1.0));
             this.tempestOrbitalAngle += orbitalSpeed;
             
             // Handle orbital collision
@@ -301,7 +302,7 @@ class Tank {
                             if (now > this.tempestOrbitalCooldowns[index]) {
                                 enemy.hp -= 7;
                                 if (typeof recordDamage === 'function') recordDamage(this.owner, 7);
-                                this.tempestOrbitalCooldowns[index] = now + 250; // 0.25s cd per specific tornado
+                                this.tempestOrbitalCooldowns[index] = now + 250; 
                                 createParticles(enemy.x, enemy.y, 5, '#aaffff', 1.5, 0.4);
                                 floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-7", life: 30, color: '#aaffff'});
                                 if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
@@ -842,8 +843,8 @@ class Tank {
                     ctx.save();
                     ctx.translate(tx, ty);
                     
-                    let spinSpeedMult = 1 + (this.tempestZStacks * 0.70);
-                    let visualScale = 0.12 * (1 + (this.tempestZStacks * 0.1)); // Grow slightly with stacks
+                    let spinSpeedMult = 1 + (this.tempestZStacks * 1.0);
+                    let visualScale = 0.16 * (1 + (this.tempestZStacks * 0.05)); // Grow slightly with stacks
                     
                     ctx.scale(Math.floor((frameCount * spinSpeedMult) / 6) % 2 === 0 ? -1 : 1, 1);
                     
