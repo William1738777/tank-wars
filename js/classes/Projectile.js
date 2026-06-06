@@ -11,7 +11,9 @@ class Projectile {
         this.speed = speed; this.radius = radius; this.damage = damage; 
         this.baseDamage = damage; // Used to track bonus damage for Orion
         this.color = color; this.type = type; this.bounces = bounces;
-        this.life = type === 'missile' ? 70 : (type === 'arrow' ? 45 : 999); 
+        
+        // NEW: Tempest Z-Skill lasts exactly 8 seconds (480 frames at 60fps)
+        this.life = type === 'tempest_z' ? 480 : (type === 'missile' ? 70 : (type === 'arrow' ? 45 : 999)); 
         this.dead = false; this.isFifth = false; 
         this.projectileHp = type === 'mg' ? 1 : 3;
         this.castId = castId; 
@@ -77,6 +79,15 @@ class Projectile {
         } else if (this.type === 'orion_z_lift') {
             createParticles(this.x, this.y, 2, '#000000', 2, 0.3);
             createParticles(this.x, this.y, 1, '#ff33cc', 1.5, 0.2);
+        } else if (this.type === 'tempest_c') {
+            createParticles(this.x, this.y, 1, 'rgba(170, 255, 255, 0.5)', 1.5, 0.2);
+        } else if (this.type === 'tempest_x') {
+            // Heavy chaotic wind shenanigans around the tornado
+            createParticles(this.x + (Math.random()-0.5)*25, this.y + (Math.random()-0.5)*25, 2, '#ffffff', 1.5, 0.3);
+            createParticles(this.x, this.y, 1, '#aaffff', 2.5, 0.4);
+        } else if (this.type === 'tempest_z') {
+            createParticles(this.x, this.y, 1, '#aaffff', 2, 0.5);
+            if (Math.random() > 0.5) createParticles(this.x, this.y, 1, '#ffffff', 1, 0.3);
         } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
             createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
         }
@@ -199,6 +210,8 @@ class Projectile {
         } else if (this.type === 'orion_z_lift') {
             createParticles(this.x, this.y, 15, '#ff33cc', 2, 0.5);
             createParticles(this.x, this.y, 10, '#000000', 3, 0.5);
+        } else if (this.type.startsWith('tempest_')) {
+            createParticles(this.x, this.y, 8, '#aaffff', 1.5, 0.5);
         } else {
             createKaboom(this.x, this.y, this.type === 'missile' ? 1.5 : 1.0);
         }
@@ -286,19 +299,42 @@ class Projectile {
             const w = images.orionProj.width * scale;
             const h = images.orionProj.height * scale;
             
-            // Dynamic glow intensity and vibrancy injection
             let damageBonus = this.damage - (this.baseDamage || 4);
             ctx.shadowBlur = 10 + (damageBonus * 3); 
             ctx.shadowColor = '#ff33cc';
             
-            // Render filter mathematically scales brightness and saturation alongside damage stacks
             ctx.filter = `brightness(${1 + (damageBonus * 0.15)}) saturate(${1 + (damageBonus * 0.3)})`;
             ctx.drawImage(images.orionProj, -w/2, -h/2, w, h);
-            ctx.filter = 'none'; // Clear filter to avoid bleeding into other canvas layers
+            ctx.filter = 'none'; 
         } else if (this.type === 'orion_z_lift') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = '#000000'; ctx.shadowBlur = 15; ctx.shadowColor = '#ff33cc'; ctx.fill();
             ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2; ctx.stroke();
+        } 
+        
+        // --- NEW: Tempest Visuals ---
+        else if (this.type === 'tempest_c' && images.tempestProj.complete) {
+            const scale = 0.15; 
+            const w = images.tempestProj.width * scale; 
+            const h = images.tempestProj.height * scale;
+            ctx.shadowBlur = 15; ctx.shadowColor = '#aaffff';
+            ctx.drawImage(images.tempestProj, -w/2, -h/2, w, h);
+        } else if (this.type === 'tempest_x' && images.tempestTyphoon.complete) {
+            const scale = 0.2; 
+            const w = images.tempestTyphoon.width * scale; 
+            const h = images.tempestTyphoon.height * scale;
+            ctx.shadowBlur = 15; ctx.shadowColor = '#ffffff';
+            
+            // Invert the frame every tick to simulate rapid wind rotation
+            ctx.scale(frameCount % 2 === 0 ? -1 : 1, 1);
+            ctx.rotate(frameCount * 0.3); // Add constant rotation for chaos
+            ctx.drawImage(images.tempestTyphoon, -w/2, -h/2, w, h);
+        } else if (this.type === 'tempest_z' && images.tempestWindCutter.complete) {
+            const scale = 0.18; 
+            const w = images.tempestWindCutter.width * scale; 
+            const h = images.tempestWindCutter.height * scale;
+            ctx.shadowBlur = 20; ctx.shadowColor = '#aaffff';
+            ctx.drawImage(images.tempestWindCutter, -w/2, -h/2, w, h);
         } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = this.color; ctx.shadowBlur = 10; ctx.shadowColor = this.color; ctx.fill();
