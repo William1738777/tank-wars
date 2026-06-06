@@ -27,11 +27,15 @@ class Tank {
         this.zRotation = 0;
 
         // Tempest Internal Trackers
-        this.tempestZStacks = 0;
-        this.tempestZTimer = 0;
+        this.tempestStacks = 0; // X-Skill Ammo
+        this.tempestShieldHp = 0;
+        this.tempestShieldTimer = 0;
+        
+        this.tempestSpeedStacks = 0; // Orbital Passive Trackers
+        this.tempestSpeedTimer = 0;
         this.tempestOrbitalAngle = 0;
         this.tempestOrbitalCooldowns = [0, 0, 0];
-        this.passiveAuraRadius = 220; // Brought slightly closer (was 250)
+        this.passiveAuraRadius = 220; 
 
         // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
@@ -273,15 +277,15 @@ class Tank {
 
         // --- NEW: Tempest Orbital Passive Mechanics ---
         if (this.config.id === 'tempest') {
-            if (this.tempestZTimer > 0) {
-                this.tempestZTimer--;
-                if (this.tempestZTimer <= 0) {
-                    this.tempestZStacks = 0;
+            if (this.tempestSpeedTimer > 0) {
+                this.tempestSpeedTimer--;
+                if (this.tempestSpeedTimer <= 0) {
+                    this.tempestSpeedStacks = 0;
                 }
             }
             
-            // Base speed + 100% per stack
-            let orbitalSpeed = 0.03 * (1 + (this.tempestZStacks * 1.0));
+            // Base speed + 70% per stack
+            let orbitalSpeed = 0.03 * (1 + (this.tempestSpeedStacks * 0.70));
             this.tempestOrbitalAngle += orbitalSpeed;
             
             // Handle orbital collision
@@ -302,7 +306,7 @@ class Tank {
                             if (now > this.tempestOrbitalCooldowns[index]) {
                                 enemy.hp -= 7;
                                 if (typeof recordDamage === 'function') recordDamage(this.owner, 7);
-                                this.tempestOrbitalCooldowns[index] = now + 250; 
+                                this.tempestOrbitalCooldowns[index] = now + 250; // 0.25s cd per specific tornado
                                 createParticles(enemy.x, enemy.y, 5, '#aaffff', 1.5, 0.4);
                                 floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-7", life: 30, color: '#aaffff'});
                                 if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
@@ -716,8 +720,9 @@ class Tank {
 
     fireX(now) {
         if (this.config.id === 'tempest') {
-            if (now < this.cooldowns.x) return;
+            if (now < this.cooldowns.x || this.tempestStacks < 3) return;
             this.cooldowns.x = now + this.maxCooldowns.x;
+            this.tempestStacks -= 3;
             this.recoil = 6;
             const tip = this.getTip();
             createMuzzleFlash(tip.x, tip.y, this.angle, 2);
@@ -843,8 +848,8 @@ class Tank {
                     ctx.save();
                     ctx.translate(tx, ty);
                     
-                    let spinSpeedMult = 1 + (this.tempestZStacks * 1.0);
-                    let visualScale = 0.16 * (1 + (this.tempestZStacks * 0.05)); // Grow slightly with stacks
+                    let spinSpeedMult = 1 + (this.tempestSpeedStacks * 0.70);
+                    let visualScale = 0.16 * (1 + (this.tempestSpeedStacks * 0.05)); 
                     
                     ctx.scale(Math.floor((frameCount * spinSpeedMult) / 6) % 2 === 0 ? -1 : 1, 1);
                     
