@@ -15,7 +15,6 @@ class Tank {
         this.controls = controls; this.isDead = false;
         this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
-        this.dashAngle = 0; 
         
         this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
         this.electrocutedTimer = 0;
@@ -27,12 +26,11 @@ class Tank {
         this.zRotation = 0;
 
         // Tempest Internal Trackers
-        this.tempestStacks = 0;
-        this.tempestShieldHp = 0;
-        this.tempestShieldTimer = 0;
-        this.passiveAuraRadius = 250; 
-        this.tempestAuraActive = false;
-        this.auraTarget = null;
+        this.tempestZStacks = 0;
+        this.tempestZTimer = 0;
+        this.tempestOrbitalAngle = 0;
+        this.tempestOrbitalCooldowns = [0, 0, 0];
+        this.passiveAuraRadius = 250;
 
         // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
@@ -272,44 +270,44 @@ class Tank {
         if (this.isDead) return;
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
-        // --- NEW: Tempest Passive Aura Detection w/ Line of Sight ---
-        this.tempestAuraActive = false;
-        this.auraTarget = null;
+        // --- NEW: Tempest Orbital Passive Mechanics ---
         if (this.config.id === 'tempest') {
-            players.forEach(p => {
-                if (p.owner !== this.owner && !p.isDead) {
-                    let dist = Math.hypot(p.x - this.x, p.y - this.y);
-                    if (dist < this.passiveAuraRadius) {
-                        // Raycast Line of Sight Check
-                        let hasLoS = true;
-                        let steps = Math.floor(dist / 10);
-                        let dx = (p.x - this.x) / steps;
-                        let dy = (p.y - this.y) / steps;
-                        
-                        for (let i = 1; i < steps; i++) {
-                            let testX = this.x + (dx * i);
-                            let testY = this.y + (dy * i);
-                            
-                            for (let w of currentMap.walls) {
-                                if (testX > w.x && testX < w.x + w.w && testY > w.y && testY < w.y + w.h) {
-                                    hasLoS = false; break;
-                                }
+            if (this.tempestZTimer > 0) {
+                this.tempestZTimer--;
+                if (this.tempestZTimer <= 0) {
+                    this.tempestZStacks = 0;
+                }
+            }
+            
+            // Base speed + 70% per stack
+            let orbitalSpeed = 0.03 * (1 + (this.tempestZStacks * 0.70));
+            this.tempestOrbitalAngle += orbitalSpeed;
+            
+            // Handle orbital collision
+            const now = Date.now();
+            let hitboxes = [];
+            for (let i = 0; i < 3; i++) {
+                let angleOffset = this.tempestOrbitalAngle + (i * ((Math.PI * 2) / 3));
+                hitboxes.push({
+                    x: this.x + Math.cos(angleOffset) * this.passiveAuraRadius,
+                    y: this.y + Math.sin(angleOffset) * this.passiveAuraRadius
+                });
+            }
+            
+            players.forEach(enemy => {
+                if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                    hitboxes.forEach((hb, index) => {
+                        if (Math.hypot(enemy.x - hb.x, enemy.y - hb.y) < enemy.radius + 20) {
+                            if (now > this.tempestOrbitalCooldowns[index]) {
+                                enemy.hp -= 7;
+                                if (typeof recordDamage === 'function') recordDamage(this.owner, 7);
+                                this.tempestOrbitalCooldowns[index] = now + 250; // 0.25s cd per specific tornado
+                                createParticles(enemy.x, enemy.y, 5, '#aaffff', 1.5, 0.4);
+                                floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-7", life: 30, color: '#aaffff'});
+                                if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
                             }
-                            if (!hasLoS) break;
-                            
-                            for (let r of currentMap.rocks) {
-                                if (Math.hypot(testX - r.x, testY - r.y) < r.r) {
-                                    hasLoS = false; break;
-                                }
-                            }
-                            if (!hasLoS) break;
                         }
-
-                        if (hasLoS) {
-                            this.tempestAuraActive = true;
-                            this.auraTarget = p;
-                        }
-                    }
+                    });
                 }
             });
         }
@@ -318,11 +316,6 @@ class Tank {
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
         if (this.phantomMarkTimer > 0) { this.phantomMarkTimer--; if (this.phantomMarkTimer <= 0) this.phantomMarks = 0; }
         if (this.phantomShockTimer > 0) this.phantomShockTimer--;
-        
-        if (this.tempestShieldTimer > 0) {
-            this.tempestShieldTimer--;
-            if (this.tempestShieldTimer <= 0) { this.tempestShieldHp = 0; }
-        }
 
         if (this.portalTimer > 0) {
             this.portalTimer--;
@@ -519,17 +512,6 @@ class Tank {
             }
         }
 
-        if (this.dashState === 4 && this.stunTimer <= 0) {
-            currentSpeed = 12; 
-            this.dashTimer--; 
-            createParticles(this.x - Math.cos(this.dashAngle)*20, this.y - Math.sin(this.dashAngle)*20, 2, '#aaffff', 1.5, 0.4);
-            this.x += Math.cos(this.dashAngle) * currentSpeed; 
-            this.y += Math.sin(this.dashAngle) * currentSpeed;
-            if (this.dashTimer <= 0) { this.dashState = 0; }
-            this.checkWallCollisions(); this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x)); this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
-            return; 
-        }
-
         if (this.dashState === 3 && this.stunTimer <= 0) {
             currentSpeed = 16; this.dashTimer--;
             if (frameCount % 3 === 0) { hazards.push({ owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, radius: 30, life: 300, maxLife: 300 }); }
@@ -561,16 +543,9 @@ class Tank {
             if (this.dashTimer <= 0) { this.dashState = 0; if (this.config.id === 'pyro') this.flameTimer = 300; }
         }
 
-        if (this.dashState !== 2 && this.dashState !== 3 && this.dashState !== 4 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
-            if (this.config.id === 'tempest' && this.tempestAuraActive && this.auraTarget) {
-                let targetAngle = Math.atan2(this.auraTarget.y - this.y, this.auraTarget.x - this.x);
-                let angleDiff = targetAngle - this.angle;
-                angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-                this.angle += angleDiff * 0.3; 
-            } else {
-                if (keys[this.controls.left]) this.angle -= this.rotSpeed;
-                if (keys[this.controls.right]) this.angle += this.rotSpeed;
-            }
+        if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
+            if (keys[this.controls.left]) this.angle -= this.rotSpeed;
+            if (keys[this.controls.right]) this.angle += this.rotSpeed;
 
             if (!this.zFiring) {
                 let throttle = 0;
@@ -595,41 +570,10 @@ class Tank {
             if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
                 if (this.config.id === 'tempest') {
                     this.cooldowns.c = now + this.maxCooldowns.c; 
-                    this.recoil = 0; 
-                    
+                    this.recoil = 4; 
                     const tip = this.getTip();
                     createMuzzleFlash(tip.x, tip.y, this.angle, 1.0);
                     projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 18, 5, 3.5, '#aaffff', 'tempest_c', 0));
-                    
-                    let moveX = 0;
-                    let moveY = 0;
-                    
-                    if (this.tempestAuraActive) {
-                        if (keys[this.controls.up]) moveY -= 1;
-                        if (keys[this.controls.down]) moveY += 1;
-                        if (keys[this.controls.left]) moveX -= 1;
-                        if (keys[this.controls.right]) moveX += 1;
-                        
-                        if (moveX !== 0 || moveY !== 0) {
-                            this.dashAngle = Math.atan2(moveY, moveX);
-                        } else {
-                            this.dashAngle = this.angle + Math.PI; 
-                        }
-                    } else {
-                        if (keys[this.controls.up]) { moveX += Math.cos(this.angle); moveY += Math.sin(this.angle); }
-                        if (keys[this.controls.down]) { moveX -= Math.cos(this.angle); moveY -= Math.sin(this.angle); }
-                        if (keys[this.controls.left]) { moveX += Math.cos(this.angle - Math.PI / 2); moveY += Math.sin(this.angle - Math.PI / 2); }
-                        if (keys[this.controls.right]) { moveX += Math.cos(this.angle + Math.PI / 2); moveY += Math.sin(this.angle + Math.PI / 2); }
-                        
-                        if (moveX !== 0 || moveY !== 0) {
-                            this.dashAngle = Math.atan2(moveY, moveX);
-                        } else {
-                            this.dashAngle = this.angle; 
-                        }
-                    }
-                    
-                    this.dashState = 4; 
-                    this.dashTimer = 5; 
                 } else if (this.config.id === 'abyss') {
                     this.cooldowns.c = now + 150; 
                     this.kbX -= Math.cos(this.angle) * 0.5; this.kbY -= Math.sin(this.angle) * 0.5; this.kbTimer = 5;
@@ -771,10 +715,9 @@ class Tank {
 
     fireX(now) {
         if (this.config.id === 'tempest') {
-            if (now < this.cooldowns.x || this.tempestStacks < 3) return;
+            if (now < this.cooldowns.x) return;
             this.cooldowns.x = now + this.maxCooldowns.x;
-            this.tempestStacks -= 3;
-            this.recoil = 3;
+            this.recoil = 6;
             const tip = this.getTip();
             createMuzzleFlash(tip.x, tip.y, this.angle, 2);
             for (let i = 0; i < 3; i++) {
@@ -882,12 +825,36 @@ class Tank {
         if (this.config.id === 'tempest') {
             ctx.save();
             ctx.beginPath();
-            ctx.arc(this.x, this.y, this.passiveAuraRadius || 250, 0, Math.PI * 2);
-            ctx.strokeStyle = this.tempestAuraActive ? 'rgba(170, 255, 255, 0.4)' : 'rgba(170, 255, 255, 0.1)';
-            ctx.lineWidth = this.tempestAuraActive ? 2 : 1;
+            ctx.arc(this.x, this.y, this.passiveAuraRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(170, 255, 255, 0.15)';
+            ctx.lineWidth = 1;
             ctx.setLineDash([5, 10]);
             ctx.lineDashOffset = -frameCount * 0.5;
             ctx.stroke();
+            
+            // Render the 3 Orbiting Tornadoes
+            if (images.tempestTyphoon && images.tempestTyphoon.complete) {
+                for (let i = 0; i < 3; i++) {
+                    let angleOffset = this.tempestOrbitalAngle + (i * ((Math.PI * 2) / 3));
+                    let tx = this.x + Math.cos(angleOffset) * this.passiveAuraRadius;
+                    let ty = this.y + Math.sin(angleOffset) * this.passiveAuraRadius;
+                    
+                    ctx.save();
+                    ctx.translate(tx, ty);
+                    
+                    let spinSpeedMult = 1 + (this.tempestZStacks * 0.70);
+                    let visualScale = 0.12 * (1 + (this.tempestZStacks * 0.1)); // Grow slightly with stacks
+                    
+                    ctx.scale(Math.floor((frameCount * spinSpeedMult) / 6) % 2 === 0 ? -1 : 1, 1);
+                    
+                    const w = images.tempestTyphoon.width * visualScale; 
+                    const h_img = images.tempestTyphoon.height * visualScale;
+                    
+                    ctx.shadowBlur = 15; ctx.shadowColor = '#aaffff';
+                    ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
+                    ctx.restore();
+                }
+            }
             ctx.restore();
         }
 
@@ -905,42 +872,6 @@ class Tank {
             ctx.fillStyle = aimColor; ctx.fill(); ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke();
             ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist);
             ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]);
-        }
-
-        if (this.config.id === 'tempest' && this.tempestShieldHp > 0) {
-            ctx.save();
-            let hpRatio = Math.min(1, this.tempestShieldHp / 30); 
-            let speedMult = 1 + hpRatio; 
-            let thickness = 3 + hpRatio * 5; 
-            
-            ctx.translate(this.x, this.y);
-            
-            ctx.rotate((frameCount * 0.15) * speedMult);
-            ctx.shadowBlur = 10 + (hpRatio * 15);
-            ctx.shadowColor = '#aaffff';
-            ctx.strokeStyle = `rgba(170, 255, 255, ${0.5 + hpRatio * 0.5})`;
-            ctx.lineWidth = thickness;
-            ctx.lineCap = 'round';
-            
-            for (let i = 0; i < 3; i++) {
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius + 15 + (hpRatio * 10), (i * Math.PI * 2 / 3), (i * Math.PI * 2 / 3) + Math.PI / 2);
-                ctx.stroke();
-            }
-            
-            ctx.rotate(-(frameCount * 0.25) * speedMult);
-            ctx.strokeStyle = `rgba(255, 255, 255, ${0.4 + hpRatio * 0.4})`;
-            ctx.lineWidth = thickness * 0.6;
-            for (let i = 0; i < 4; i++) {
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius + 5 + (hpRatio * 5), (i * Math.PI * 2 / 4), (i * Math.PI * 2 / 4) + Math.PI / 3);
-                ctx.stroke();
-            }
-            ctx.restore();
-            
-            if (Math.random() < 0.3 + (hpRatio * 0.4)) {
-                createParticles(this.x + (Math.random()-0.5)*40, this.y + (Math.random()-0.5)*40, 1, '#ffffff', 1.5, 0.5);
-            }
         }
 
         if (this.electrocutedTimer > 0) {
