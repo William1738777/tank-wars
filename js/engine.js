@@ -113,7 +113,9 @@ function handleDeath(loserIndex) {
             loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
             
             // Tempest tracking resets
-            loser.tempestStacks = 0; loser.tempestSpeedStacks = 0; loser.tempestSpeedTimer = 0; loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
+            loser.tempestStacks = 0; loser.tempestSpeedStacks = 0; loser.tempestSpeedTimer = 0;
+            loser.tempestCSpdStacks = 0; loser.tempestCSpdTimer = 0; loser.tempestSlowTimer = 0;
+            loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
             loser.typhoonMarks = 0;
             
             loser.zHeight = 0; loser.zRotation = 0;
@@ -449,10 +451,6 @@ function update() {
     for (let i = 0; i < projectiles.length; i++) {
         let pA = projectiles[i]; if (pA.dead) continue;
         
-        if (pA.type === 'tempest_z') {
-            // Replaced the homing synergy with pure physics loop
-        }
-
         pA.update();
 
         if (pA.type === 'abyss_rapid_empowered' && frameCount % 2 === 0) {
@@ -555,8 +553,7 @@ function update() {
                             tank.hp -= pA.damage; let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
                             tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
                             if (pA.type === 'abyss_rapid_empowered') { tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1); tank.abyssSlowTimer = 180; }
-                        } 
-                        else if (pA.type === 'tempest_c') {
+                        } else if (pA.type === 'tempest_c') {
                             tank.hp -= pA.damage;
                             if (shooter && shooter.config.id === 'tempest') {
                                 // Grant Ammo for X-Skill
@@ -586,9 +583,16 @@ function update() {
                                 floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
                             }
                         } else if (pA.type === 'tempest_z') {
+                            // --- NEW: Tempest Z-Skill Piercing Physics ---
+                            if (frameCount % 10 === 0) { 
+                                tank.hp -= pA.damage;
+                                if (typeof recordDamage === 'function') recordDamage(pA.owner, pA.damage);
+                            }
+                            // Apply 60% slow for 1.5 seconds (90 frames)
+                            tank.tempestSlowTimer = 90; 
+                        } else { 
                             tank.hp -= pA.damage; 
                         }
-                        else { tank.hp -= pA.damage; }
 
                         if (shooter && shooter.config.id === 'phantom') {
                             if (pA.type === 'phantom_bounce') shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); 
@@ -617,13 +621,20 @@ function update() {
                     }
 
                     if (tank.hp < startHp) { let ownerTank = players.find(p => p.owner === pA.owner); if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5); }
-                    pA.triggerExplosion();
+                    
+                    if (pA.type !== 'tempest_z') {
+                        pA.triggerExplosion();
+                    }
                 }
             }
         });
 
         for (let j = i + 1; j < projectiles.length; j++) {
             let pB = projectiles[j]; if (pA.dead || pB.dead) continue;
+            
+            // Tempest Z ignores all projectile collisions
+            if (pA.type === 'tempest_z' || pB.type === 'tempest_z') continue;
+
             if (pA.owner !== pB.owner) {
                 if (Math.hypot(pA.x - pB.x, pA.y - pB.y) < pA.radius + pB.radius + 5) { 
                     if (pA.type === 'mg' && pB.type !== 'mg') { pA.triggerExplosion(); pB.projectileHp--; if (pB.projectileHp <= 0) pB.triggerExplosion(); } 
@@ -859,7 +870,8 @@ function draw() {
     });
 
     particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); });
-    flashes.forEach(f => { ctx.globalAlpha = Math.max(0, f.life); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI*2); ctx.fill(); });
+    // --- UPDATED: Flashes now accept custom colors to support the Tornado VFX ---
+    flashes.forEach(f => { ctx.globalAlpha = Math.max(0, f.life); ctx.fillStyle = f.color || '#fff'; ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI*2); ctx.fill(); });
     ctx.globalAlpha = 1.0;
 
     projectiles.forEach(p => p.draw()); players.forEach(p => p.draw());
@@ -878,7 +890,7 @@ function draw() {
             }
             
             ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left';
-            ctx.fillText(tank.typhoonMarks, 15, 6);
+            ctx.fillText(Math.floor(tank.typhoonMarks), 15, 6);
             ctx.restore();
         }
         
