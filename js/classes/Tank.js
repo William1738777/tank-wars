@@ -15,33 +15,36 @@ class Tank {
         this.controls = controls; this.isDead = false;
         this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
-        this.dashAngle = 0; 
         
         this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
         this.electrocutedTimer = 0;
         this.afterStunSlow = 0;
         this.destroSlowTimer = 0;
-        this.poisons = []; this.isSlowed = false;
+        this.poisons = []; this.isSlowed = false; this.tempestSlowTimer = 0;
 
         this.zHeight = 0;
         this.zRotation = 0;
 
         // Tempest Internal Trackers
-        this.tempestStacks = 0; // X-Skill Ammo
+        this.tempestStacks = 0; 
         this.tempestShieldHp = 0;
         this.tempestShieldTimer = 0;
-        
-        this.tempestSpeedStacks = 0; // Orbital Passive Trackers
+
+        this.tempestSpeedStacks = 0; 
         this.tempestSpeedTimer = 0;
         this.tempestOrbitalAngle = 0;
         this.tempestOrbitalCooldowns = [0, 0, 0];
-        this.passiveAuraRadius = 220; 
+        this.passiveAuraRadius = 200; 
+
+        // New: C-Skill Attack Speed Buff Trackers
+        this.tempestCSpdStacks = 0;
+        this.tempestCSpdTimer = 0;
 
         // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
 
         this.maxCooldowns = { 
-            c: config.id === 'tempest' ? 750 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500)))), 
+            c: config.id === 'tempest' ? 1000 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500)))), 
             x: config.id === 'tempest' ? 300 : (config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : 8000))))), 
             z: config.id === 'tempest' ? 24000 : (config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : 10000)))))
         };
@@ -284,11 +287,16 @@ class Tank {
                 }
             }
             
-            // Base speed + 70% per stack
-            let orbitalSpeed = 0.03 * (1 + (this.tempestSpeedStacks * 0.70));
+            if (this.tempestCSpdTimer > 0) {
+                this.tempestCSpdTimer--;
+                if (this.tempestCSpdTimer <= 0) {
+                    this.tempestCSpdStacks = 0;
+                }
+            }
+            
+            let orbitalSpeed = 0.03 * (1 + (this.tempestSpeedStacks * 1.0));
             this.tempestOrbitalAngle += orbitalSpeed;
             
-            // Handle orbital collision
             const now = Date.now();
             let hitboxes = [];
             for (let i = 0; i < 3; i++) {
@@ -304,11 +312,21 @@ class Tank {
                     hitboxes.forEach((hb, index) => {
                         if (Math.hypot(enemy.x - hb.x, enemy.y - hb.y) < enemy.radius + 20) {
                             if (now > this.tempestOrbitalCooldowns[index]) {
-                                enemy.hp -= 7;
-                                if (typeof recordDamage === 'function') recordDamage(this.owner, 7);
-                                this.tempestOrbitalCooldowns[index] = now + 250; // 0.25s cd per specific tornado
-                                createParticles(enemy.x, enemy.y, 5, '#aaffff', 1.5, 0.4);
-                                floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-7", life: 30, color: '#aaffff'});
+                                enemy.hp -= 4; // Nerf to 4
+                                if (typeof recordDamage === 'function') recordDamage(this.owner, 4);
+                                this.tempestOrbitalCooldowns[index] = now + 250; 
+                                
+                                // Flashy Contact VFX
+                                flashes.push({ x: enemy.x, y: enemy.y, radius: 15, maxRadius: 60, life: 1.0, color: '#aaffff' });
+                                createParticles(enemy.x, enemy.y, 8, '#ffffff', 2, 0.6);
+                                createParticles(enemy.x, enemy.y, 8, '#00ffff', 3, 0.4);
+                                floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-4", life: 30, color: '#aaffff'});
+                                
+                                // Gain Stacks on Contact
+                                this.tempestStacks = Math.min(9, (this.tempestStacks || 0) + 0.5);
+                                this.tempestCSpdStacks = Math.min(5, (this.tempestCSpdStacks || 0) + 1);
+                                this.tempestCSpdTimer = 300; // 5 Seconds
+                                
                                 if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
                             }
                         }
@@ -391,6 +409,7 @@ class Tank {
         if (this.stunTimer <= 0 && this.afterStunSlow > 0) { this.afterStunSlow--; currentSpeed *= 0.1; }
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
         if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
+        if (this.tempestSlowTimer > 0) { this.tempestSlowTimer--; currentSpeed *= 0.4; } // 60% Z Slow
 
         if (this.abyssSlowTimer > 0) {
             this.abyssSlowTimer--;
@@ -517,37 +536,6 @@ class Tank {
             }
         }
 
-        if (this.dashState === 3 && this.stunTimer <= 0) {
-            currentSpeed = 16; this.dashTimer--;
-            if (frameCount % 3 === 0) { hazards.push({ owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, radius: 30, life: 300, maxLife: 300 }); }
-            players.forEach(enemy => {
-                if (enemy.owner !== this.owner && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
-                    if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
-                        enemy.hp -= 15; this.ghostHitTanks.push(enemy.owner);
-                        if (typeof recordDamage === 'function') recordDamage(this.owner, 15, false, true); 
-                        createParticles(enemy.x, enemy.y, 10, '#ff4500', 2, 0.5);
-                        floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-15 BURN!", life: 40, color: '#ff3300'});
-                        if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; handleDeath(enemy.owner === 1 ? 0 : 1); }
-                    }
-                }
-            });
-            this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
-            if (this.dashTimer <= 0) { this.dashState = 0; this.isGhosting = false; }
-            this.checkWallCollisions(); this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x)); this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
-            return; 
-        }
-
-        if (this.dashState === 1 && this.stunTimer <= 0) {
-            this.dashTimer--; createParticles(this.x - Math.cos(this.angle)*20, this.y - Math.sin(this.angle)*20, 2, this.config.color, 1, 0.5);
-            if (this.dashTimer <= 0) { this.dashState = 2; this.dashTimer = 15; createKaboom(this.x - Math.cos(this.angle)*25, this.y - Math.sin(this.angle)*25, 0.5); }
-            return; 
-        }
-        
-        if (this.dashState === 2 && this.stunTimer <= 0) {
-            currentSpeed = 12; this.dashTimer--; createParticles(this.x, this.y, 1, '#fff', 3, 0.4); 
-            if (this.dashTimer <= 0) { this.dashState = 0; if (this.config.id === 'pyro') this.flameTimer = 300; }
-        }
-
         if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
             if (keys[this.controls.left]) this.angle -= this.rotSpeed;
             if (keys[this.controls.right]) this.angle += this.rotSpeed;
@@ -574,7 +562,8 @@ class Tank {
             
             if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
                 if (this.config.id === 'tempest') {
-                    this.cooldowns.c = now + this.maxCooldowns.c; 
+                    let cdReduction = (this.tempestCSpdStacks || 0) * 50; 
+                    this.cooldowns.c = now + (this.maxCooldowns.c - cdReduction); 
                     this.recoil = 4; 
                     const tip = this.getTip();
                     createMuzzleFlash(tip.x, tip.y, this.angle, 1.0);
@@ -720,7 +709,7 @@ class Tank {
 
     fireX(now) {
         if (this.config.id === 'tempest') {
-            if (now < this.cooldowns.x || this.tempestStacks < 3) return;
+            if (now < this.cooldowns.x || Math.floor(this.tempestStacks) < 3) return;
             this.cooldowns.x = now + this.maxCooldowns.x;
             this.tempestStacks -= 3;
             this.recoil = 6;
@@ -787,7 +776,7 @@ class Tank {
             const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2.5);
             for (let i = 0; i < 3; i++) {
                 let spreadAngle = this.angle - 0.5 + (1.0 / 2) * i;
-                let p = new Projectile(this.owner, tip.x, tip.y, spreadAngle, 4, 15, 12, '#ffffff', 'tempest_z', 0);
+                let p = new Projectile(this.owner, tip.x, tip.y, spreadAngle, 4, 15, 2, '#ffffff', 'tempest_z', 0);
                 p.side = (i === 0) ? 'left' : (i === 1 ? 'center' : 'right');
                 projectiles.push(p);
             }
@@ -838,7 +827,6 @@ class Tank {
             ctx.lineDashOffset = -frameCount * 0.5;
             ctx.stroke();
             
-            // Render the 3 Orbiting Tornadoes
             if (images.tempestTyphoon && images.tempestTyphoon.complete) {
                 for (let i = 0; i < 3; i++) {
                     let angleOffset = this.tempestOrbitalAngle + (i * ((Math.PI * 2) / 3));
