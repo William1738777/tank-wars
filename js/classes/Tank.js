@@ -272,15 +272,43 @@ class Tank {
         if (this.isDead) return;
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
-        // --- NEW: Tempest Passive Aura Detection ---
+        // --- NEW: Tempest Passive Aura Detection w/ Line of Sight ---
         this.tempestAuraActive = false;
         this.auraTarget = null;
         if (this.config.id === 'tempest') {
             players.forEach(p => {
                 if (p.owner !== this.owner && !p.isDead) {
-                    if (Math.hypot(p.x - this.x, p.y - this.y) < this.passiveAuraRadius) {
-                        this.tempestAuraActive = true;
-                        this.auraTarget = p;
+                    let dist = Math.hypot(p.x - this.x, p.y - this.y);
+                    if (dist < this.passiveAuraRadius) {
+                        // Raycast Line of Sight Check
+                        let hasLoS = true;
+                        let steps = Math.floor(dist / 10);
+                        let dx = (p.x - this.x) / steps;
+                        let dy = (p.y - this.y) / steps;
+                        
+                        for (let i = 1; i < steps; i++) {
+                            let testX = this.x + (dx * i);
+                            let testY = this.y + (dy * i);
+                            
+                            for (let w of currentMap.walls) {
+                                if (testX > w.x && testX < w.x + w.w && testY > w.y && testY < w.y + w.h) {
+                                    hasLoS = false; break;
+                                }
+                            }
+                            if (!hasLoS) break;
+                            
+                            for (let r of currentMap.rocks) {
+                                if (Math.hypot(testX - r.x, testY - r.y) < r.r) {
+                                    hasLoS = false; break;
+                                }
+                            }
+                            if (!hasLoS) break;
+                        }
+
+                        if (hasLoS) {
+                            this.tempestAuraActive = true;
+                            this.auraTarget = p;
+                        }
                     }
                 }
             });
@@ -491,9 +519,8 @@ class Tank {
             }
         }
 
-        // --- TEMPEST KALISTA OMNI-DIRECTIONAL HOP PHYSICS loop ---
         if (this.dashState === 4 && this.stunTimer <= 0) {
-            currentSpeed = 12; // Tuned down for a tighter 'boop'
+            currentSpeed = 12; 
             this.dashTimer--; 
             createParticles(this.x - Math.cos(this.dashAngle)*20, this.y - Math.sin(this.dashAngle)*20, 2, '#aaffff', 1.5, 0.4);
             this.x += Math.cos(this.dashAngle) * currentSpeed; 
@@ -535,12 +562,11 @@ class Tank {
         }
 
         if (this.dashState !== 2 && this.dashState !== 3 && this.dashState !== 4 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
-            // --- NEW: Intercept Rotation if Aura is Active ---
             if (this.config.id === 'tempest' && this.tempestAuraActive && this.auraTarget) {
                 let targetAngle = Math.atan2(this.auraTarget.y - this.y, this.auraTarget.x - this.x);
                 let angleDiff = targetAngle - this.angle;
                 angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-                this.angle += angleDiff * 0.3; // Snappy Auto-Aim
+                this.angle += angleDiff * 0.3; 
             } else {
                 if (keys[this.controls.left]) this.angle -= this.rotSpeed;
                 if (keys[this.controls.right]) this.angle += this.rotSpeed;
@@ -567,7 +593,6 @@ class Tank {
             const now = Date.now();
             
             if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
-                // --- NEW: Tempest Kalista Hop Matrix Integration ---
                 if (this.config.id === 'tempest') {
                     this.cooldowns.c = now + this.maxCooldowns.c; 
                     this.recoil = 0; 
@@ -580,7 +605,6 @@ class Tank {
                     let moveY = 0;
                     
                     if (this.tempestAuraActive) {
-                        // Absolute Map Vectors if Aura is Tracking
                         if (keys[this.controls.up]) moveY -= 1;
                         if (keys[this.controls.down]) moveY += 1;
                         if (keys[this.controls.left]) moveX -= 1;
@@ -589,10 +613,9 @@ class Tank {
                         if (moveX !== 0 || moveY !== 0) {
                             this.dashAngle = Math.atan2(moveY, moveX);
                         } else {
-                            this.dashAngle = this.angle + Math.PI; // Default hop backwards away from locked target
+                            this.dashAngle = this.angle + Math.PI; 
                         }
                     } else {
-                        // Tank Relative Vectors if Aura is Off
                         if (keys[this.controls.up]) { moveX += Math.cos(this.angle); moveY += Math.sin(this.angle); }
                         if (keys[this.controls.down]) { moveX -= Math.cos(this.angle); moveY -= Math.sin(this.angle); }
                         if (keys[this.controls.left]) { moveX += Math.cos(this.angle - Math.PI / 2); moveY += Math.sin(this.angle - Math.PI / 2); }
@@ -601,12 +624,12 @@ class Tank {
                         if (moveX !== 0 || moveY !== 0) {
                             this.dashAngle = Math.atan2(moveY, moveX);
                         } else {
-                            this.dashAngle = this.angle; // Failsafe forward
+                            this.dashAngle = this.angle; 
                         }
                     }
                     
                     this.dashState = 4; 
-                    this.dashTimer = 5; // The snappy 5-frame boop
+                    this.dashTimer = 5; 
                 } else if (this.config.id === 'abyss') {
                     this.cooldowns.c = now + 150; 
                     this.kbX -= Math.cos(this.angle) * 0.5; this.kbY -= Math.sin(this.angle) * 0.5; this.kbTimer = 5;
@@ -856,7 +879,6 @@ class Tank {
         if (this.isDead) return;
         if (this.invulnTimer > 0 && Math.floor(this.invulnTimer / 10) % 2 === 0) return;
         
-        // --- NEW: Draw Tempest Passive Aura ---
         if (this.config.id === 'tempest') {
             ctx.save();
             ctx.beginPath();
