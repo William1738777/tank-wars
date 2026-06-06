@@ -15,7 +15,7 @@ class Tank {
         this.controls = controls; this.isDead = false;
         this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
-        this.dashAngle = 0; // Added for Kalista Omni-Hop
+        this.dashAngle = 0; 
         
         this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
         this.electrocutedTimer = 0;
@@ -25,6 +25,14 @@ class Tank {
 
         this.zHeight = 0;
         this.zRotation = 0;
+
+        // Tempest Internal Trackers
+        this.tempestStacks = 0;
+        this.tempestShieldHp = 0;
+        this.tempestShieldTimer = 0;
+        this.passiveAuraRadius = 250; 
+        this.tempestAuraActive = false;
+        this.auraTarget = null;
 
         // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
@@ -264,6 +272,20 @@ class Tank {
         if (this.isDead) return;
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
+        // --- NEW: Tempest Passive Aura Detection ---
+        this.tempestAuraActive = false;
+        this.auraTarget = null;
+        if (this.config.id === 'tempest') {
+            players.forEach(p => {
+                if (p.owner !== this.owner && !p.isDead) {
+                    if (Math.hypot(p.x - this.x, p.y - this.y) < this.passiveAuraRadius) {
+                        this.tempestAuraActive = true;
+                        this.auraTarget = p;
+                    }
+                }
+            });
+        }
+
         if (this.invulnTimer > 0) this.invulnTimer--;
         if (this.electrocutedTimer > 0) this.electrocutedTimer--;
         if (this.phantomMarkTimer > 0) { this.phantomMarkTimer--; if (this.phantomMarkTimer <= 0) this.phantomMarks = 0; }
@@ -309,7 +331,9 @@ class Tank {
         if (this.stunTimer > 0 && this.zHeight === 0) {
             this.stunTimer--;
             if (this.stunTimer % 8 === 0) createParticles(this.x + (Math.random()-0.5)*30, this.y + (Math.random()-0.5)*30, 2, '#00ffff', 1.2, 0.4);
-        } else if (this.stunTimer > 0) { this.stunTimer--; }
+        } else if (this.stunTimer > 0) {
+            this.stunTimer--;
+        }
 
         this.isSlowed = false;
         for (let i = this.poisons.length - 1; i >= 0; i--) {
@@ -343,20 +367,26 @@ class Tank {
         if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
 
         if (this.abyssSlowTimer > 0) {
-            this.abyssSlowTimer--; let domainActive = hazards.some(h => h.type === 'abyss_domain' && h.owner !== this.owner);
-            if (!domainActive || this.abyssSlowTimer <= 0) { this.abyssSlowStacks = 0; this.abyssSlowTimer = 0; } 
-            else {
-                let slowMultiplier = 1 - (this.abyssSlowStacks * 0.08); currentSpeed *= Math.max(0.2, slowMultiplier); 
+            this.abyssSlowTimer--;
+            let domainActive = hazards.some(h => h.type === 'abyss_domain' && h.owner !== this.owner);
+            if (!domainActive || this.abyssSlowTimer <= 0) {
+                this.abyssSlowStacks = 0; this.abyssSlowTimer = 0;
+            } else {
+                let slowMultiplier = 1 - (this.abyssSlowStacks * 0.08); 
+                currentSpeed *= Math.max(0.2, slowMultiplier); 
                 if (frameCount % 10 === 0) { createParticles(this.x, this.y, 1, '#ff0000', 1.2, 0.3); }
             }
         } else { this.abyssSlowStacks = 0; }
 
         if (this.fireShieldActive) {
             this.fireShieldTimer--;
-            if (this.fireShieldHp <= 0 || this.fireShieldTimer <= 0) { this.fireShieldActive = false; } 
-            else {
-                this.stunTimer = 0; this.kbTimer = 0; this.kbX = 0; this.kbY = 0; this.poisons = []; this.isSlowed = false; this.electrocutedTimer = 0;
+            if (this.fireShieldHp <= 0 || this.fireShieldTimer <= 0) {
+                this.fireShieldActive = false;
+            } else {
+                this.stunTimer = 0; this.kbTimer = 0; this.kbX = 0; this.kbY = 0;
+                this.poisons = []; this.isSlowed = false; this.electrocutedTimer = 0;
                 if (this.hookState === 'pulled') this.hookState = 'ready';
+                
                 players.forEach(enemy => {
                     if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius + 45) {
@@ -382,7 +412,8 @@ class Tank {
                 if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
                     let dx = enemy.x - tip.x; let dy = enemy.y - tip.y;
                     if (Math.hypot(dx, dy) < 100) { 
-                        let angleToEnemy = Math.atan2(dy, dx); let angleDiff = Math.abs(Math.atan2(Math.sin(angleToEnemy - this.angle), Math.cos(angleToEnemy - this.angle)));
+                        let angleToEnemy = Math.atan2(dy, dx);
+                        let angleDiff = Math.abs(Math.atan2(Math.sin(angleToEnemy - this.angle), Math.cos(angleToEnemy - this.angle)));
                         if (angleDiff < 0.8) { 
                             let flameDmg = 3.5 / 60; enemy.hp -= flameDmg; 
                             if (typeof recordDamage === 'function') recordDamage(this.owner, flameDmg); 
@@ -399,23 +430,31 @@ class Tank {
             if (this.energy >= 100 && !this.zReady) { this.energy = 100; this.zReady = true; }
             if (this.zReady && keys[this.controls.z] && this.stunTimer <= 0 && this.dashState === 0) {
                 this.zChargeTimer++;
-                if (this.zChargeTimer > 0 && this.zChargeTimer < 30) { const tip = this.getTip(); createParticles(tip.x + (Math.random()-0.5)*40, tip.y + (Math.random()-0.5)*40, 1, '#00ffff', 1, 0.2); }
-                if (this.zChargeTimer >= 30) { this.zFiring = true; this.energy -= 10 / 60; if (this.energy <= 0) { this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; } }
+                if (this.zChargeTimer > 0 && this.zChargeTimer < 30) {
+                    const tip = this.getTip(); createParticles(tip.x + (Math.random()-0.5)*40, tip.y + (Math.random()-0.5)*40, 1, '#00ffff', 1, 0.2);
+                }
+                if (this.zChargeTimer >= 30) {
+                    this.zFiring = true; this.energy -= 10 / 60; 
+                    if (this.energy <= 0) { this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; }
+                }
             } else { this.zChargeTimer = 0; this.zFiring = false; if (this.energy <= 0) this.zReady = false; }
 
             if (this.zFiring) {
                 const tip = this.getTip(); let endX = tip.x; let endY = tip.y;
                 for (let i = 0; i < 800; i += 5) {
-                    let testX = tip.x + Math.cos(this.angle) * i; let testY = tip.y + Math.sin(this.angle) * i; let hitWall = false;
+                    let testX = tip.x + Math.cos(this.angle) * i; let testY = tip.y + Math.sin(this.angle) * i;
+                    let hitWall = false;
                     for (let w of currentMap.walls) { if (testX >= w.x && testX <= w.x + w.w && testY >= w.y && testY <= w.y + w.h) { hitWall = true; break; } }
-                    if (hitWall) break; let hitRock = false; for (let r of currentMap.rocks) { if (Math.hypot(testX - r.x, testY - r.y) <= r.r) { hitRock = true; break; } }
+                    if (hitWall) break; let hitRock = false;
+                    for (let r of currentMap.rocks) { if (Math.hypot(testX - r.x, testY - r.y) <= r.r) { hitRock = true; break; } }
                     if (hitRock) break; endX = testX; endY = testY;
                 }
                 players.forEach(enemy => {
                     if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (distToSegment({x: enemy.x, y: enemy.y}, tip, {x: endX, y: endY}) < enemy.radius + 15) { 
                             if (frameCount % 30 === 0) { 
-                                enemy.hp -= 2.0; if (typeof recordDamage === 'function') recordDamage(this.owner, 2.0); 
+                                enemy.hp -= 2.0; 
+                                if (typeof recordDamage === 'function') recordDamage(this.owner, 2.0); 
                                 enemy.electrocutedTimer = 30; createParticles(enemy.x, enemy.y, 3, '#00ffff', 1.5, 0.3);
                                 if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
                             }
@@ -452,11 +491,13 @@ class Tank {
             }
         }
 
-        // --- TEMPEST KALISTA OMNI-DIRECTIONAL HOP PHYSICS ---
+        // --- TEMPEST KALISTA OMNI-DIRECTIONAL HOP PHYSICS loop ---
         if (this.dashState === 4 && this.stunTimer <= 0) {
-            currentSpeed = 22; this.dashTimer--;
+            currentSpeed = 12; // Tuned down for a tighter 'boop'
+            this.dashTimer--; 
             createParticles(this.x - Math.cos(this.dashAngle)*20, this.y - Math.sin(this.dashAngle)*20, 2, '#aaffff', 1.5, 0.4);
-            this.x += Math.cos(this.dashAngle) * currentSpeed; this.y += Math.sin(this.dashAngle) * currentSpeed;
+            this.x += Math.cos(this.dashAngle) * currentSpeed; 
+            this.y += Math.sin(this.dashAngle) * currentSpeed;
             if (this.dashTimer <= 0) { this.dashState = 0; }
             this.checkWallCollisions(); this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x)); this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
             return; 
@@ -494,8 +535,17 @@ class Tank {
         }
 
         if (this.dashState !== 2 && this.dashState !== 3 && this.dashState !== 4 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
-            if (keys[this.controls.left]) this.angle -= this.rotSpeed;
-            if (keys[this.controls.right]) this.angle += this.rotSpeed;
+            // --- NEW: Intercept Rotation if Aura is Active ---
+            if (this.config.id === 'tempest' && this.tempestAuraActive && this.auraTarget) {
+                let targetAngle = Math.atan2(this.auraTarget.y - this.y, this.auraTarget.x - this.x);
+                let angleDiff = targetAngle - this.angle;
+                angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+                this.angle += angleDiff * 0.3; // Snappy Auto-Aim
+            } else {
+                if (keys[this.controls.left]) this.angle -= this.rotSpeed;
+                if (keys[this.controls.right]) this.angle += this.rotSpeed;
+            }
+
             if (!this.zFiring) {
                 let throttle = 0;
                 if (keys[this.controls.up]) throttle += 1;
@@ -517,25 +567,46 @@ class Tank {
             const now = Date.now();
             
             if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
-                // --- NEW: Tempest Kalista Hop C-Skill Resolution ---
+                // --- NEW: Tempest Kalista Hop Matrix Integration ---
                 if (this.config.id === 'tempest') {
-                    this.cooldowns.c = now + this.maxCooldowns.c; // 0.75s CD
-                    this.recoil = 0; // Removed recoil
+                    this.cooldowns.c = now + this.maxCooldowns.c; 
+                    this.recoil = 0; 
                     
                     const tip = this.getTip();
                     createMuzzleFlash(tip.x, tip.y, this.angle, 1.0);
                     projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 18, 5, 3.5, '#aaffff', 'tempest_c', 0));
                     
-                    // Determine omni-directional dash angle
-                    let hopAngle = this.angle; // Default to forward
+                    let moveX = 0;
+                    let moveY = 0;
                     
-                    if (keys[this.controls.down]) { hopAngle = this.angle + Math.PI; } // Backward
-                    else if (keys[this.controls.left]) { hopAngle = this.angle - Math.PI / 2; } // Strafe Left
-                    else if (keys[this.controls.right]) { hopAngle = this.angle + Math.PI / 2; } // Strafe Right
+                    if (this.tempestAuraActive) {
+                        // Absolute Map Vectors if Aura is Tracking
+                        if (keys[this.controls.up]) moveY -= 1;
+                        if (keys[this.controls.down]) moveY += 1;
+                        if (keys[this.controls.left]) moveX -= 1;
+                        if (keys[this.controls.right]) moveX += 1;
+                        
+                        if (moveX !== 0 || moveY !== 0) {
+                            this.dashAngle = Math.atan2(moveY, moveX);
+                        } else {
+                            this.dashAngle = this.angle + Math.PI; // Default hop backwards away from locked target
+                        }
+                    } else {
+                        // Tank Relative Vectors if Aura is Off
+                        if (keys[this.controls.up]) { moveX += Math.cos(this.angle); moveY += Math.sin(this.angle); }
+                        if (keys[this.controls.down]) { moveX -= Math.cos(this.angle); moveY -= Math.sin(this.angle); }
+                        if (keys[this.controls.left]) { moveX += Math.cos(this.angle - Math.PI / 2); moveY += Math.sin(this.angle - Math.PI / 2); }
+                        if (keys[this.controls.right]) { moveX += Math.cos(this.angle + Math.PI / 2); moveY += Math.sin(this.angle + Math.PI / 2); }
+                        
+                        if (moveX !== 0 || moveY !== 0) {
+                            this.dashAngle = Math.atan2(moveY, moveX);
+                        } else {
+                            this.dashAngle = this.angle; // Failsafe forward
+                        }
+                    }
                     
-                    this.dashAngle = hopAngle;
-                    this.dashState = 4; // Enter the custom 4-way Dash loop
-                    this.dashTimer = 8; // Snap 8 frame micro-dash
+                    this.dashState = 4; 
+                    this.dashTimer = 5; // The snappy 5-frame boop
                 } else if (this.config.id === 'abyss') {
                     this.cooldowns.c = now + 150; 
                     this.kbX -= Math.cos(this.angle) * 0.5; this.kbY -= Math.sin(this.angle) * 0.5; this.kbTimer = 5;
@@ -741,8 +812,7 @@ class Tank {
         if (this.config.id === 'tempest') {
             this.cooldowns.z = now + this.maxCooldowns.z;
             this.recoil = 5; 
-            const tip = this.getTip();
-            createMuzzleFlash(tip.x, tip.y, this.angle, 2.5);
+            const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2.5);
             for (let i = 0; i < 3; i++) {
                 let spreadAngle = this.angle - 0.5 + (1.0 / 2) * i;
                 let p = new Projectile(this.owner, tip.x, tip.y, spreadAngle, 4, 15, 12, '#ffffff', 'tempest_z', 0);
@@ -778,7 +848,7 @@ class Tank {
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 10, 20, '#ff0000', 'destro_missile', 0));
         } else if (this.config.id === 'abyss') {
             this.recoil = 8; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
-            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 6, 4, '#000000', 'abyss_z', 1)); // 1 Bounce
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 6, 4, '#000000', 'abyss_z', 1)); 
         }
     }
 
@@ -786,6 +856,19 @@ class Tank {
         if (this.isDead) return;
         if (this.invulnTimer > 0 && Math.floor(this.invulnTimer / 10) % 2 === 0) return;
         
+        // --- NEW: Draw Tempest Passive Aura ---
+        if (this.config.id === 'tempest') {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.passiveAuraRadius || 250, 0, Math.PI * 2);
+            ctx.strokeStyle = this.tempestAuraActive ? 'rgba(170, 255, 255, 0.4)' : 'rgba(170, 255, 255, 0.1)';
+            ctx.lineWidth = this.tempestAuraActive ? 2 : 1;
+            ctx.setLineDash([5, 10]);
+            ctx.lineDashOffset = -frameCount * 0.5;
+            ctx.stroke();
+            ctx.restore();
+        }
+
         if (this.poisons.length > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI*2); ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill(); }
 
         if (this.config.id === 'pyro' && this.fireShieldActive) {
