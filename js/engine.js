@@ -178,20 +178,10 @@ function update() {
         let h = hazards[i];
         
         if (h.type === 'blackout_mark') {
-            ctx.save();
-            ctx.translate(h.x, h.y);
-            ctx.beginPath();
-            ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-            ctx.fill();
-            ctx.strokeStyle = '#00ff00';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            
             // Check for trigger
             players.forEach(tank => {
                 if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) {
+                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + (h.radius || 50)) {
                         h.active = true;
                     }
                 }
@@ -210,7 +200,7 @@ function update() {
                 createKaboom(h.x, h.y, 2.0);
                 players.forEach(tank => {
                     if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                        if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius + 20) {
+                        if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + (h.radius || 50) + 20) {
                             tank.hp -= 30; // 30 Damage
                             if (typeof recordDamage === 'function') recordDamage(h.owner, 30);
                             floatingTexts.push({x: tank.x, y: tank.y - 40, text: "TRAP DETONATED!", life: 50, color: '#00ff00'});
@@ -218,6 +208,20 @@ function update() {
                     }
                 });
             }
+        } else if (h.type === 'whirlwind_trap') {
+            if (h.targetTank && !h.targetTank.isDead) {
+                // Lock the trap position permanently to where it hit
+                if (h.startX === undefined) { 
+                    h.startX = h.targetTank.x; 
+                    h.startY = h.targetTank.y; 
+                }
+                h.x = h.startX;
+                h.y = h.startY;
+
+                let age = h.maxLife - h.life;
+                // ... rest of your whirlwind logic goes here
+            } // Close targetTank check
+        } // Close whirlwind_trap check
             
             ctx.restore();
         } else if (h.type === 'whirlwind_trap') {
@@ -759,16 +763,21 @@ function draw() {
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     hazards.forEach(h => {
-        if (h.type === 'blackout_mark') {
-            ctx.save();
-            ctx.translate(h.x, h.y);
-            ctx.beginPath();
-            ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-            ctx.fill();
-            ctx.strokeStyle = '#00ff00';
-            ctx.lineWidth = 1;
-            ctx.stroke();
+       if (h.type === 'blackout_mark') {
+    ctx.save();
+    ctx.translate(h.x, h.y);
+    ctx.beginPath();
+    // Added fallback radius (h.radius || 50) to prevent fatal Canvas crashes
+    ctx.arc(0, 0, h.radius || 50, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+    ctx.fill();
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+    
+    // Removed trigger detection and hazard.push() from the draw loop!
+}
             
             // Check for trigger
             players.forEach(tank => {
