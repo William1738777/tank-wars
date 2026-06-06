@@ -113,7 +113,7 @@ function handleDeath(loserIndex) {
             loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
             
             // Tempest tracking resets
-            loser.tempestZStacks = 0; loser.tempestZTimer = 0; loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
+            loser.tempestStacks = 0; loser.tempestSpeedStacks = 0; loser.tempestSpeedTimer = 0; loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
             loser.typhoonMarks = 0;
             
             loser.zHeight = 0; loser.zRotation = 0;
@@ -558,7 +558,14 @@ function update() {
                         } 
                         else if (pA.type === 'tempest_c') {
                             tank.hp -= pA.damage;
-                            // Replaced stack integration
+                            if (shooter && shooter.config.id === 'tempest') {
+                                // Grant Ammo for X-Skill
+                                shooter.tempestStacks = Math.min(9, (shooter.tempestStacks || 0) + 1);
+                                // Grant Speed Stacks for Passive
+                                shooter.tempestSpeedStacks = Math.min(10, (shooter.tempestSpeedStacks || 0) + 1);
+                                shooter.tempestSpeedTimer = 180; // 3 seconds
+                                floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "ACCEL + AMMO!", life: 30, color: '#aaffff', fontSize: '14px'});
+                            }
                         } else if (pA.type === 'tempest_x') {
                             tank.hp -= pA.damage;
                             
@@ -579,12 +586,7 @@ function update() {
                                 floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
                             }
                         } else if (pA.type === 'tempest_z') {
-                            tank.hp -= pA.damage;
-                            if (shooter && shooter.config.id === 'tempest') {
-                                shooter.tempestZStacks = Math.min(10, (shooter.tempestZStacks || 0) + 1);
-                                shooter.tempestZTimer = 180; // 3 seconds to decay
-                                floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "ORBIT ACCEL!", life: 30, color: '#ffffff', fontSize: '14px'});
-                            }
+                            tank.hp -= pA.damage; 
                         }
                         else { tank.hp -= pA.damage; }
 
