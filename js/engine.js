@@ -33,13 +33,11 @@ function distToSegment(p, v, w) {
     return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
 }
 
-// Helper to apply screen shake modifiers
 function triggerScreenShake(duration, intensity) {
     screenShakeTimer = duration;
     screenShakeIntensity = intensity;
 }
 
-// --- NEW: Global Damage Recording Hook ---
 function recordDamage(attackerOwner, amount, isBounce = false, isXSkill = false) {
     let attacker = players.find(p => p.owner === attackerOwner);
     if (attacker) {
@@ -77,7 +75,6 @@ function handleDeath(loserIndex) {
         document.getElementById('victory-title').innerText = `${winnerText} WINS!`;
         document.getElementById('victory-title').style.color = p1Score >= 3 ? '#00aaff' : '#ff3333';
         
-        // --- POPULATE FINAL STATISTICS ON END SCREEN ---
         const p1Stats = players[0].matchStats;
         const p2Stats = players[1].matchStats;
         
@@ -115,10 +112,8 @@ function handleDeath(loserIndex) {
             loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
             loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
             
-            // Tempest tracking resets
-            loser.tempestStacks = 0; loser.nextCIsDash = false; loser.tempestShieldHp = 0; loser.typhoonMarks = 0;
+            loser.tempestStacks = 0; loser.tempestShieldHp = 0; loser.typhoonMarks = 0;
             
-            // Reset Orion fields explicitly
             loser.zHeight = 0; loser.zRotation = 0;
             loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
             
@@ -171,26 +166,22 @@ function update() {
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
         
-        // --- NEW: Tempest Whirlwind Trap Logic ---
         if (h.type === 'whirlwind_trap') {
             if (h.targetTank && !h.targetTank.isDead) {
-                // Pin the tank physically to the center of the trap
                 h.x = h.targetTank.x;
                 h.y = h.targetTank.y;
-                h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); // Prevent actions
-                h.targetTank.kbTimer = 0; // Nullify external knockbacks
-                h.targetTank.zRotation += 0.2; // Spin helplessly
+                h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); 
+                h.targetTank.kbTimer = 0; 
+                h.targetTank.zRotation += 0.2; 
                 
-                // Triggers exactly every 0.5 seconds (30 frames)
                 if (h.life % 30 === 0) {
-                    let progress = 1 - (h.life / h.maxLife); // Scales from 0.0 to 1.0 over 6s
-                    let dmg = 0.5 + (1.3 * progress); // Rolling damage 0.5 up to 1.8
+                    let progress = 1 - (h.life / h.maxLife); 
+                    let dmg = 0.5 + (1.3 * progress); 
                     h.targetTank.hp -= dmg;
                     if (typeof recordDamage === 'function') recordDamage(h.owner, dmg);
                     floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
                 }
                 
-                // Add ferocious chaotic particle bursts
                 createParticles(h.x + (Math.random()-0.5)*100, h.y + (Math.random()-0.5)*100, 2, '#ffffff', 2, 0.5);
                 createParticles(h.x, h.y, 1, '#aaffff', 3, 0.4);
             }
@@ -354,7 +345,6 @@ function update() {
     }
 
     players.forEach((tank, tIndex) => {
-        // --- Z-AXIS GRAVITY LIFT PHYSICS LOOP ---
         if (tank.zHeightActive) {
             tank.zFrameCounter++;
             
@@ -383,7 +373,6 @@ function update() {
             }
 
             if (progress >= 1.0 || tank.zHeight <= 0) {
-                // The tank has crashed back down into map geometry
                 tank.zHeight = 0;
                 tank.zHeightActive = false;
                 tank.stunTimer = 0; 
@@ -391,7 +380,6 @@ function update() {
                 let startHp = tank.hp;
                 
                 if (tank.knockupSource === 'tempest') {
-                    // Safe landing from Tempest Typhoon
                     tank.knockupSource = null; 
                 } else if (tank.chronoIntercepted) {
                     tank.hp -= 40;
@@ -459,17 +447,13 @@ function update() {
     for (let i = 0; i < projectiles.length; i++) {
         let pA = projectiles[i]; if (pA.dead) continue;
         
-        // --- NEW: Tempest Z-Skill Synergy Logic (Windcutter Convergence) ---
         if (pA.type === 'tempest_z') {
-            // Actively scan the map to see if the Tempest caught someone in a Whirlwind Trap
             let activeTrap = hazards.find(h => h.type === 'whirlwind_trap' && h.owner === pA.owner);
             if (activeTrap && activeTrap.targetTank && !activeTrap.targetTank.isDead) {
-                // Determine angle directly to the trapped tank to force merging
                 let targetAngle = Math.atan2(activeTrap.y - pA.y, activeTrap.x - pA.x);
                 let angleDiff = targetAngle - pA.angle;
                 angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
                 
-                // Curve aggressively inward to create the folding crescent visual
                 pA.angle += angleDiff * 0.05; 
                 pA.vx = Math.cos(pA.angle) * pA.speed;
                 pA.vy = Math.sin(pA.angle) * pA.speed;
@@ -579,7 +563,6 @@ function update() {
                             tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
                             if (pA.type === 'abyss_rapid_empowered') { tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1); tank.abyssSlowTimer = 180; }
                         } 
-                        // --- NEW: Tempest Collision & Stack Engine Logic ---
                         else if (pA.type === 'tempest_c') {
                             tank.hp -= pA.damage;
                             if (shooter && shooter.config.id === 'tempest') {
@@ -590,31 +573,28 @@ function update() {
                             tank.hp -= pA.damage;
                             if (shooter && shooter.config.id === 'tempest') {
                                 shooter.tempestShieldHp = Math.min(30, (shooter.tempestShieldHp || 0) + 10);
-                                shooter.tempestShieldTimer = 960; // 16 Seconds
+                                shooter.tempestShieldTimer = 960; 
                                 shooter.matchStats.shieldGenerated += 10;
                             }
                             
-                            // Safe Knockup Mechanics (bypassing Orion's drop execution)
                             if (!tank.zHeightActive) {
                                 tank.zHeightActive = true;
                                 tank.zFrameCounter = 0;
-                                tank.zMaxDuration = 30; // 0.5s air time
+                                tank.zMaxDuration = 30; 
                                 tank.zHeightBaseMax = 50; 
                                 tank.chronoIntercepted = false;
                                 tank.knockupSource = 'tempest'; 
                             }
                             
-                            // Stack debuff icons on target
                             tank.typhoonMarks = (tank.typhoonMarks || 0) + 1;
                             
-                            // TRAP EXECUTION
                             if (tank.typhoonMarks >= 3) {
                                 tank.typhoonMarks = 0;
                                 hazards.push({ owner: pA.owner, type: 'whirlwind_trap', x: tank.x, y: tank.y, radius: 80, life: 360, maxLife: 360, targetTank: tank });
                                 floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
                             }
                         } else if (pA.type === 'tempest_z') {
-                            tank.hp -= pA.damage; // Z is pure slow damage unless combo is met
+                            tank.hp -= pA.damage; 
                         }
                         else { tank.hp -= pA.damage; }
 
@@ -680,18 +660,16 @@ function draw() {
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     hazards.forEach(h => {
-        // --- NEW: Tempest Whirlwind Trap Drawing ---
         if (h.type === 'whirlwind_trap') {
             if (images.tempestTyphoon && images.tempestTyphoon.complete) {
                 let age = h.maxLife - h.life;
                 ctx.save();
                 ctx.translate(h.x, h.y);
                 
-                // Rapidly flipping and spinning giant trap visual
+                // --- FIXED TUMBLING: ONLY SCALE INVERSION, NO ROTATION ---
                 ctx.scale(frameCount % 2 === 0 ? -1 : 1, 1);
-                ctx.rotate(frameCount * 0.4);
                 
-                let scale = 0.6 + Math.sin(age * 0.1) * 0.05; // Pulses in size slightly as it spins
+                let scale = 0.6 + Math.sin(age * 0.1) * 0.05; 
                 const w = images.tempestTyphoon.width * scale;
                 const h_img = images.tempestTyphoon.height * scale;
                 
@@ -842,7 +820,6 @@ function draw() {
         }
     });
 
-    // --- DRAWING ORION QUANTUM PORTAL ANCHORS ---
     players.forEach(p => {
         if (p.config.id === 'orion' && p.portalA) {
             ctx.save(); ctx.translate(p.portalA.x, p.portalA.y);
@@ -895,7 +872,6 @@ function draw() {
 
     projectiles.forEach(p => p.draw()); players.forEach(p => p.draw());
 
-    // --- NEW: Render Tempest Debuff Icons On Enemies ---
     players.forEach(tank => {
         if (tank.typhoonMarks > 0 && !tank.isDead) {
             ctx.save();
@@ -905,8 +881,8 @@ function draw() {
             if (images.tempestTyphoon && images.tempestTyphoon.complete) {
                 let w = 24, h_img = 24;
                 ctx.save();
+                // --- FIXED TUMBLING DEBUFF: ONLY SCALE INVERSION, NO ROTATION ---
                 ctx.scale(frameCount % 2 === 0 ? -1 : 1, 1);
-                ctx.rotate(frameCount * 0.2);
                 ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
                 ctx.restore();
             }
@@ -916,7 +892,6 @@ function draw() {
             ctx.restore();
         }
         
-        // Seraph Lightning draw
         if (tank.config.id === 'seraph' && tank.zFiring && tank.beamEndX !== undefined && !tank.isDead) {
             ctx.beginPath(); ctx.moveTo(tank.beamStartX, tank.beamStartY); ctx.lineTo(tank.beamEndX, tank.beamEndY); ctx.strokeStyle = '#fff'; ctx.lineWidth = 10 + Math.random() * 5; ctx.shadowBlur = 20; ctx.shadowColor = '#00ffff'; ctx.stroke();
             ctx.beginPath(); ctx.moveTo(tank.beamStartX, tank.beamStartY); ctx.lineTo(tank.beamEndX, tank.beamEndY); ctx.strokeStyle = '#e0ffff'; ctx.lineWidth = 4; ctx.shadowBlur = 0; ctx.stroke();
@@ -930,7 +905,7 @@ function draw() {
     });
     ctx.globalAlpha = 1.0;
 
-    ctx.restore(); // Restore normal screen transform state back to canvas base variables
+    ctx.restore();
 }
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
