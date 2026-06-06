@@ -112,7 +112,9 @@ function handleDeath(loserIndex) {
             loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
             loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
             
-            loser.tempestStacks = 0; loser.tempestShieldHp = 0; loser.typhoonMarks = 0;
+            // Tempest tracking resets
+            loser.tempestZStacks = 0; loser.tempestZTimer = 0; loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
+            loser.typhoonMarks = 0;
             
             loser.zHeight = 0; loser.zRotation = 0;
             loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
@@ -448,16 +450,7 @@ function update() {
         let pA = projectiles[i]; if (pA.dead) continue;
         
         if (pA.type === 'tempest_z') {
-            let activeTrap = hazards.find(h => h.type === 'whirlwind_trap' && h.owner === pA.owner);
-            if (activeTrap && activeTrap.targetTank && !activeTrap.targetTank.isDead) {
-                let targetAngle = Math.atan2(activeTrap.y - pA.y, activeTrap.x - pA.x);
-                let angleDiff = targetAngle - pA.angle;
-                angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-                
-                pA.angle += angleDiff * 0.05; 
-                pA.vx = Math.cos(pA.angle) * pA.speed;
-                pA.vy = Math.sin(pA.angle) * pA.speed;
-            }
+            // Replaced the homing synergy with pure physics loop
         }
 
         pA.update();
@@ -565,17 +558,9 @@ function update() {
                         } 
                         else if (pA.type === 'tempest_c') {
                             tank.hp -= pA.damage;
-                            if (shooter && shooter.config.id === 'tempest') {
-                                shooter.tempestStacks = Math.min(9, (shooter.tempestStacks || 0) + 1);
-                                floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "+1 STACK", life: 30, color: '#aaffff', fontSize: '14px'});
-                            }
+                            // Replaced stack integration
                         } else if (pA.type === 'tempest_x') {
                             tank.hp -= pA.damage;
-                            if (shooter && shooter.config.id === 'tempest') {
-                                shooter.tempestShieldHp = Math.min(30, (shooter.tempestShieldHp || 0) + 10);
-                                shooter.tempestShieldTimer = 960; 
-                                shooter.matchStats.shieldGenerated += 10;
-                            }
                             
                             if (!tank.zHeightActive) {
                                 tank.zHeightActive = true;
@@ -594,7 +579,12 @@ function update() {
                                 floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
                             }
                         } else if (pA.type === 'tempest_z') {
-                            tank.hp -= pA.damage; 
+                            tank.hp -= pA.damage;
+                            if (shooter && shooter.config.id === 'tempest') {
+                                shooter.tempestZStacks = Math.min(5, (shooter.tempestZStacks || 0) + 1);
+                                shooter.tempestZTimer = 180; // 3 seconds to decay
+                                floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "ORBIT ACCEL!", life: 30, color: '#ffffff', fontSize: '14px'});
+                            }
                         }
                         else { tank.hp -= pA.damage; }
 
@@ -660,7 +650,6 @@ function draw() {
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     hazards.forEach(h => {
-        // --- FIXED TUMBLING: ONLY SCALE INVERSION, NO ROTATION ---
         if (h.type === 'whirlwind_trap') {
             if (images.tempestTyphoon && images.tempestTyphoon.complete) {
                 let age = h.maxLife - h.life;
@@ -820,7 +809,6 @@ function draw() {
         }
     });
 
-    // --- DRAWING ORION QUANTUM PORTAL ANCHORS ---
     players.forEach(p => {
         if (p.config.id === 'orion' && p.portalA) {
             ctx.save(); ctx.translate(p.portalA.x, p.portalA.y);
@@ -879,12 +867,10 @@ function draw() {
             ctx.translate(tank.x + tank.radius + 15, tank.y - tank.radius - 15);
             ctx.shadowBlur = 10; ctx.shadowColor = '#aaffff';
             
-            if (images.tempestTyphoon && images.tempestTyphoon.complete) {
-                let w = 24, h_img = 24;
+            if (images.tempestProj && images.tempestProj.complete) {
+                let w = 20, h_img = 20;
                 ctx.save();
-                // --- FIXED TUMBLING DEBUFF: ONLY SCALE INVERSION, NO ROTATION ---
-                ctx.scale(Math.floor(frameCount / 6) % 2 === 0 ? -1 : 1, 1);
-                ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
+                ctx.drawImage(images.tempestProj, -w/2, -h_img/2, w, h_img);
                 ctx.restore();
             }
             
