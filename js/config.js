@@ -1,16 +1,16 @@
 // --- ASSET MANAGEMENT ---
 const images = {
-    grizzly: new Image(), pyro: new Image(), scorpion: new Image(), dreadnaught: new Image(), seraph: new Image(), destroyer: new Image(), phantomA: new Image(), phantomB: new Image(), abyss: new Image(), orion: new Image(),
+    grizzly: new Image(), pyro: new Image(), scorpion: new Image(), dreadnaught: new Image(), seraph: new Image(), destroyer: new Image(), phantomA: new Image(), phantomB: new Image(), abyss: new Image(), orion: new Image(), tempest: new Image(),
     missile: new Image(), cluster: new Image(), arrow: new Image(), bg1: new Image(), bg2: new Image(), goo: new Image(), lightning: new Image(), static: new Image(),
     destroRocket: new Image(), destroMissile: new Image(), target: new Image(), firebolt: new Image(), phantomMissile: new Image(), phantomSGMissile: new Image(), phantomp: new Image(), phantomp2: new Image(),
-    abyssOrb: new Image(), abyssProj: new Image(), auraThing: new Image(), orionProj: new Image()
+    abyssOrb: new Image(), abyssProj: new Image(), auraThing: new Image(), orionProj: new Image(), tempestProj: new Image(), tempestTyphoon: new Image(), tempestWindCutter: new Image()
 };
 
 let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
-    // Increased to 30 to account for the Abyss assets + 2 new Orion assets
-    if (loadedCount === 30) { 
+    // Increased to 34 to account for the new Tempest assets
+    if (loadedCount === 34) { 
         const btnStart = document.getElementById('btn-start');
         if (btnStart) {
             btnStart.innerText = "Single Player"; 
@@ -30,6 +30,7 @@ images.seraph.onload = onAssetLoad; images.seraph.src = 'assets/SeraphTank.png';
 images.destroyer.onload = onAssetLoad; images.destroyer.src = 'assets/DestroyerTank.png';
 images.abyss.onload = onAssetLoad; images.abyss.src = 'assets/AbyssTank.png';
 images.orion.onload = onAssetLoad; images.orion.src = 'assets/OrionTank.png';
+images.tempest.onload = onAssetLoad; images.tempest.src = 'assets/TempestTank.png';
 
 // Global Projectiles & Hazards
 images.missile.onload = onAssetLoad; images.missile.src = 'assets/Missile.png';
@@ -60,8 +61,13 @@ images.abyssOrb.onload = onAssetLoad; images.abyssOrb.src = 'assets/AbyssOrbFina
 images.abyssProj.onload = onAssetLoad; images.abyssProj.src = 'assets/AbyssProjectile.png';
 images.auraThing.onload = onAssetLoad; images.auraThing.src = 'assets/aurathing.png'; 
 
-// Orion Specific Assets (Space accounted for)
+// Orion Specific Assets
 images.orionProj.onload = onAssetLoad; images.orionProj.src = 'assets/Orion projectile.png';
+
+// Tempest Specific Assets
+images.tempestProj.onload = onAssetLoad; images.tempestProj.src = 'assets/TempestProjectile.png';
+images.tempestTyphoon.onload = onAssetLoad; images.tempestTyphoon.src = 'assets/TempestTyphoon.png';
+images.tempestWindCutter.onload = onAssetLoad; images.tempestWindCutter.src = 'assets/TempestWindCutter.png';
 
 // --- GAME CONFIG & DATA ---
 const tanksData = [
@@ -73,7 +79,8 @@ const tanksData = [
     { id: 'destroyer', name: 'DESTROYER', img: images.destroyer, color: '#888888', desc: 'Normal [C | \']: Cannon (10)<br>Skill 1 [X | ;]: Mortar Strike (Hold to Lock)<br>Skill 2 [Z | L]: Ghost Missile (Pierces Walls, Wall-Slam Stun)', speedMod: 0.85, maxHp: 120 },
     { id: 'phantom', name: 'PHANTOM', img: images.phantomA, color: '#9d00ff', desc: 'Normal [C | \']: Bouncing Missiles (60% Hit Refund)<br>Skill 1 [X | ;]: Plasma Shotgun<br>Skill 2 [Z | L]: Evasive Maneuvers' },
     { id: 'abyss', name: 'ABYSS', img: images.abyss, color: '#1a0033', desc: 'Normal [C | \']: Shadow Bolt (Hold for Rapid Fire)<br>Skill 1 [X | ;]: Void Orb (Deploy trap, shoot 15x for Domain)<br>Skill 2 [Z | L]: Event Horizon (Bouncing Black Hole)' },
-    { id: 'orion', name: 'ORION', img: images.orion, color: '#ff33cc', desc: 'Normal [C | \']: Shockwave Missile (Bounces/Portals)<br>Skill 1 [X | ;]: Chronosphere (Slow & Reflect)<br>Skill 2 [Z | L]: Quantum Portals (Tap) / Anti-Grav Lift (Hold)' }
+    { id: 'orion', name: 'ORION', img: images.orion, color: '#ff33cc', desc: 'Normal [C | \']: Shockwave Missile (Bounces/Portals)<br>Skill 1 [X | ;]: Chronosphere (Slow & Reflect)<br>Skill 2 [Z | L]: Quantum Portals (Tap) / Anti-Grav Lift (Hold)' },
+    { id: 'tempest', name: 'TEMPEST', img: images.tempest, color: '#aaffff', desc: 'Normal [C | \']: Wind Shot Dash (Alternates Shoot/Dash)<br>Skill 1 [X | ;]: Typhoon\'s Embrace (Consumes 3 Marks, Shields, Trap)<br>Skill 2 [Z | L]: Windcutter (Slow Converging Crescents)', maxHp: 60, speedMod: 1.45 }
 ];
 
 // --- AUDIO ASSETS ---
