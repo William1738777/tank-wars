@@ -117,6 +117,7 @@ function handleDeath(loserIndex) {
             loser.tempestCSpdStacks = 0; loser.tempestCSpdTimer = 0; loser.tempestSlowTimer = 0;
             loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
             loser.typhoonMarks = 0;
+            loser.inTornado = false; // Reset to prevent floating bug on respawn
             
             loser.zHeight = 0; loser.zRotation = 0;
             loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
@@ -170,13 +171,34 @@ function update() {
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
         
+        // --- NEW: Tempest Trap Helpless Tumbling Physics ---
         if (h.type === 'whirlwind_trap') {
             if (h.targetTank && !h.targetTank.isDead) {
-                h.x = h.targetTank.x;
-                h.y = h.targetTank.y;
+                // Lock the trap position permanently to where it hit
+                if (h.startX === undefined) { 
+                    h.startX = h.targetTank.x; 
+                    h.startY = h.targetTank.y; 
+                }
+                h.x = h.startX;
+                h.y = h.startY;
+
+                let age = h.maxLife - h.life;
+                
+                // Override target's movement and gravity physics
+                h.targetTank.inTornado = true;
+                h.targetTank.zHeightActive = true;
+                h.targetTank.knockupSource = 'tempest';
+                
+                // Wild, erratic round-and-round motion
+                h.targetTank.x = h.startX + Math.cos(age * 0.25) * 35;
+                h.targetTank.y = h.startY + Math.sin(age * 0.25) * 35;
+                
+                // Violent Up and down bouncing
+                h.targetTank.zHeight = 50 + Math.sin(age * 0.2) * 40; 
+                
                 h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); 
                 h.targetTank.kbTimer = 0; 
-                h.targetTank.zRotation += 0.2; 
+                h.targetTank.zRotation += 0.3; 
                 
                 if (h.life % 30 === 0) {
                     let progress = 1 - (h.life / h.maxLife); 
@@ -184,6 +206,13 @@ function update() {
                     h.targetTank.hp -= dmg;
                     if (typeof recordDamage === 'function') recordDamage(h.owner, dmg);
                     floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
+                }
+                
+                // Ensure physics are gracefully returned when the trap ends
+                if (h.life <= 1) {
+                    h.targetTank.inTornado = false;
+                    h.targetTank.zHeightActive = false;
+                    h.targetTank.zHeight = 0;
                 }
                 
                 createParticles(h.x + (Math.random()-0.5)*100, h.y + (Math.random()-0.5)*100, 2, '#ffffff', 2, 0.5);
@@ -363,6 +392,7 @@ function update() {
 
             let progress = tank.zFrameCounter / tank.zMaxDuration;
             
+            // --- NEW: Gravity suspension bypass when inside the Tornado Trap ---
             if (progress <= 1.0) {
                 if (tank.chronoIntercepted) {
                     if (progress > 0.2 && progress < 0.8) {
@@ -371,7 +401,7 @@ function update() {
                         let fallProgress = (progress - 0.8) / 0.2;
                         tank.zHeight = (tank.zHeightBaseMax + 150) * (1 - fallProgress * fallProgress);
                     }
-                } else {
+                } else if (!tank.inTornado) {
                     tank.zHeight = Math.sin(progress * Math.PI) * tank.zHeightBaseMax;
                 }
             }
@@ -583,16 +613,9 @@ function update() {
                                 floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
                             }
                         } else if (pA.type === 'tempest_z') {
-                            // --- NEW: Tempest Z-Skill Piercing Physics ---
-                            if (frameCount % 10 === 0) { 
-                                tank.hp -= pA.damage;
-                                if (typeof recordDamage === 'function') recordDamage(pA.owner, pA.damage);
-                            }
-                            // Apply 60% slow for 1.5 seconds (90 frames)
-                            tank.tempestSlowTimer = 90; 
-                        } else { 
                             tank.hp -= pA.damage; 
                         }
+                        else { tank.hp -= pA.damage; }
 
                         if (shooter && shooter.config.id === 'phantom') {
                             if (pA.type === 'phantom_bounce') shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); 
