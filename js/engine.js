@@ -39,6 +39,16 @@ function triggerScreenShake(duration, intensity) {
     screenShakeIntensity = intensity;
 }
 
+// --- NEW: Global Damage Recording Hook ---
+function recordDamage(attackerOwner, amount, isBounce = false, isXSkill = false) {
+    let attacker = players.find(p => p.owner === attackerOwner);
+    if (attacker) {
+        attacker.matchStats.totalDamage += amount;
+        if (isBounce) attacker.matchStats.bouncedDamage += amount;
+        if (isXSkill) attacker.matchStats.xSkillDamage += amount;
+    }
+}
+
 // --- ENGINE LOGIC ---
 function startGame() {
     document.getElementById('select-screen').style.display = 'none';
@@ -68,6 +78,24 @@ function handleDeath(loserIndex) {
         gameState = 'OVER'; const winnerText = p1Score >= 3 ? "PLAYER 1" : "PLAYER 2";
         document.getElementById('victory-title').innerText = `${winnerText} WINS!`;
         document.getElementById('victory-title').style.color = p1Score >= 3 ? '#00aaff' : '#ff3333';
+        
+        // --- POPULATE FINAL STATISTICS ON END SCREEN ---
+        const p1Stats = players[0].matchStats;
+        const p2Stats = players[1].matchStats;
+        
+        document.getElementById('stats-p1').innerHTML = `
+            Damage Dealt: <b>${Math.round(p1Stats.totalDamage)}</b><br>
+            Bounced Dmg: <b>${Math.round(p1Stats.bouncedDamage)}</b><br>
+            X-Skill Dmg: <b>${Math.round(p1Stats.xSkillDamage)}</b><br>
+            Shield Gen: <b>${Math.round(p1Stats.shieldGenerated)}</b>
+        `;
+        document.getElementById('stats-p2').innerHTML = `
+            Damage Dealt: <b>${Math.round(p2Stats.totalDamage)}</b><br>
+            Bounced Dmg: <b>${Math.round(p2Stats.bouncedDamage)}</b><br>
+            X-Skill Dmg: <b>${Math.round(p2Stats.xSkillDamage)}</b><br>
+            Shield Gen: <b>${Math.round(p2Stats.shieldGenerated)}</b>
+        `;
+
         setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
     } else {
         setTimeout(() => {
@@ -172,11 +200,14 @@ function update() {
             players.forEach(tank => {
                 if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
+                        let startHp = tank.hp;
                         tank.hp -= h.dps / 60;
                         if (h.tickTimer <= 0) {
                             tank.hp -= 2; 
                             floatingTexts.push({x: tank.x, y: tank.y - 40, text: "DOMAIN BURST!", life: 40, color: '#ff3333'});
                         }
+                        let damageTaken = startHp - tank.hp;
+                        if (damageTaken > 0) recordDamage(h.owner, damageTaken);
                     }
                 }
             });
@@ -187,14 +218,23 @@ function update() {
             players.forEach(tank => {
                 if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     let dx = h.x - tank.x; let dy = h.y - tank.y; let dist = Math.hypot(dx, dy);
-                    if (dist < h.radius && dist > 0.1) { tank.x += (dx / dist) * 2; tank.y += (dy / dist) * 2; tank.hp -= 1 / 60; }
+                    if (dist < h.radius && dist > 0.1) { 
+                        tank.x += (dx / dist) * 2; tank.y += (dy / dist) * 2; 
+                        let startHp = tank.hp;
+                        tank.hp -= 1 / 60; 
+                        let damageTaken = startHp - tank.hp;
+                        if (damageTaken > 0) recordDamage(h.owner, damageTaken);
+                    }
                 }
             });
             if (h.life <= 1) { 
                 hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 60, maxLife: 60 });
                 players.forEach(tank => {
                     if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0 && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
+                        let startHp = tank.hp;
                         tank.hp -= 5; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "EVENT HORIZON!", life: 50, color: '#ff0000'});
+                        let damageTaken = startHp - tank.hp;
+                        if (damageTaken > 0) recordDamage(h.owner, damageTaken);
                     }
                 });
             }
@@ -260,9 +300,13 @@ function update() {
                     players.forEach((tank, tIndex) => {
                         if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                             if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius + 30) {
+                                let startHp = tank.hp;
                                 tank.hp -= 20; let angle = Math.atan2(tank.y - h.y, tank.x - h.x);
                                 tank.kbX = Math.cos(angle) * 15; tank.kbY = Math.sin(angle) * 15; tank.kbTimer = 15; 
                                 tank.stunTimer = 75; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLASTED!", life: 60, color: '#ff3333'});
+                                
+                                let damageTaken = startHp - tank.hp;
+                                if (damageTaken > 0) recordDamage(h.owner, damageTaken);
                             }
                         }
                     });
@@ -344,6 +388,8 @@ function update() {
                 tank.zHeightActive = false;
                 tank.stunTimer = 0; // Break freeze state lock
                 
+                let startHp = tank.hp;
+                
                 if (tank.chronoIntercepted) {
                     // Massive Wombo Combo execution payload triggered
                     tank.hp -= 40;
@@ -367,6 +413,9 @@ function update() {
                     floatingTexts.push({x: tank.x, y: tank.y - 40, text: "CRASH LANDING!", life: 60, color: '#ff33cc'});
                 }
                 
+                let damageTaken = startHp - tank.hp;
+                if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken); // Attribute to opposite owner
+
                 if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
             }
         }
@@ -377,7 +426,14 @@ function update() {
         }
 
         if (tank.inFireTrail && tank.invulnTimer <= 0) {
-            tank.fireTrailTicks++; let multiplier = Math.pow(1.2, Math.floor(tank.fireTrailTicks / 30)); tank.hp -= (1 / 60) * multiplier;
+            tank.fireTrailTicks++; let multiplier = Math.pow(1.2, Math.floor(tank.fireTrailTicks / 30)); 
+            
+            let startHp = tank.hp;
+            tank.hp -= (1 / 60) * multiplier;
+            let damageTaken = startHp - tank.hp;
+            
+            if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken, false, true); // Pyro Dash 3 is an X Skill
+
             if (Math.random() < 0.1) createParticles(tank.x, tank.y, 1, '#ff3300', 1.5, 0.3);
             if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
         } else { tank.fireTrailTicks = 0; }
@@ -570,6 +626,14 @@ function update() {
                             }
                         }
                     }
+                    
+                    // --- UNIVERSAL DAMAGE RECORDING HOOK FOR ALL PROJECTILE SHOTS ---
+                    let damageTaken = startHp - tank.hp;
+                    if (damageTaken > 0) {
+                        let isXSkill = ['phantom_sg', 'arrow', 'rocket', 'seraph_x', 'mg', 'toxic_bullet'].includes(pA.type);
+                        recordDamage(pA.owner, damageTaken, pA.hasBounced, isXSkill);
+                    }
+
                     if (tank.hp < startHp) { let ownerTank = players.find(p => p.owner === pA.owner); if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5); }
                     pA.triggerExplosion();
                 }
