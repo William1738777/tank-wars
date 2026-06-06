@@ -660,16 +660,16 @@ function draw() {
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     hazards.forEach(h => {
+        // --- FIXED TUMBLING: ONLY SCALE INVERSION, NO ROTATION ---
         if (h.type === 'whirlwind_trap') {
             if (images.tempestTyphoon && images.tempestTyphoon.complete) {
                 let age = h.maxLife - h.life;
                 ctx.save();
                 ctx.translate(h.x, h.y);
                 
-                // --- FIXED TUMBLING: ONLY SCALE INVERSION, NO ROTATION ---
-                ctx.scale(frameCount % 2 === 0 ? -1 : 1, 1);
+                ctx.scale(Math.floor(frameCount / 6) % 2 === 0 ? -1 : 1, 1);
                 
-                let scale = 0.6 + Math.sin(age * 0.1) * 0.05; 
+                let scale = 0.6 + Math.sin(frameCount * 0.1) * 0.02; 
                 const w = images.tempestTyphoon.width * scale;
                 const h_img = images.tempestTyphoon.height * scale;
                 
@@ -881,8 +881,7 @@ function draw() {
             if (images.tempestTyphoon && images.tempestTyphoon.complete) {
                 let w = 24, h_img = 24;
                 ctx.save();
-                // --- FIXED TUMBLING DEBUFF: ONLY SCALE INVERSION, NO ROTATION ---
-                ctx.scale(frameCount % 2 === 0 ? -1 : 1, 1);
+                ctx.scale(Math.floor(frameCount / 6) % 2 === 0 ? -1 : 1, 1);
                 ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
                 ctx.restore();
             }
@@ -905,7 +904,7 @@ function draw() {
     });
     ctx.globalAlpha = 1.0;
 
-    ctx.restore();
+    ctx.restore(); 
 }
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
