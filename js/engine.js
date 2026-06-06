@@ -1,937 +1,978 @@
-// --- GLOBAL VARIABLES & STATE ---
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-let frameCount = 0; 
-
-let gameState = 'MENU'; 
-let p1Selection = 0, p2Selection = 5; 
-let p1Ready = false, p2Ready = false;
-let selectedMapIndex = 0; let currentMap = mapsData[selectedMapIndex];
-let players = []; let p1Score = 0; let p2Score = 0;
-let projectiles = []; let particles = []; let flashes = []; let hazards = []; let floatingTexts = []; 
-
-// Global visual modifiers
-let screenShakeTimer = 0;
-let screenShakeIntensity = 0;
-
-// --- NEW: Global Tracker for AI Difficulty ---
-let aiDifficulty = 'NORMAL';
-
-const keys = {};
-window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-if (typeof images !== 'undefined' && !images.auraThing) {
-    images.auraThing = new Image();
-    images.auraThing.src = 'aurathing.png';
-}
-
-function distToSegment(p, v, w) {
-    let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
-    if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
-    let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2; t = Math.max(0, Math.min(1, t));
-    return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
-}
-
-function triggerScreenShake(duration, intensity) {
-    screenShakeTimer = duration;
-    screenShakeIntensity = intensity;
-}
-
-function recordDamage(attackerOwner, amount, isBounce = false, isXSkill = false) {
-    let attacker = players.find(p => p.owner === attackerOwner);
-    if (attacker) {
-        attacker.matchStats.totalDamage += amount;
-        if (isBounce) attacker.matchStats.bouncedDamage += amount;
-        if (isXSkill) attacker.matchStats.xSkillDamage += amount;
-    }
-}
-
-// --- ENGINE LOGIC ---
-function startGame() {
-    document.getElementById('select-screen').style.display = 'none';
-    document.getElementById('hud').style.display = 'flex';
-    document.getElementById('p1-skills').style.display = 'flex'; document.getElementById('p2-skills').style.display = 'flex';
-    
-    p1Score = 0; p2Score = 0; frameCount = 0;
-    
-    players = [
-        new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false),
-        new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL')
-    ];
-    
-    projectiles = []; particles = []; flashes = []; hazards = []; floatingTexts = [];
-    gameState = 'PLAYING'; updateHUD();
-}
-
-function handleDeath(loserIndex) {
-    let winnerIndex = loserIndex === 0 ? 1 : 0;
-    if (winnerIndex === 0) p1Score++; else p2Score++;
-    
-    document.getElementById('score-p1').innerText = p1Score; document.getElementById('score-p2').innerText = p2Score;
-    
-    if (p1Score >= 3 || p2Score >= 3) {
-        gameState = 'OVER'; const winnerText = p1Score >= 3 ? "PLAYER 1" : "PLAYER 2";
-        document.getElementById('victory-title').innerText = `${winnerText} WINS!`;
-        document.getElementById('victory-title').style.color = p1Score >= 3 ? '#00aaff' : '#ff3333';
+class Tank {
+    constructor(owner, config, x, y, angle, controls, isAI = false, difficulty = 'NORMAL') {
+        this.owner = owner; this.config = config; 
+        this.x = x; this.y = y; this.angle = angle; 
+        this.isAI = isAI;
+        this.difficulty = difficulty; 
         
-        const p1Stats = players[0].matchStats;
-        const p2Stats = players[1].matchStats;
+        this.speed = 2.5 * (config.speedMod || 1); 
+        this.rotSpeed = 0.045 * (config.speedMod || 1); 
+        this.maxHp = config.maxHp || 100;
+        this.hp = this.maxHp; 
+        this.radius = 25 * (config.scaleMod || 1); 
+        this.scaleMod = config.scaleMod || 1;
         
-        document.getElementById('stats-p1').innerHTML = `
-            Damage Dealt: <b>${Math.round(p1Stats.totalDamage)}</b><br>
-            Bounced Dmg: <b>${Math.round(p1Stats.bouncedDamage)}</b><br>
-            X-Skill Dmg: <b>${Math.round(p1Stats.xSkillDamage)}</b><br>
-            Shield Gen: <b>${Math.round(p1Stats.shieldGenerated)}</b>
-        `;
-        document.getElementById('stats-p2').innerHTML = `
-            Damage Dealt: <b>${Math.round(p2Stats.totalDamage)}</b><br>
-            Bounced Dmg: <b>${Math.round(p2Stats.bouncedDamage)}</b><br>
-            X-Skill Dmg: <b>${Math.round(p2Stats.xSkillDamage)}</b><br>
-            Shield Gen: <b>${Math.round(p2Stats.shieldGenerated)}</b>
-        `;
+        this.controls = controls; this.isDead = false;
+        this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
+        this.dashState = 0; this.dashTimer = 0;
+        
+        this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
+        this.electrocutedTimer = 0;
+        this.afterStunSlow = 0;
+        this.destroSlowTimer = 0;
+        this.poisons = []; this.isSlowed = false; this.tempestSlowTimer = 0;
 
-        setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
-    } else {
-        setTimeout(() => {
-            let loser = players[loserIndex]; let winner = players[winnerIndex];
-            let bestSpawn = spawnPoints[0]; let maxDist = -1;
-            for(let sp of spawnPoints) { let dist = Math.hypot(sp.x - winner.x, sp.y - winner.y); if (dist > maxDist) { maxDist = dist; bestSpawn = sp; } }
-            
-            loser.x = bestSpawn.x; loser.y = bestSpawn.y;
-            loser.hp = loser.maxHp; loser.isDead = false; loser.poisons = []; loser.stunTimer = 0;
-            loser.hookState = 'ready'; loser.dashState = 0; loser.burstsLeft = 0; loser.flameTimer = 0;
-            loser.mgAmmo = loser.mgMaxAmmo; loser.mgReloading = false; loser.invulnTimer = 90; 
-            loser.kbX = 0; loser.kbY = 0; loser.kbTimer = 0; loser.electrocutedTimer = 0;
-            loser.energy = 0; loser.zReady = false; loser.zFiring = false; loser.zChargeTimer = 0; loser.cShots = 0;
-            
-            loser.destroAiming = false; loser.destroLocked = false; loser.destroAimDist = 100;
-            loser.afterStunSlow = 0; loser.destroSlowTimer = 0; loser.kbType = null;
-            loser.fireShieldActive = false; loser.isGhosting = false; loser.fireTrailTicks = 0;
-            loser.phantomEvasiveTimer = 0; loser.isGhost = false; loser.ghostToggleTimer = 0;
-            loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
-            loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
-            
-            // Tempest tracking resets
-            loser.tempestStacks = 0; loser.tempestSpeedStacks = 0; loser.tempestSpeedTimer = 0;
-            loser.tempestCSpdStacks = 0; loser.tempestCSpdTimer = 0; loser.tempestSlowTimer = 0;
-            loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
-            loser.typhoonMarks = 0;
-            loser.inTornado = false; // Reset to prevent floating bug on respawn
-            
-            loser.zHeight = 0; loser.zRotation = 0;
-            loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
-            
-            updateHUD();
-        }, 1500); 
+        this.zHeight = 0;
+        this.zRotation = 0;
+
+        // Tempest Internal Trackers
+        this.tempestStacks = 0; 
+        this.tempestShieldHp = 0;
+        this.tempestShieldTimer = 0;
+
+        this.tempestSpeedStacks = 0; 
+        this.tempestSpeedTimer = 0;
+        this.tempestOrbitalAngle = 0;
+        this.tempestOrbitalCooldowns = [0, 0, 0];
+        this.passiveAuraRadius = 200; 
+
+        // New: C-Skill Attack Speed Buff Trackers
+        this.tempestCSpdStacks = 0;
+        this.tempestCSpdTimer = 0;
+
+        // Match Statistics Tracker
+        this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
+
+        this.maxCooldowns = { 
+            c: config.id === 'tempest' ? 1000 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500)))), 
+            x: config.id === 'tempest' ? 300 : (config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : 8000))))), 
+            z: config.id === 'tempest' ? 24000 : (config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : 10000)))))
+        };
+        this.cooldowns = { c: 0, x: 0, z: 0 };
+        this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
+        this.hookState = 'ready'; this.hookTarget = null; this.hookTimer = 0; this.activeArrow = null; 
+        this.mgMaxAmmo = config.id === 'dreadnaught' ? 150 : 100; this.mgAmmo = this.mgMaxAmmo; this.mgReloading = false;
+
+        this.phantomEvasiveTimer = 0; this.isGhost = false; this.ghostToggleTimer = 0;
+        this.phantomMarks = 0; this.phantomMarkTimer = 0; this.phantomShockTimer = 0;
+
+        this.dashCount = 0; this.fireShieldActive = false; this.fireShieldHp = 0; this.fireShieldTimer = 0;
+        this.isGhosting = false; this.ghostHitTanks = []; this.fireTrailTicks = 0; this.inFireTrail = false;
+        this.pyroCShots = 0; this.fireSlowTimer = 0;
+
+        this.abyssSlowStacks = 0;
+        this.abyssSlowTimer = 0;
+
+        this.zHoldTimer = 0;
+        this.zHeldLastFrame = false;
+        this.portalA = null;
+        this.portalB = null;
+        this.portalTimer = 0;
+
+        this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
+        this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
     }
-}
 
-function createKaboom(x, y, scale = 1.0) {
-    flashes.push({ x, y, radius: 5*scale, maxRadius: 30*scale, life: 1.0 });
-    for (let i = 0; i < 25*scale; i++) {
-        const isSmoke = Math.random() > 0.5;
-        particles.push({ x, y, vx: (Math.random()-0.5)*(isSmoke?6:12)*scale, vy: (Math.random()-0.5)*(isSmoke?6:12)*scale, life: 1.0, size: (Math.random()*4 + 2)*scale, color: isSmoke ? '#444' : (Math.random() > 0.5 ? '#ff3300' : '#ffaa00') });
+    addPoison(dps, durationFrames) { this.poisons.push({ dps: dps, life: durationFrames }); }
+
+    activateFireShield() {
+        this.fireShieldActive = true; this.fireShieldHp = 20; this.fireShieldTimer = 300; 
+        this.matchStats.shieldGenerated += 20; 
+        floatingTexts.push({x: this.x, y: this.y - 40, text: "SHIELD UP!", life: 60, color: '#ffaa00'});
     }
-}
 
-function createParticles(x, y, count, color, sizeMultiplier=1, lifeMultiplier=1) {
-    for (let i = 0; i < count; i++) particles.push({ x, y, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3, life: (Math.random()*0.5 + 0.5)*lifeMultiplier, size: (Math.random()*3 + 1)*sizeMultiplier, color });
-}
+    think() {
+        if (!players[0] || players[0].isDead || this.stunTimer > 0 || this.dashState === 2) return;
+        
+        let target = players[0]; 
+        const now = Date.now();
 
-function createMuzzleFlash(x, y, angle, size=1) {
-    for (let i = 0; i < 8*size; i++) {
-        const speed = (Math.random() + 0.5) * 5; const pAngle = angle + (Math.random() - 0.5) * 0.5;
-        particles.push({ x, y, vx: Math.cos(pAngle)*speed, vy: Math.sin(pAngle)*speed, life: Math.random()*0.3 + 0.2, size: Math.random()*3*size + 1, color: 'rgba(200, 200, 200, 0.6)' });
-    }
-}
+        let isHitAndRunTank = ['phantom', 'pyro', 'scorpion', 'tempest'].includes(this.config.id);
+        let cReady = now >= this.cooldowns.c;
 
-function update() {
-    if (gameState !== 'PLAYING') return;
+        let myOrb = null;
+        if (this.config.id === 'abyss') {
+            myOrb = hazards.find(h => h.type === 'void_orb' && h.owner === this.owner);
+            if (myOrb) target = myOrb; 
+        }
 
-    frameCount++; players.forEach(p => p.update());
-    players.forEach(p => p.inFireTrail = false); 
+        let isLowHp = (this.hp / this.maxHp) < 0.35;
+        let tacticalTargetX = target.x;
+        let tacticalTargetY = target.y;
+        let seekingCover = false;
 
-    if (players[0] && players[1] && !players[0].isDead && !players[1].isDead) {
-        if (!players[0].isGhosting && !players[1].isGhosting) {
-            let dx = players[1].x - players[0].x; let dy = players[1].y - players[0].y;
-            let dist = Math.hypot(dx, dy); let minDist = players[0].radius + players[1].radius;
-            if (dist < minDist) {
-                let overlap = minDist - dist; let nx = dx / dist; let ny = dy / dist;
-                players[0].x -= nx * (overlap / 2); players[0].y -= ny * (overlap / 2);
-                players[1].x += nx * (overlap / 2); players[1].y += ny * (overlap / 2);
+        if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
+            if (isLowHp) {
+                seekingCover = true;
+                let bestCoverDist = Infinity;
+                let bestCoverX = this.x;
+                let bestCoverY = this.y;
+
+                for (let w of currentMap.walls) {
+                    let centerX = w.x + w.w / 2; let centerY = w.y + w.h / 2;
+                    let angleFromPlayer = Math.atan2(centerY - target.y, centerX - target.x);
+                    let coverX = centerX + Math.cos(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
+                    let coverY = centerY + Math.sin(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
+                    let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
+                    if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
+                        if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
+                    }
+                }
+
+                for (let r of currentMap.rocks) {
+                    let angleFromPlayer = Math.atan2(r.y - target.y, r.x - target.x);
+                    let coverX = r.x + Math.cos(angleFromPlayer) * (r.r + 60);
+                    let coverY = r.y + Math.sin(angleFromPlayer) * (r.r + 60);
+                    let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
+                    if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
+                        if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
+                    }
+                }
+                if (bestCoverDist < Infinity) { tacticalTargetX = bestCoverX; tacticalTargetY = bestCoverY; }
             }
         }
-    }
 
-    updateHUD(); updateCooldownUI();
+        let targetVx = target.x - (target.lastX || target.x);
+        let targetVy = target.y - (target.lastY || target.y);
+        let distToPlayer = Math.hypot(target.x - this.x, target.y - this.y);
+        let leadDist = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? distToPlayer / 10 : distToPlayer / 15; 
+        let predictedX = target.x + (targetVx * leadDist);
+        let predictedY = target.y + (targetVy * leadDist);
+        let aimWobble = this.difficulty === 'EASY' ? Math.sin(frameCount * 0.02) * 0.6 : (this.difficulty === 'NORMAL' ? Math.sin(frameCount * 0.03) * 0.25 : 0);
+        if (myOrb) aimWobble = 0; 
+        let aimAtPlayerAngle = Math.atan2(predictedY - this.y, predictedX - this.x) + aimWobble;
 
-    if (screenShakeTimer > 0) screenShakeTimer--;
+        let dodgeAngleOffset = 0; let dodgeAngle = null;
 
-    for (let i = hazards.length - 1; i >= 0; i--) {
-        let h = hazards[i];
-        
-        // --- NEW: Tempest Trap Helpless Tumbling Physics ---
-        if (h.type === 'whirlwind_trap') {
-            if (h.targetTank && !h.targetTank.isDead) {
-                // Lock the trap position permanently to where it hit
-                if (h.startX === undefined) { 
-                    h.startX = h.targetTank.x; 
-                    h.startY = h.targetTank.y; 
-                }
-                h.x = h.startX;
-                h.y = h.startY;
-
-                let age = h.maxLife - h.life;
-                
-                // Override target's movement and gravity physics
-                h.targetTank.inTornado = true;
-                h.targetTank.zHeightActive = true;
-                h.targetTank.knockupSource = 'tempest';
-                
-                // Wild, erratic round-and-round motion
-                h.targetTank.x = h.startX + Math.cos(age * 0.25) * 35;
-                h.targetTank.y = h.startY + Math.sin(age * 0.25) * 35;
-                
-                // Violent Up and down bouncing
-                h.targetTank.zHeight = 50 + Math.sin(age * 0.2) * 40; 
-                
-                h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); 
-                h.targetTank.kbTimer = 0; 
-                h.targetTank.zRotation += 0.3; 
-                
-                if (h.life % 30 === 0) {
-                    let progress = 1 - (h.life / h.maxLife); 
-                    let dmg = 0.5 + (1.3 * progress); 
-                    h.targetTank.hp -= dmg;
-                    if (typeof recordDamage === 'function') recordDamage(h.owner, dmg);
-                    floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
-                }
-                
-                // Ensure physics are gracefully returned when the trap ends
-                if (h.life <= 1) {
-                    h.targetTank.inTornado = false;
-                    h.targetTank.zHeightActive = false;
-                    h.targetTank.zHeight = 0;
-                }
-                
-                createParticles(h.x + (Math.random()-0.5)*100, h.y + (Math.random()-0.5)*100, 2, '#ffffff', 2, 0.5);
-                createParticles(h.x, h.y, 1, '#aaffff', 3, 0.4);
-            }
-        }
-        else if (h.type === 'dark_boom') {
-            if (!h.initialized) {
-                h.particles = [];
-                for (let j = 0; j < 35; j++) {
-                    const isSmoke = Math.random() > 0.5;
-                    const angle = Math.random() * Math.PI * 2;
-                    const speed = (Math.random() * 9) + 4;
-                    let pColor = isSmoke ? (Math.random() > 0.5 ? '#000000' : '#1a1a1a') : (Math.random() > 0.5 ? '#ff0000' : '#8b0000');
-                    h.particles.push({ vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, x: 0, y: 0, size: Math.random() * 7 + 3, color: pColor });
-                }
-                h.initialized = true;
-            } else {
-                h.particles.forEach(part => { part.x += part.vx; part.y += part.vy; part.vx *= 0.92; part.vy *= 0.92; });
-            }
-        } else if (h.type === 'abyss_domain') {
-            if (!h.initialized) {
-                h.particles = [];
-                for (let j = 0; j < 45; j++) {
-                    h.particles.push({ angle: Math.random() * Math.PI * 2, radius: 120 + Math.random() * 100, speed: (Math.random() * 0.03) + 0.01, size: Math.random() * 6 + 2, isBlack: Math.random() > 0.4 });
-                }
-                h.initialized = true;
-            } else {
-                h.particles.forEach(p => { p.angle -= p.speed; p.radius -= 0.5; if (p.radius < 30) p.radius = h.radius * 0.9 + Math.random() * 50; });
-            }
-            
-            h.tickTimer--;
-            players.forEach(tank => {
-                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
-                        let startHp = tank.hp;
-                        tank.hp -= h.dps / 60;
-                        if (h.tickTimer <= 0) {
-                            tank.hp -= 2; 
-                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "DOMAIN BURST!", life: 40, color: '#ff3333'});
+        if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
+            for (let p of projectiles) {
+                if (p.owner !== this.owner && !p.dead) {
+                    let pdx = this.x - p.x; let pdy = this.y - p.y;
+                    let pDist = Math.hypot(pdx, pdy);
+                    if (pDist < 250) { 
+                        let dot = (p.vx * -pdx + p.vy * -pdy) / (pDist * p.speed);
+                        if (dot > 0.85) { 
+                            if (this.difficulty === 'HARD_1') {
+                                let cross = p.vx * -pdy - p.vy * -pdx; dodgeAngleOffset = cross > 0 ? 0.4 : -0.4;
+                            } else {
+                                dodgeAngle = Math.atan2(p.vy, p.vx) + (Math.random() > 0.5 ? Math.PI/2 : -Math.PI/2);
+                            }
+                            break; 
                         }
-                        let damageTaken = startHp - tank.hp;
-                        if (damageTaken > 0) recordDamage(h.owner, damageTaken);
                     }
                 }
-            });
-
-            if (h.tickTimer <= 0) { h.dps *= 2; h.tickTimer = 120; h.shockwaves = h.shockwaves || []; h.shockwaves.push({ life: 60, maxLife: 60 }); }
-            if (h.shockwaves) { h.shockwaves.forEach(s => s.life--); h.shockwaves = h.shockwaves.filter(s => s.life > 0); }
-        } else if (h.type === 'black_hole') {
-            players.forEach(tank => {
-                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                    let dx = h.x - tank.x; let dy = h.y - tank.y; let dist = Math.hypot(dx, dy);
-                    if (dist < h.radius && dist > 0.1) { 
-                        tank.x += (dx / dist) * 2; tank.y += (dy / dist) * 2; 
-                        let startHp = tank.hp;
-                        tank.hp -= 1 / 60; 
-                        let damageTaken = startHp - tank.hp;
-                        if (damageTaken > 0) recordDamage(h.owner, damageTaken);
-                    }
-                }
-            });
-            if (h.life <= 1) { 
-                hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 60, maxLife: 60 });
-                players.forEach(tank => {
-                    if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0 && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
-                        let startHp = tank.hp;
-                        tank.hp -= 5; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "EVENT HORIZON!", life: 50, color: '#ff0000'});
-                        let damageTaken = startHp - tank.hp;
-                        if (damageTaken > 0) recordDamage(h.owner, damageTaken);
-                    }
-                });
             }
         }
-        else if (h.type === 'orion_chrono') {
-            let age = h.maxLife - h.life;
-            h.isFullyCharged = age >= 90; 
-            
-            projectiles.forEach(proj => {
-                let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
-                if (dist < h.radius) {
-                    if (h.isFullyCharged) {
-                        proj.isTimeDilated = true;
-                        proj.vx *= 0.92;
-                        proj.vy *= 0.92;
+
+        let targetAngle = aimAtPlayerAngle;
+
+        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && isHitAndRunTank && !cReady && !myOrb && !this.destroAiming) {
+            if (seekingCover) { targetAngle = Math.atan2(tacticalTargetY - this.y, tacticalTargetX - this.x); } 
+            else { targetAngle = Math.atan2(this.y - predictedY, this.x - predictedX); }
+        } 
+        
+        targetAngle += dodgeAngleOffset;
+
+        let obstacleAhead = false; let obstacleBehind = false; let sensorDist = 80;
+        let lookAheadX = this.x + Math.cos(this.angle) * sensorDist; let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
+        let lookBehindX = this.x - Math.cos(this.angle) * sensorDist; let lookBehindY = this.y - Math.sin(this.angle) * sensorDist;
+
+        if (lookAheadX < 50 || lookAheadX > canvas.width - 50 || lookAheadY < 50 || lookAheadY > canvas.height - 50) obstacleAhead = true;
+        if (lookBehindX < 50 || lookBehindX > canvas.width - 50 || lookBehindY < 50 || lookBehindY > canvas.height - 50) obstacleBehind = true;
+
+        for (let w of currentMap.walls) {
+            if (lookAheadX > w.x - 30 && lookAheadX < w.x + w.w + 30 && lookAheadY > w.y - 30 && lookAheadY < w.y + w.h + 30) obstacleAhead = true;
+            if (lookBehindX > w.x - 30 && lookBehindX < w.x + w.w + 30 && lookBehindY > w.y - 30 && lookBehindY < w.y + w.h + 30) obstacleBehind = true;
+        }
+        for (let r of currentMap.rocks) {
+            if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 30) obstacleAhead = true;
+            if (Math.hypot(lookBehindX - r.x, lookBehindY - r.y) < r.r + 30) obstacleBehind = true;
+        }
+
+        let bankingShot = false;
+        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && obstacleAhead && (this.config.id === 'phantom' || this.config.id === 'pyro' || this.config.id === 'orion' || this.config.id === 'tempest')) {
+            if (!isHitAndRunTank || cReady) { targetAngle += 0.6; bankingShot = true; }
+        }
+
+        keys[this.controls.up] = false; keys[this.controls.down] = false; keys[this.controls.left] = false; keys[this.controls.right] = false;
+        keys[this.controls.c] = false; keys[this.controls.x] = false; keys[this.controls.z] = false;
+
+        let angleDiff = targetAngle - this.angle; 
+        angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+        if (angleDiff > 0.1) keys[this.controls.right] = true; 
+        else if (angleDiff < -0.1) keys[this.controls.left] = true;
+
+        if (!this.destroAiming) {
+            if (dodgeAngle !== null && this.difficulty === 'HARD') {
+                let diff = dodgeAngle - this.angle; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+                if (diff > 0.2) keys[this.controls.right] = true; else if (diff < -0.2) keys[this.controls.left] = true;
+                keys[this.controls.up] = true;
+            } else if (seekingCover) {
+                let distToTactical = Math.hypot(tacticalTargetX - this.x, tacticalTargetY - this.y);
+                if (distToTactical > 30) {
+                    let coverAngleDiff = Math.atan2(tacticalTargetY - this.y, tacticalTargetX - this.x) - this.angle;
+                    coverAngleDiff = Math.atan2(Math.sin(coverAngleDiff), Math.cos(coverAngleDiff));
+                    if (Math.abs(coverAngleDiff) < Math.PI / 2) {
+                        if (!obstacleAhead) keys[this.controls.up] = true; else { keys[this.controls.down] = true; keys[this.controls.left] = true; } 
+                    } else {
+                        if (!obstacleBehind) keys[this.controls.down] = true; else { keys[this.controls.up] = true; keys[this.controls.right] = true; }
                     }
                 }
-            });
-
-            if (h.life === 1) {
-                createParticles(h.x, h.y, 40, '#ff33cc', 2.5, 0.6);
-                triggerScreenShake(15, 6);
-                
-                projectiles.forEach(proj => {
-                    let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
-                    if (dist < h.radius && proj.isTimeDilated) {
-                        if (proj.type === 'orion_c') { proj.damage += 5; proj.speed *= 1.5; }
-                        proj.vx = -Math.cos(proj.angle) * proj.speed; proj.vy = -Math.sin(proj.angle) * proj.speed;
-                        proj.angle = Math.atan2(proj.vy, proj.vx); proj.owner = h.owner; proj.isTimeDilated = false;
-                        createParticles(proj.x, proj.y, 4, '#ff33cc', 1, 0.3);
+            } else if (obstacleAhead && (!isHitAndRunTank || cReady) && !bankingShot) {
+                keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.left] = true; keys[this.controls.right] = false;
+            } else if (obstacleAhead && isHitAndRunTank && !cReady) {
+                keys[this.controls.up] = false; keys[this.controls.down] = true; keys[this.controls.right] = true; 
+            } else {
+                if (myOrb) {
+                    if (distToPlayer > 250) keys[this.controls.up] = true; else if (distToPlayer < 100) keys[this.controls.down] = true;
+                } else if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
+                    if (isHitAndRunTank) {
+                        if (!cReady) { keys[this.controls.up] = true; } 
+                        else { if (distToPlayer > 300) keys[this.controls.up] = true; else if (distToPlayer < 150) keys[this.controls.down] = true; }
+                    } else {
+                        if (distToPlayer < 320 && !obstacleBehind) keys[this.controls.down] = true; 
+                        else if (distToPlayer > 450) keys[this.controls.up] = true; 
                     }
-                });
+                } else {
+                    let desiredDist = 150;
+                    if (distToPlayer > desiredDist + 100) keys[this.controls.up] = true; 
+                    else if (distToPlayer < desiredDist) keys[this.controls.down] = true; 
+                    else if (Math.random() < (this.difficulty === 'EASY' ? 0.02 : 0.05)) keys[this.controls.up] = true;
+                }
+            }
+
+            let isStuckMoving = (keys[this.controls.up] || keys[this.controls.down]);
+            if (this.x === this.lastX && this.y === this.lastY && isStuckMoving && !bankingShot) {
+                this.stuckTimer = (this.stuckTimer || 0) + 1;
+                if (this.stuckTimer > 20) { keys[this.controls.up] = !keys[this.controls.up]; keys[this.controls.down] = !keys[this.controls.down]; keys[this.controls.left] = true; }
+            } else { this.stuckTimer = 0; }
+        } else { keys[this.controls.up] = false; keys[this.controls.down] = false; keys[this.controls.left] = false; keys[this.controls.right] = false; }
+        
+        this.lastX = this.x; this.lastY = this.y;
+
+        let combatAngleDiff = aimAtPlayerAngle - this.angle;
+        combatAngleDiff = Math.atan2(Math.sin(combatAngleDiff), Math.cos(combatAngleDiff));
+
+        let triggerHappy = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.08 : (this.difficulty === 'NORMAL' ? 0.04 : 0.01);
+        let acceptableCombatAngle = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.3 : 0.4;
+
+        if (Math.abs(combatAngleDiff) < acceptableCombatAngle && distToPlayer < 700 && (!obstacleAhead || bankingShot)) {
+            if (this.difficulty === 'EASY' && frameCount % 2 === 0) return; 
+            if (seekingCover && Math.random() > 0.3) return; 
+
+            keys[this.controls.c] = true; 
+            
+            if (this.config.id === 'abyss' && myOrb) {
+                if (now > this.cooldowns.z) keys[this.controls.z] = true;
+            } else {
+                if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
+                    if (this.destroAiming) { keys[this.controls.x] = true; if (this.destroAimDist >= distToPlayer - 40) keys[this.controls.x] = false; } 
+                    else if (Math.random() < triggerHappy && distToPlayer > 200 && now > this.cooldowns.x) { keys[this.controls.x] = true; }
+                } else if (Math.random() < triggerHappy) { keys[this.controls.x] = true; }
+                if (distToPlayer < 450 && Math.random() < triggerHappy) keys[this.controls.z] = true;
             }
         }
-        else if (h.type === 'fire_trail') {
-            players.forEach(tank => { if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) { if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) tank.inFireTrail = true; } });
-        } else if (h.type === 'mine') {
-            h.age++; if (h.age > 120 && !h.triggering) h.visible = false;
+    }
+
+    update() {
+        if (this.isDead) return;
+        if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
+
+        if (this.config.id === 'tempest') {
+            if (this.tempestSpeedTimer > 0) {
+                this.tempestSpeedTimer--;
+                if (this.tempestSpeedTimer <= 0) {
+                    this.tempestSpeedStacks = 0;
+                }
+            }
             
-            if (h.triggering) {
-                h.triggerTimer--;
-                if (h.triggerTimer % 5 === 0) createParticles(h.x, h.y, 2, '#ff0000', 1.5, 0.2);
-                if (h.triggerTimer <= 0) {
-                    players.forEach((tank, tIndex) => {
-                        if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                            if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius + 30) {
-                                let startHp = tank.hp;
-                                tank.hp -= 20; let angle = Math.atan2(tank.y - h.y, tank.x - h.x);
-                                tank.kbX = Math.cos(angle) * 15; tank.kbY = Math.sin(angle) * 15; tank.kbTimer = 15; 
-                                tank.stunTimer = 75; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLASTED!", life: 60, color: '#ff3333'});
+            if (this.tempestCSpdTimer > 0) {
+                this.tempestCSpdTimer--;
+                if (this.tempestCSpdTimer <= 0) {
+                    this.tempestCSpdStacks = 0;
+                }
+            }
+            
+            let orbitalSpeed = 0.03 * (1 + (this.tempestSpeedStacks * 1.0));
+            this.tempestOrbitalAngle += orbitalSpeed;
+            
+            const now = Date.now();
+            let hitboxes = [];
+            for (let i = 0; i < 3; i++) {
+                let angleOffset = this.tempestOrbitalAngle + (i * ((Math.PI * 2) / 3));
+                hitboxes.push({
+                    x: this.x + Math.cos(angleOffset) * this.passiveAuraRadius,
+                    y: this.y + Math.sin(angleOffset) * this.passiveAuraRadius
+                });
+            }
+            
+            players.forEach(enemy => {
+                if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                    hitboxes.forEach((hb, index) => {
+                        if (Math.hypot(enemy.x - hb.x, enemy.y - hb.y) < enemy.radius + 20) {
+                            if (now > this.tempestOrbitalCooldowns[index]) {
+                                enemy.hp -= 4;
+                                if (typeof recordDamage === 'function') recordDamage(this.owner, 4);
+                                this.tempestOrbitalCooldowns[index] = now + 250; 
                                 
-                                let damageTaken = startHp - tank.hp;
-                                if (damageTaken > 0) recordDamage(h.owner, damageTaken);
+                                flashes.push({ x: enemy.x, y: enemy.y, radius: 15, maxRadius: 60, life: 1.0, color: '#aaffff' });
+                                createParticles(enemy.x, enemy.y, 8, '#ffffff', 2, 0.6);
+                                createParticles(enemy.x, enemy.y, 8, '#00ffff', 3, 0.4);
+                                floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-4", life: 30, color: '#aaffff'});
+                                
+                                this.tempestStacks = Math.min(9, (this.tempestStacks || 0) + 0.5);
+                                this.tempestCSpdStacks = Math.min(5, (this.tempestCSpdStacks || 0) + 1);
+                                this.tempestCSpdTimer = 300; 
+                                
+                                if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
                             }
                         }
                     });
-                    createKaboom(h.x, h.y, 2.0); h.life = 0; 
                 }
-            } else {
-                players.forEach(tank => { if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) { if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) { h.triggering = true; h.visible = true; h.triggerTimer = 15; } } });
-            }
-        } else if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
-            for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) projectiles.push(new Projectile(h.owner, h.x, h.y, angle, 6, 3, 1.5, '#00ffff', 'seraph_spark', 1));
-            createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
-        } else if (h.type === 'destro_strike_manager') {
-            if (h.state === 'launching') {
-                h.timer--; let moving = false;
-                if (h.tank && !h.tank.isDead) moving = keys[h.tank.controls.up] || keys[h.tank.controls.down] || keys[h.tank.controls.left] || keys[h.tank.controls.right]; else moving = true; 
-                if (moving) { h.state = 'falling_delay'; h.timer = 48; } 
-                else if (h.timer <= 0) {
-                    h.timer = 5; 
-                    if (h.targets.length > 0) {
-                        let t = h.targets.pop(); h.launched.push(t);
-                        projectiles.push(new Projectile(h.owner, h.tank.x, h.tank.y - 10, -Math.PI/2, 18, 2, 0, '#fff', 'destro_up', 0));
-                        createMuzzleFlash(h.tank.x, h.tank.y - 10, -Math.PI/2, 1.5);
-                    }
-                    if (h.targets.length === 0) { h.state = 'falling_delay'; h.timer = 48; }
-                }
-            } else if (h.state === 'falling_delay') {
-                h.timer--; if (h.timer <= 0) { h.state = 'falling'; h.timer = 0; }
-            } else if (h.state === 'falling') {
-                h.timer--;
-                if (h.timer <= 0) {
-                    if (h.launched.length > 0) {
-                        let t = h.launched.shift(); 
-                        let p = new Projectile(h.owner, t.x, t.y - 800, Math.PI/2, 20, 8, 12, '#ff4500', 'destro_rocket', 0);
-                        p.targetY = t.y; projectiles.push(p); h.timer = Math.floor(Math.random() * 6 + 12); 
-                    } else { h.life = 0; }
-                }
-            }
-        }
-        h.life--; if (h.life <= 0) hazards.splice(i, 1);
-    }
-
-    players.forEach((tank, tIndex) => {
-        if (tank.zHeightActive) {
-            tank.zFrameCounter++;
-            
-            let insideChronosphere = hazards.some(h => h.type === 'orion_chrono' && h.isFullyCharged && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius);
-            
-            if (insideChronosphere && !tank.chronoIntercepted && tank.zFrameCounter < tank.zMaxDuration) {
-                tank.chronoIntercepted = true;
-                tank.zMaxDuration += 120; 
-                tank.zHeight += 150; 
-                floatingTexts.push({x: tank.x, y: tank.y - 80, text: "TIME-DILATED SUSPENSION!", life: 60, color: '#ff33cc', fontSize: '15px'});
-            }
-
-            let progress = tank.zFrameCounter / tank.zMaxDuration;
-            
-            // --- NEW: Gravity suspension bypass when inside the Tornado Trap ---
-            if (progress <= 1.0) {
-                if (tank.chronoIntercepted) {
-                    if (progress > 0.2 && progress < 0.8) {
-                        tank.zHeight = tank.zHeightBaseMax + 150 + Math.sin(frameCount * 0.4) * 8;
-                    } else if (progress >= 0.8) {
-                        let fallProgress = (progress - 0.8) / 0.2;
-                        tank.zHeight = (tank.zHeightBaseMax + 150) * (1 - fallProgress * fallProgress);
-                    }
-                } else if (!tank.inTornado) {
-                    tank.zHeight = Math.sin(progress * Math.PI) * tank.zHeightBaseMax;
-                }
-            }
-
-            if (progress >= 1.0 || tank.zHeight <= 0) {
-                tank.zHeight = 0;
-                tank.zHeightActive = false;
-                tank.stunTimer = 0; 
-                
-                let startHp = tank.hp;
-                
-                if (tank.knockupSource === 'tempest') {
-                    tank.knockupSource = null; 
-                } else if (tank.chronoIntercepted) {
-                    tank.hp -= 40;
-                    tank.afterStunSlow = 180; 
-                    tank.fireSlowTimer = 180; 
-                    triggerScreenShake(24, 12); 
-                    createParticles(tank.x, tank.y, 35, '#ff33cc', 2.5, 0.8);
-                    createParticles(tank.x, tank.y, 25, '#222222', 4, 1);
-                    floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ORBITAL ANNIHILATION!", life: 80, color: '#ff33cc', fontSize: '24px'});
-                    tank.zRotation = 12.5; 
-                } else {
-                    tank.hp -= 25;
-                    triggerScreenShake(12, 5);
-                    createParticles(tank.x, tank.y, 15, '#ff33cc', 1.5, 0.5);
-                    floatingTexts.push({x: tank.x, y: tank.y - 40, text: "CRASH LANDING!", life: 60, color: '#ff33cc'});
-                }
-                
-                let damageTaken = startHp - tank.hp;
-                if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken); 
-
-                if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
-            }
+            });
         }
 
-        if (!tank.zHeightActive && tank.zRotation > 0.01) {
-            tank.zRotation *= 0.88;
+        if (this.invulnTimer > 0) this.invulnTimer--;
+        if (this.electrocutedTimer > 0) this.electrocutedTimer--;
+        if (this.phantomMarkTimer > 0) { this.phantomMarkTimer--; if (this.phantomMarkTimer <= 0) this.phantomMarks = 0; }
+        if (this.phantomShockTimer > 0) this.phantomShockTimer--;
+
+        if (this.portalTimer > 0) {
+            this.portalTimer--;
+            if (this.portalTimer <= 0) { this.portalA = null; this.portalB = null; this.cooldowns.z = Date.now() + 18000; }
         }
 
-        if (tank.inFireTrail && tank.invulnTimer <= 0) {
-            tank.fireTrailTicks++; let multiplier = Math.pow(1.2, Math.floor(tank.fireTrailTicks / 30)); 
-            
-            let startHp = tank.hp;
-            tank.hp -= (1 / 60) * multiplier;
-            let damageTaken = startHp - tank.hp;
-            
-            if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken, false, true); 
+        if (this.config.id === 'phantom') {
+            if (this.phantomEvasiveTimer > 0) {
+                this.phantomEvasiveTimer--; this.ghostToggleTimer--;
+                if (this.ghostToggleTimer <= 0) { this.isGhost = !this.isGhost; this.ghostToggleTimer = Math.floor(Math.random() * (120 - 30 + 1) + 30); }
+                if (this.phantomEvasiveTimer <= 0) { this.isGhost = false; floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Deactivated", life: 60, color: '#9d00ff'}); }
+            } else { this.isGhost = false; }
+        }
 
-            if (Math.random() < 0.1) createParticles(tank.x, tank.y, 1, '#ff3300', 1.5, 0.3);
-            if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
-        } else { tank.fireTrailTicks = 0; }
-    });
+        if (this.zHeight > 0) { this.stunTimer = Math.max(this.stunTimer, 2); this.zRotation += 0.05; } 
+        else { this.zRotation = 0; }
 
-    players.forEach(orionTank => {
-        if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
-            if (!orionTank.isDead && orionTank.zHeight === 0) {
-                let distTankToA = Math.hypot(orionTank.x - orionTank.portalA.x, orionTank.y - orionTank.portalA.y);
-                let distTankToB = Math.hypot(orionTank.x - orionTank.portalB.x, orionTank.y - orionTank.portalB.y);
-                
-                if (distTankToA < orionTank.radius && !orionTank.justWarped) {
-                    orionTank.x = orionTank.portalB.x; orionTank.y = orionTank.portalB.y;
-                    orionTank.justWarped = true;
-                    createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
-                } else if (distTankToB < orionTank.radius && !orionTank.justWarped) {
-                    orionTank.x = orionTank.portalA.x; orionTank.y = orionTank.portalA.y;
-                    orionTank.justWarped = true;
-                    createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
+        if (this.kbTimer > 0) {
+            let oldX = this.x; let oldY = this.y;
+            this.x += this.kbX; this.y += this.kbY;
+            this.checkWallCollisions(); 
+            if (this.kbType === 'wall_slam') {
+                let movedDist = Math.hypot(this.x - oldX, this.y - oldY); let intendedDist = Math.hypot(this.kbX, this.kbY);
+                let hitEdge = this.x <= this.radius || this.x >= canvas.width - this.radius || this.y <= this.radius || this.y >= canvas.height - this.radius;
+                if (movedDist < intendedDist - 2 || hitEdge) {
+                    this.kbType = null; this.stunTimer = Math.max(this.stunTimer, 120); this.afterStunSlow = 90;
+                    floatingTexts.push({x: this.x, y: this.y - 40, text: "CRITICALLY JAMMED!", life: 90, color: '#ff3333'}); createKaboom(this.x, this.y, 1.5);
                 }
-                if (distTankToA > orionTank.radius + 15 && distTankToB > orionTank.radius + 15) orionTank.justWarped = false;
             }
+            this.kbX *= 0.85; this.kbY *= 0.85; this.kbTimer--;
+            if (this.kbTimer <= 0) this.kbType = null;
         }
-    });
 
-    let processedShotgunCasts = [];
+        if (this.stunTimer > 0 && this.zHeight === 0) {
+            this.stunTimer--;
+            if (this.stunTimer % 8 === 0) createParticles(this.x + (Math.random()-0.5)*30, this.y + (Math.random()-0.5)*30, 2, '#00ffff', 1.2, 0.4);
+        } else if (this.stunTimer > 0) {
+            this.stunTimer--;
+        }
 
-    for (let i = 0; i < projectiles.length; i++) {
-        let pA = projectiles[i]; if (pA.dead) continue;
+        this.isSlowed = false;
+        for (let i = this.poisons.length - 1; i >= 0; i--) {
+            let p = this.poisons[i]; let poisonDamage = p.dps / 60; this.hp -= poisonDamage; 
+            if (typeof recordDamage === 'function') recordDamage(this.owner === 1 ? 2 : 1, poisonDamage); 
+            p.life--; if (p.life <= 0) this.poisons.splice(i, 1);
+        }
         
-        pA.update();
-
-        if (pA.type === 'abyss_rapid_empowered' && frameCount % 2 === 0) {
-            createParticles(pA.x, pA.y, 1, '#ff0000', 1.5, 0.3);
-        }
-
-        players.forEach(orionTank => {
-            if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
-                if (pA.type === 'orion_c' && !pA.dead) {
-                    let distToA = Math.hypot(pA.x - orionTank.portalA.x, pA.y - orionTank.portalA.y);
-                    let distToB = Math.hypot(pA.x - orionTank.portalB.x, pA.y - orionTank.portalB.y);
-                    
-                    if (distToA < 25 && !pA.justWarped) {
-                        pA.x = orionTank.portalB.x; pA.y = orionTank.portalB.y;
-                        pA.damage += 5; pA.speed *= 1.25; 
-                        pA.vx = Math.cos(pA.angle) * pA.speed; pA.vy = Math.sin(pA.angle) * pA.speed; pA.justWarped = true; 
-                        createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
-                    } else if (distToB < 25 && !pA.justWarped) {
-                        pA.x = orionTank.portalA.x; pA.y = orionTank.portalA.y;
-                        pA.damage += 5; pA.speed *= 1.25; 
-                        pA.vx = Math.cos(pA.angle) * pA.speed; pA.vy = Math.sin(pA.angle) * pA.speed; pA.justWarped = true;
-                        createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
-                    }
-                    if (distToA > 40 && distToB > 40) pA.justWarped = false; 
-                }
-            }
-        });
-
-        if (pA.type === 'destro_rocket' || pA.type === 'destro_up') continue;
-        if (pA.isTimeDilated) continue;
-
         hazards.forEach(h => {
-            if (h.type === 'void_orb' && !pA.dead) {
-                if (Math.hypot(pA.x - h.x, pA.y - h.y) < h.radius + pA.radius) {
-                    if (pA.type === 'abyss_z') {
-                        hazards.push({ owner: pA.owner, type: 'black_hole', x: h.x, y: h.y, radius: 150, life: 240 });
-                        playSound(sfx.abyssBlackHole); pA.triggerExplosion(); h.life = 0;
-                    } else if ((pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') && pA.owner === h.owner) {
-                        h.orbHp -= 1; pA.triggerExplosion(); createParticles(h.x, h.y, 3, '#ff0000', 1.5, 0.3);
-                        if (h.orbHp <= 0) {
-                            h.life = 0;
-                            hazards.push({ owner: h.owner, type: 'abyss_domain', x: h.x, y: h.y, radius: 170, life: 720, dps: 0.5, tickTimer: 120 });
-                            playSound(sfx.abyssDom); 
-                            floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
-                            
-                            let domainOwner = players.find(p => p.owner === h.owner);
-                            if (domainOwner) {
-                                let cdReduction = domainOwner.maxCooldowns.x * 0.5;
-                                domainOwner.cooldowns.x = Math.max(Date.now(), domainOwner.cooldowns.x - cdReduction);
-                                floatingTexts.push({x: domainOwner.x, y: domainOwner.y - 60, text: "VOID ORB RESET!", life: 60, color: '#ff0000'});
-                            }
-                        }
-                    } else if (pA.owner !== h.owner) {
-                        h.orbHp -= pA.damage; pA.triggerExplosion();
-                        if (h.orbHp <= 0) {
-                            h.life = 0; hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 60, maxLife: 60 });
-                            floatingTexts.push({x: h.x, y: h.y - 40, text: "ORB DESTROYED!", life: 50, color: '#777'});
-                        }
+            if (h.owner !== this.owner && Math.hypot(this.x - h.x, this.y - h.y) < this.radius + h.radius) {
+                if (h.type === 'poison_pool') { this.hp -= 0.5 / 60; this.isSlowed = true; } 
+                else if (h.type === 'seraph_aoe') {
+                    this.isSlowed = true; this.electrocutedTimer = Math.max(this.electrocutedTimer, 5);
+                    if (h.life % 60 === 0) {
+                        this.hp -= 3.5; this.stunTimer = Math.max(this.stunTimer, 30);
+                        if (typeof recordDamage === 'function') recordDamage(h.owner, 3.5); 
+                        floatingTexts.push({x: this.x, y: this.y - 40, text: "SHOCKED!", life: 40, color: '#00ffff'});
+                        let ownerTank = players.find(p => p.owner === h.owner);
+                        if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5);
                     }
                 }
             }
         });
+        
+        if (this.hp <= 0 && !this.isDead) { this.isDead = true; createKaboom(this.x, this.y, 2.0 * this.scaleMod); handleDeath(this.owner === 1 ? 0 : 1); return; }
 
-        players.forEach((tank, tIndex) => {
-            if (pA.owner !== tank.owner && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
-                if (tank.config.id === 'phantom' && tank.isGhost) return;
-                if (tank.zHeight > 0) return;
+        let currentSpeed = this.isSlowed ? this.speed * 0.5 : this.speed;
+        
+        if (this.stunTimer <= 0 && this.afterStunSlow > 0) { this.afterStunSlow--; currentSpeed *= 0.1; }
+        if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
+        if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
+        if (this.tempestSlowTimer > 0) { this.tempestSlowTimer--; currentSpeed *= 0.4; } // 60% Z Slow
 
-                if (Math.hypot(pA.x - tank.x, pA.y - tank.y) < tank.radius + pA.radius) {
-                    let shooter = players.find(p => p.owner === pA.owner);
-                    if (shooter && shooter.config.id === 'grizzly') playSound(sfx.tankHit);
+        if (this.abyssSlowTimer > 0) {
+            this.abyssSlowTimer--;
+            let domainActive = hazards.some(h => h.type === 'abyss_domain' && h.owner !== this.owner);
+            if (!domainActive || this.abyssSlowTimer <= 0) {
+                this.abyssSlowStacks = 0; this.abyssSlowTimer = 0;
+            } else {
+                let slowMultiplier = 1 - (this.abyssSlowStacks * 0.08); 
+                currentSpeed *= Math.max(0.2, slowMultiplier); 
+                if (frameCount % 10 === 0) { createParticles(this.x, this.y, 1, '#ff0000', 1.2, 0.3); }
+            }
+        } else { this.abyssSlowStacks = 0; }
 
-                    let startHp = tank.hp;
-
-                    if (tank.config.id === 'pyro' && tank.fireShieldActive) {
-                        tank.fireShieldHp -= pA.damage; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLOCKED!", life: 20, color: '#ffaa00'});
-                    } else {
-                        if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
-
-                        if (pA.type === 'firebolt') {
-                            tank.hp -= pA.damage; let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
-                            tank.kbX = Math.cos(angle) * 12; tank.kbY = Math.sin(angle) * 12; tank.kbTimer = 15; tank.fireSlowTimer = 90; 
-                        } else if (pA.type === 'toxic_bullet') { tank.hp -= pA.damage; tank.addPoison(0.5, 300); 
-                        } else if (pA.type === 'arrow') {
-                            tank.hp -= pA.damage; tank.addPoison(1.0, 300); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "HOOKED!", life: 50, color: '#00ff66'});
-                            let ownerTank = players.find(p => p.owner === pA.owner);
-                            if (ownerTank) { ownerTank.hookState = 'pulling'; ownerTank.hookTarget = tank; ownerTank.hookTimer = 60; }
-                        } else if (pA.type === 'seraph_spark') {
-                            tank.hp -= pA.damage; if (Math.random() < 0.10) { tank.stunTimer = Math.max(tank.stunTimer, 30); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ZAPPED!", life: 40, color: '#00ffff'}); }
-                        } else if (pA.type === 'destro_missile') {
-                            tank.hp -= pA.damage; tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
-                        } else if (pA.type === 'orion_z_lift') {
-                            tank.hp -= pA.damage; tank.zHeightActive = true; tank.zFrameCounter = 0; tank.zMaxDuration = 150; 
-                            tank.zHeightBaseMax = 160; tank.chronoIntercepted = false; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ANTI-GRAV LIFT!", life: 50, color: '#ff33cc'});
-                        } else if (pA.type === 'abyss_z') {
-                            tank.hp -= pA.damage;
-                            if (pA.hasBounced) { hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 }); playSound(sfx.abyssBlackHole); } 
-                            else { tank.isSlowed = true; tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 180); }
-                        } else if (pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') {
-                            tank.hp -= pA.damage; let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
-                            tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
-                            if (pA.type === 'abyss_rapid_empowered') { tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1); tank.abyssSlowTimer = 180; }
-                        } else if (pA.type === 'tempest_c') {
-                            tank.hp -= pA.damage;
-                            if (shooter && shooter.config.id === 'tempest') {
-                                // Grant Ammo for X-Skill
-                                shooter.tempestStacks = Math.min(9, (shooter.tempestStacks || 0) + 1);
-                                // Grant Speed Stacks for Passive
-                                shooter.tempestSpeedStacks = Math.min(10, (shooter.tempestSpeedStacks || 0) + 1);
-                                shooter.tempestSpeedTimer = 180; // 3 seconds
-                                floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "ACCEL + AMMO!", life: 30, color: '#aaffff', fontSize: '14px'});
-                            }
-                        } else if (pA.type === 'tempest_x') {
-                            tank.hp -= pA.damage;
-                            
-                            if (!tank.zHeightActive) {
-                                tank.zHeightActive = true;
-                                tank.zFrameCounter = 0;
-                                tank.zMaxDuration = 30; 
-                                tank.zHeightBaseMax = 50; 
-                                tank.chronoIntercepted = false;
-                                tank.knockupSource = 'tempest'; 
-                            }
-                            
-                            tank.typhoonMarks = (tank.typhoonMarks || 0) + 1;
-                            
-                            if (tank.typhoonMarks >= 3) {
-                                tank.typhoonMarks = 0;
-                                hazards.push({ owner: pA.owner, type: 'whirlwind_trap', x: tank.x, y: tank.y, radius: 80, life: 360, maxLife: 360, targetTank: tank });
-                                floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
-                            }
-                        } else if (pA.type === 'tempest_z') {
-                            tank.hp -= pA.damage; 
-                        }
-                        else { tank.hp -= pA.damage; }
-
-                        if (shooter && shooter.config.id === 'phantom') {
-                            if (pA.type === 'phantom_bounce') shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); 
-                            if (pA.type === 'phantom_sg') shooter.cooldowns.c -= 500; 
-                            shooter.cooldowns.x -= 1000;
-                            let applyMark = false;
-                            if (pA.type === 'phantom_bounce') { applyMark = true; } 
-                            else if (pA.type === 'phantom_sg') { if (!processedShotgunCasts.includes(pA.castId)) { applyMark = true; processedShotgunCasts.push(pA.castId); } }
-
-                            if (applyMark) {
-                                tank.phantomMarkTimer = 300; tank.phantomMarks++;
-                                if (tank.phantomMarks % 3 === 0) {
-                                    let procDamage = tank.phantomMarks <= 6 ? 3 : 5; 
-                                    tank.hp -= procDamage; tank.phantomShockTimer = 30;
-                                    floatingTexts.push({ x: tank.x, y: tank.y - 55, text: `PLASMA ELECTROCUTION! (-${procDamage})`, life: 60, color: '#9d00ff', fontSize: '14px' });
-                                    createParticles(tank.x, tank.y, 10, '#9d00ff', 2, 0.5);
-                                }
-                            }
+        if (this.fireShieldActive) {
+            this.fireShieldTimer--;
+            if (this.fireShieldHp <= 0 || this.fireShieldTimer <= 0) {
+                this.fireShieldActive = false;
+            } else {
+                this.stunTimer = 0; this.kbTimer = 0; this.kbX = 0; this.kbY = 0;
+                this.poisons = []; this.isSlowed = false; this.electrocutedTimer = 0;
+                if (this.hookState === 'pulled') this.hookState = 'ready';
+                
+                players.forEach(enemy => {
+                    if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                        if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius + 45) {
+                            let shieldDmg = 3 / 60; enemy.hp -= shieldDmg; 
+                            if (typeof recordDamage === 'function') recordDamage(this.owner, shieldDmg); 
+                            if (Math.random() > 0.8) createParticles(enemy.x, enemy.y, 1, '#ffaa00', 1, 0.2);
+                            if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
                         }
                     }
-                    
-                    let damageTaken = startHp - tank.hp;
-                    if (damageTaken > 0) {
-                        let isXSkill = ['phantom_sg', 'arrow', 'rocket', 'seraph_x', 'mg', 'toxic_bullet', 'tempest_x'].includes(pA.type);
-                        recordDamage(pA.owner, damageTaken, pA.hasBounced, isXSkill);
-                    }
-
-                    if (tank.hp < startHp) { let ownerTank = players.find(p => p.owner === pA.owner); if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5); }
-                    
-                    if (pA.type !== 'tempest_z') {
-                        pA.triggerExplosion();
-                    }
-                }
-            }
-        });
-
-        for (let j = i + 1; j < projectiles.length; j++) {
-            let pB = projectiles[j]; if (pA.dead || pB.dead) continue;
-            
-            // Tempest Z ignores all projectile collisions
-            if (pA.type === 'tempest_z' || pB.type === 'tempest_z') continue;
-
-            if (pA.owner !== pB.owner) {
-                if (Math.hypot(pA.x - pB.x, pA.y - pB.y) < pA.radius + pB.radius + 5) { 
-                    if (pA.type === 'mg' && pB.type !== 'mg') { pA.triggerExplosion(); pB.projectileHp--; if (pB.projectileHp <= 0) pB.triggerExplosion(); } 
-                    else if (pB.type === 'mg' && pA.type !== 'mg') { pB.triggerExplosion(); pA.projectileHp--; if (pA.projectileHp <= 0) pA.triggerExplosion(); } 
-                    else if (pA.type !== 'mg' && pB.type !== 'mg') { pA.triggerExplosion(); pB.triggerExplosion(); }
-                }
-            }
-        }
-    }
-    
-    projectiles = projectiles.filter(p => !p.dead);
-    particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.04; }); particles = particles.filter(p => p.life > 0);
-    flashes.forEach(f => { f.radius += 2; f.life -= 0.1; }); flashes = flashes.filter(f => f.life > 0);
-    floatingTexts.forEach(t => { t.y -= 0.5; t.life--; }); floatingTexts = floatingTexts.filter(t => t.life > 0);
-}
-
-function draw() {
-    if (gameState === 'MENU' || gameState === 'SELECT') return;
-
-    ctx.save();
-    if (screenShakeTimer > 0) {
-        let dx = (Math.random() - 0.5) * screenShakeIntensity; let dy = (Math.random() - 0.5) * screenShakeIntensity; ctx.translate(dx, dy);
-    }
-
-    if (images[currentMap.bgImg].complete) ctx.drawImage(images[currentMap.bgImg], 0, 0, canvas.width, canvas.height);
-    else ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    hazards.forEach(h => {
-        if (h.type === 'whirlwind_trap') {
-            if (images.tempestTyphoon && images.tempestTyphoon.complete) {
-                let age = h.maxLife - h.life;
-                ctx.save();
-                ctx.translate(h.x, h.y);
-                
-                ctx.scale(Math.floor(frameCount / 6) % 2 === 0 ? -1 : 1, 1);
-                
-                let scale = 0.6 + Math.sin(frameCount * 0.1) * 0.02; 
-                const w = images.tempestTyphoon.width * scale;
-                const h_img = images.tempestTyphoon.height * scale;
-                
-                ctx.shadowBlur = 30; ctx.shadowColor = '#aaffff';
-                ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
-                ctx.restore();
-            }
-        }
-        else if (h.type === 'fire_trail') {
-            let lifeRatio = h.life / h.maxLife; let p = 1 - lifeRatio; 
-            ctx.save(); ctx.translate(h.x, h.y); ctx.globalCompositeOperation = 'screen';
-            let scale = 1.0; let alpha = 1.0; let c1, c2, c3;
-            if (p < 0.3) { scale = 1.2 - (0.2 * (p / 0.3)); alpha = 1.0 - (0.1 * (p / 0.3)); c1 = '#ffffff'; c2 = '#ffeb3b'; c3 = '#f44336'; } 
-            else if (p < 0.7) { scale = 1.0 - (0.4 * ((p - 0.3) / 0.4)); alpha = 0.9 - (0.4 * ((p - 0.3) / 0.4)); c1 = '#ffeb3b'; c2 = '#ff9800'; c3 = '#8b0000'; } 
-            else { scale = 0.6 - (0.4 * ((p - 0.7) / 0.3)); alpha = 0.5 - (0.5 * ((p - 0.7) / 0.3)); c1 = '#f44336'; c2 = '#8b0000'; c3 = 'transparent'; }
-            ctx.globalAlpha = Math.max(0, alpha); let drawRad = h.radius * scale * 1.5; 
-            let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(1, drawRad));
-            grad.addColorStop(0, c1); grad.addColorStop(0.5, c2); grad.addColorStop(1, 'transparent');
-            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, Math.max(1, drawRad), 0, Math.PI * 2); ctx.fill(); ctx.restore();
-        } else if (h.type === 'poison_pool' && images.goo.complete) {
-            ctx.save(); ctx.translate(h.x, h.y); ctx.globalAlpha = Math.min(h.life / 60, 0.8);
-            let drawRadius = h.radius * (1 + Math.sin(h.life * 0.05) * 0.05); ctx.drawImage(images.goo, -drawRadius, -drawRadius, drawRadius * 2, drawRadius * 2); ctx.restore();
-        } else if (h.type === 'mine' && h.visible !== false) {
-            ctx.beginPath(); ctx.arc(h.x, h.y, h.radius, 0, Math.PI*2); ctx.fillStyle = '#654321'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#222'; ctx.stroke();
-            ctx.beginPath(); ctx.arc(h.x, h.y, h.radius * 0.35, 0, Math.PI*2);
-            ctx.fillStyle = h.triggering ? (Math.floor(Date.now() / 50) % 2 === 0 ? '#fff' : '#ff0000') : (Math.floor(Date.now() / 200) % 2 === 0 ? '#ff0000' : '#550000'); ctx.fill();
-        } else if (h.type === 'seraph_aoe') {
-            ctx.save(); ctx.translate(h.x, h.y); ctx.globalAlpha = Math.min(h.life / 60, 0.6);
-            ctx.beginPath(); ctx.arc(0, 0, h.radius, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0, 255, 255, 0.1)'; ctx.fill(); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.stroke();
-            if (Math.random() > 0.5) { ctx.beginPath(); ctx.moveTo((Math.random()-0.5)*h.radius, (Math.random()-0.5)*h.radius); ctx.lineTo((Math.random()-0.5)*h.radius, (Math.random()-0.5)*h.radius); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
-            ctx.restore();
-        } else if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
-            for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) projectiles.push(new Projectile(h.owner, h.x, h.y, angle, 6, 3, 1.5, '#00ffff', 'seraph_spark', 1));
-            createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
-        } else if (h.type === 'destro_strike_manager' && images.target.complete) {
-            h.launched.forEach(t => { let size = 30 + Math.sin(Date.now() / 100) * 5; ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size); });
-        } 
-        else if (h.type === 'black_hole') {
-            let age = 240 - h.life; ctx.save(); ctx.translate(h.x, h.y);
-            let grad = ctx.createRadialGradient(0, 0, 10, 0, 0, 150);
-            grad.addColorStop(0, '#000000'); grad.addColorStop(0.4, 'rgba(15, 0, 0, 0.95)'); grad.addColorStop(1, 'transparent');
-            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, 200, 0, Math.PI*2); ctx.fill();
-            let vibrateX = (Math.random() - 0.5) * 3; let vibrateY = (Math.random() - 0.5) * 3;
-            ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000';
-            ctx.beginPath(); ctx.arc(vibrateX, vibrateY, 25, 0, Math.PI * 2); ctx.fillStyle = '#000000'; ctx.fill();
-            ctx.beginPath(); ctx.arc(vibrateX, vibrateY, 40, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255, 0, 0, 0.4)'; ctx.fill();
-
-            ctx.lineWidth = 3; ctx.lineCap = 'round';
-            for (let i = 0; i < 24; i++) {
-                let pAge = (age + i * 5) % 40; let pRatio = pAge / 40; let dist = (1 - pRatio) * 200; 
-                let angle = (i * (Math.PI * 2) / 24) + (age * 0.01); 
-                let startX = Math.cos(angle) * dist; let startY = Math.sin(angle) * dist;
-                let streakLength = 15 + (1 - pRatio) * 30; 
-                let endX = Math.cos(angle) * (dist + streakLength); let endY = Math.sin(angle) * (dist + streakLength);
-                ctx.strokeStyle = pRatio < 0.2 ? '#ff3333' : '#ff0000'; ctx.globalAlpha = Math.sin(pRatio * Math.PI); 
-                ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
-            }
-            
-            ctx.globalAlpha = 1; ctx.lineWidth = 2;
-            for (let i = 0; i < 3; i++) {
-                let rAge = (age + i * 20) % 60; let radius = (1 - (rAge / 60)) * 180;
-                ctx.strokeStyle = `rgba(255, 0, 0, ${rAge / 60})`; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
-            }
-            ctx.restore();
-        } 
-        else if (h.type === 'dark_boom') {
-            let age = h.maxLife - h.life; let p = age / 60; ctx.save(); ctx.translate(h.x, h.y);
-            if (p <= 1) {
-                if (age < 10) { ctx.fillStyle = `rgba(255, 0, 0, ${1 - age/10})`; ctx.beginPath(); ctx.arc(0, 0, 80 * (1 - age/10), 0, Math.PI*2); ctx.fill(); }
-                ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000';
-                if (p < 0.6) { let r1 = p * 400; ctx.strokeStyle = `rgba(255, 0, 0, ${1 - (p / 0.6)})`; ctx.lineWidth = 12 * (1 - (p / 0.6)); ctx.beginPath(); ctx.arc(0, 0, r1, 0, Math.PI*2); ctx.stroke(); }
-                if (p > 0.1 && p < 0.8) { let r2 = (p - 0.1) * 350; ctx.strokeStyle = `rgba(139, 0, 0, ${1 - ((p - 0.1) / 0.7)})`; ctx.lineWidth = 8 * (1 - ((p - 0.1) / 0.7)); ctx.beginPath(); ctx.arc(0, 0, r2, 0, Math.PI*2); ctx.stroke(); }
-            }
-            if (h.particles) {
-                ctx.shadowBlur = 10;
-                h.particles.forEach(part => {
-                    ctx.globalAlpha = Math.max(0, 1 - (age / 100)); ctx.fillStyle = part.color;
-                    ctx.shadowColor = (part.color === '#000000' || part.color === '#1a1a1a') ? '#000' : '#ff0000';
-                    ctx.beginPath(); ctx.arc(part.x, part.y, part.size, 0, Math.PI*2); ctx.fill();
                 });
             }
-            ctx.restore();
-        } 
-        else if (h.type === 'abyss_domain') {
-            let age = 720 - h.life; ctx.save(); ctx.translate(h.x, h.y);
-            let alpha = Math.min(1, age / 30); ctx.globalAlpha = alpha;
-            let grad = ctx.createRadialGradient(0, 0, 50, 0, 0, h.radius);
-            grad.addColorStop(0, '#000000'); grad.addColorStop(0.7, 'rgba(15, 0, 0, 0.95)'); grad.addColorStop(1, 'transparent');
-            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, h.radius + 20, 0, Math.PI*2); ctx.fill();
-
-            if (images.auraThing && images.auraThing.complete) {
-                ctx.save(); ctx.rotate(age * 0.005); ctx.filter = 'brightness(150%) contrast(150%) saturate(200%)'; 
-                ctx.shadowBlur = 30 + Math.sin(age * 0.1) * 15; ctx.shadowColor = '#ff0000';
-                const drawSize = h.radius * 2; ctx.drawImage(images.auraThing, -drawSize/2, -drawSize/2, drawSize, drawSize);
-                ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.5 * alpha; ctx.drawImage(images.auraThing, -drawSize/2, -drawSize/2, drawSize, drawSize);
-                ctx.restore();
-            } else {
-                ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000';
-                ctx.save(); ctx.rotate(-age * 0.01); ctx.strokeStyle = '#8b0000'; ctx.lineWidth = 4; ctx.setLineDash([25, 15, 5, 15]); ctx.beginPath(); ctx.arc(0, 0, h.radius * 0.8, 0, Math.PI*2); ctx.stroke(); ctx.restore();
-            }
-
-            ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000'; ctx.fillStyle = '#000000'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill();
-
-            if (h.particles) {
-                ctx.shadowBlur = 10;
-                h.particles.forEach(p => {
-                    let wobbleDist = p.radius + Math.sin(age * 0.1 + p.angle) * 15; let px = Math.cos(p.angle) * wobbleDist; let py = Math.sin(p.angle) * wobbleDist;
-                    ctx.fillStyle = p.isBlack ? '#000000' : '#8b0000'; ctx.shadowColor = p.isBlack ? 'transparent' : '#ff0000';
-                    ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI * 2); ctx.fill();
-                    if (p.isBlack) { ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(Math.cos(p.angle + 0.1) * (wobbleDist + 5), Math.sin(p.angle + 0.1) * (wobbleDist + 5)); ctx.stroke(); }
-                });
-            }
-            ctx.restore();
-        } 
-        else if (h.type === 'void_orb') {
-            if (images.abyssOrb && images.abyssOrb.complete) {
-                ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(Date.now() / 500); ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000'; ctx.drawImage(images.abyssOrb, -20, -20, 40, 40); ctx.restore();
-                ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.fillText(Math.ceil(h.orbHp), h.x, h.y - 30);
-            }
         }
-        else if (h.type === 'orion_chrono') {
-            let age = h.maxLife - h.life;
-            ctx.save(); ctx.translate(h.x, h.y);
-            
-            if (age < 90) {
-                let chargeRatio = age / 90;
-                ctx.beginPath(); ctx.arc(0, 0, h.radius * chargeRatio, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 51, 204, 0.12)'; ctx.fill();
-                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 1.5; ctx.stroke();
-            } else {
-                ctx.beginPath(); ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
-                let pulseGlow = 15 + Math.sin(frameCount * 0.08) * 6;
-                ctx.shadowBlur = pulseGlow; ctx.shadowColor = '#ff33cc';
-                
-                let chronoGrad = ctx.createRadialGradient(0, 0, h.radius * 0.2, 0, 0, h.radius);
-                chronoGrad.addColorStop(0, 'rgba(10, 5, 20, 0.4)');
-                chronoGrad.addColorStop(0.75, 'rgba(255, 51, 204, 0.08)');
-                chronoGrad.addColorStop(1.0, 'rgba(255, 51, 204, 0.4)');
-                
-                ctx.fillStyle = chronoGrad; ctx.fill();
-                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2.5; ctx.stroke();
-                
-                ctx.rotate(age * 0.02);
-                ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0, -h.radius + 15);
-                ctx.strokeStyle = 'rgba(255, 51, 204, 0.3)'; ctx.lineWidth = 2; ctx.stroke();
-            }
-            ctx.restore();
-        }
-    });
 
-    // --- DRAWING ORION QUANTUM PORTAL ANCHORS ---
-    players.forEach(p => {
-        if (p.config.id === 'orion' && p.portalA) {
-            ctx.save(); ctx.translate(p.portalA.x, p.portalA.y);
-            ctx.rotate(frameCount * 0.03);
-            ctx.shadowBlur = 15 + Math.sin(frameCount * 0.1) * 5; ctx.shadowColor = '#ff33cc';
-            ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.ellipse(0, 0, 24, 12, 0, 0, Math.PI * 2); ctx.stroke();
-            ctx.fillStyle = '#000000'; ctx.fill();
-            ctx.restore();
-            
-            if (p.portalB) {
-                ctx.save(); ctx.translate(p.portalB.x, p.portalB.y);
-                ctx.rotate(-frameCount * 0.03);
-                ctx.shadowBlur = 15 + Math.sin(frameCount * 0.1) * 5; ctx.shadowColor = '#ff33cc';
-                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 3;
-                ctx.beginPath(); ctx.ellipse(0, 0, 24, 12, 0, 0, Math.PI * 2); ctx.stroke();
-                ctx.fillStyle = '#000000'; ctx.fill();
-                ctx.restore();
-                
-                if (frameCount % 4 === 0) {
-                    let randRatio = Math.random();
-                    let px = p.portalA.x + (p.portalB.x - p.portalA.x) * randRatio;
-                    let py = p.portalA.y + (p.portalB.y - p.portalA.y) * randRatio;
-                    createParticles(px, py, 1, '#ff33cc', 0.8, 0.2);
+        if (this.flameTimer > 0) {
+            this.flameTimer--; currentSpeed *= 1.4; const tip = this.getTip();
+            if (this.flameTimer % 2 === 0) {
+                for(let i=0; i<3; i++) {
+                    let pAngle = this.angle + (Math.random() - 0.5) * 0.7; let pSpeed = Math.random() * 6 + 3;
+                    particles.push({ x: tip.x, y: tip.y, vx: Math.cos(pAngle)*pSpeed, vy: Math.sin(pAngle)*pSpeed, life: Math.random() * 0.3 + 0.2, size: Math.random() * 8 + 4, color: Math.random() > 0.4 ? '#ff4500' : '#ffaa00' });
                 }
             }
+            players.forEach(enemy => {
+                if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                    let dx = enemy.x - tip.x; let dy = enemy.y - tip.y;
+                    if (Math.hypot(dx, dy) < 100) { 
+                        let angleToEnemy = Math.atan2(dy, dx);
+                        let angleDiff = Math.abs(Math.atan2(Math.sin(angleToEnemy - this.angle), Math.cos(angleToEnemy - this.angle)));
+                        if (angleDiff < 0.8) { 
+                            let flameDmg = 3.5 / 60; enemy.hp -= flameDmg; 
+                            if (typeof recordDamage === 'function') recordDamage(this.owner, flameDmg); 
+                            updateHUD();
+                            if (Math.random() > 0.7) createParticles(enemy.x, enemy.y, 1, '#ff4500', 1, 0.2); 
+                            if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
+                        }
+                    }
+                }
+            });
         }
-    });
 
-    players.forEach(p => {
-        if (p.config.id === 'scorpion' && !p.isDead) {
-            ctx.strokeStyle = '#00ff66'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
-            if (p.hookState === 'fired' && p.activeArrow && !p.activeArrow.dead) { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.activeArrow.x, p.activeArrow.y); ctx.stroke(); } 
-            else if (p.hookState === 'pulling' && p.hookTarget && !p.hookTarget.isDead) { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.hookTarget.x, p.hookTarget.y); ctx.stroke(); }
-            ctx.setLineDash([]); 
-        }
-    });
+        if (this.config.id === 'seraph') {
+            if (this.energy >= 100 && !this.zReady) { this.energy = 100; this.zReady = true; }
+            if (this.zReady && keys[this.controls.z] && this.stunTimer <= 0 && this.dashState === 0) {
+                this.zChargeTimer++;
+                if (this.zChargeTimer > 0 && this.zChargeTimer < 30) {
+                    const tip = this.getTip(); createParticles(tip.x + (Math.random()-0.5)*40, tip.y + (Math.random()-0.5)*40, 1, '#00ffff', 1, 0.2);
+                }
+                if (this.zChargeTimer >= 30) {
+                    this.zFiring = true; this.energy -= 10 / 60; 
+                    if (this.energy <= 0) { this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; }
+                }
+            } else { this.zChargeTimer = 0; this.zFiring = false; if (this.energy <= 0) this.zReady = false; }
 
-    ctx.fillStyle = '#222'; ctx.strokeStyle = '#5c3a92'; ctx.lineWidth = 2;
-    currentMap.walls.forEach(w => { ctx.fillRect(w.x, w.y, w.w, w.h); ctx.strokeRect(w.x, w.y, w.w, w.h); });
-    
-    currentMap.rocks.forEach(r => {
-        ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI*2); ctx.fillStyle = '#4a3c31'; ctx.fill(); ctx.strokeStyle = '#2a1c11'; ctx.lineWidth = 3; ctx.stroke();
-        ctx.beginPath(); ctx.arc(r.x - r.r*0.2, r.y - r.r*0.2, r.r*0.4, 0, Math.PI*2); ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
-    });
-
-    particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); });
-    // --- UPDATED: Flashes now accept custom colors to support the Tornado VFX ---
-    flashes.forEach(f => { ctx.globalAlpha = Math.max(0, f.life); ctx.fillStyle = f.color || '#fff'; ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI*2); ctx.fill(); });
-    ctx.globalAlpha = 1.0;
-
-    projectiles.forEach(p => p.draw()); players.forEach(p => p.draw());
-
-    players.forEach(tank => {
-        if (tank.typhoonMarks > 0 && !tank.isDead) {
-            ctx.save();
-            ctx.translate(tank.x + tank.radius + 15, tank.y - tank.radius - 15);
-            ctx.shadowBlur = 10; ctx.shadowColor = '#aaffff';
-            
-            if (images.tempestProj && images.tempestProj.complete) {
-                let w = 20, h_img = 20;
-                ctx.save();
-                ctx.drawImage(images.tempestProj, -w/2, -h_img/2, w, h_img);
-                ctx.restore();
+            if (this.zFiring) {
+                const tip = this.getTip(); let endX = tip.x; let endY = tip.y;
+                for (let i = 0; i < 800; i += 5) {
+                    let testX = tip.x + Math.cos(this.angle) * i; let testY = tip.y + Math.sin(this.angle) * i;
+                    let hitWall = false;
+                    for (let w of currentMap.walls) { if (testX >= w.x && testX <= w.x + w.w && testY >= w.y && testY <= w.y + w.h) { hitWall = true; break; } }
+                    if (hitWall) break; let hitRock = false;
+                    for (let r of currentMap.rocks) { if (Math.hypot(testX - r.x, testY - r.y) <= r.r) { hitRock = true; break; } }
+                    if (hitRock) break; endX = testX; endY = testY;
+                }
+                players.forEach(enemy => {
+                    if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                        if (distToSegment({x: enemy.x, y: enemy.y}, tip, {x: endX, y: endY}) < enemy.radius + 15) { 
+                            if (frameCount % 30 === 0) { 
+                                enemy.hp -= 2.0; 
+                                if (typeof recordDamage === 'function') recordDamage(this.owner, 2.0); 
+                                enemy.electrocutedTimer = 30; createParticles(enemy.x, enemy.y, 3, '#00ffff', 1.5, 0.3);
+                                if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
+                            }
+                        }
+                    }
+                });
+                this.beamStartX = tip.x; this.beamStartY = tip.y; this.beamEndX = endX; this.beamEndY = endY;
             }
-            
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left';
-            ctx.fillText(Math.floor(tank.typhoonMarks), 15, 6);
-            ctx.restore();
+        }
+
+        if (this.hookState === 'pulling') {
+            if (this.hookTarget && !this.hookTarget.isDead && this.hookTimer > 0) {
+                let frontX = this.x + Math.cos(this.angle) * 55 * this.scaleMod; let frontY = this.y + Math.sin(this.angle) * 55 * this.scaleMod;
+                let dx = frontX - this.hookTarget.x; let dy = frontY - this.hookTarget.y; let dist = Math.hypot(dx, dy);
+                if (dist > 20) { this.hookTarget.x += (dx / dist) * 11; this.hookTarget.y += (dy / dist) * 11; createParticles(this.hookTarget.x, this.hookTarget.y, 1, '#00ff66', 1, 0.3); } 
+                else { this.hookState = 'ready'; this.hookTarget.stunTimer = 90; floatingTexts.push({x: this.hookTarget.x, y: this.hookTarget.y - 45, text: "JAMMED!", life: 75, color: '#00ffff'}); this.cooldowns.x = Date.now() + this.maxCooldowns.x; this.hookTarget = null; }
+                this.hookTimer--;
+                if (this.hookTimer <= 0 && this.hookState === 'pulling') { this.hookState = 'ready'; if (this.hookTarget) this.hookTarget.stunTimer = 90; this.cooldowns.x = Date.now() + this.maxCooldowns.x; this.hookTarget = null; }
+            } else { this.hookState = 'ready'; this.hookTarget = null; }
+        }
+
+        if (this.config.id === 'dreadnaught') {
+            const now = Date.now();
+            if (this.mgReloading && now > this.cooldowns.x) { this.mgReloading = false; this.mgAmmo = this.mgMaxAmmo; }
+            if (!this.mgReloading && keys[this.controls.x] && this.dashState === 0 && this.stunTimer <= 0) { if (now > this.cooldowns.x) this.fireMG(now); }
+        }
+
+        if (this.burstsLeft > 0 && this.stunTimer <= 0) {
+            this.burstTimer--;
+            if (this.burstTimer <= 0) {
+                const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 0.5);
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.3, 14, 3, 3, '#00ff66', 'toxic_bullet', 0));
+                this.burstsLeft--; this.burstTimer = 6; this.recoil = 2;
+            }
+        }
+
+        // --- RESTORED DASH LOGIC FOR PYRO & OTHERS ---
+        if (this.dashState === 3 && this.stunTimer <= 0) {
+            currentSpeed = 16; this.dashTimer--;
+            if (frameCount % 3 === 0) { hazards.push({ owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, radius: 30, life: 300, maxLife: 300 }); }
+            players.forEach(enemy => {
+                if (enemy.owner !== this.owner && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
+                    if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
+                        enemy.hp -= 15; this.ghostHitTanks.push(enemy.owner);
+                        if (typeof recordDamage === 'function') recordDamage(this.owner, 15, false, true); 
+                        createParticles(enemy.x, enemy.y, 10, '#ff4500', 2, 0.5);
+                        floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-15 BURN!", life: 40, color: '#ff3300'});
+                        if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; handleDeath(enemy.owner === 1 ? 0 : 1); }
+                    }
+                }
+            });
+            this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
+            if (this.dashTimer <= 0) { this.dashState = 0; this.isGhosting = false; }
+            this.checkWallCollisions(); this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x)); this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+            return; 
+        }
+
+        if (this.dashState === 1 && this.stunTimer <= 0) {
+            this.dashTimer--; createParticles(this.x - Math.cos(this.angle)*20, this.y - Math.sin(this.angle)*20, 2, this.config.color, 1, 0.5);
+            if (this.dashTimer <= 0) { this.dashState = 2; this.dashTimer = 15; createKaboom(this.x - Math.cos(this.angle)*25, this.y - Math.sin(this.angle)*25, 0.5); }
+            return; 
         }
         
-        if (tank.config.id === 'seraph' && tank.zFiring && tank.beamEndX !== undefined && !tank.isDead) {
-            ctx.beginPath(); ctx.moveTo(tank.beamStartX, tank.beamStartY); ctx.lineTo(tank.beamEndX, tank.beamEndY); ctx.strokeStyle = '#fff'; ctx.lineWidth = 10 + Math.random() * 5; ctx.shadowBlur = 20; ctx.shadowColor = '#00ffff'; ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(tank.beamStartX, tank.beamStartY); ctx.lineTo(tank.beamEndX, tank.beamEndY); ctx.strokeStyle = '#e0ffff'; ctx.lineWidth = 4; ctx.shadowBlur = 0; ctx.stroke();
+        if (this.dashState === 2 && this.stunTimer <= 0) {
+            currentSpeed = 12; this.dashTimer--; createParticles(this.x, this.y, 1, '#fff', 3, 0.4); 
+            if (this.dashTimer <= 0) { this.dashState = 0; if (this.config.id === 'pyro') this.flameTimer = 300; }
         }
-    });
+        // ---------------------------------------------
 
-    ctx.textAlign = 'center';
-    floatingTexts.forEach(t => { 
-        ctx.font = t.fontSize ? `bold ${t.fontSize} sans-serif` : 'bold 20px sans-serif'; 
-        ctx.fillStyle = t.color || '#fff'; ctx.globalAlpha = Math.max(0, t.life / 60); ctx.fillText(t.text, t.x, t.y); 
-    });
-    ctx.globalAlpha = 1.0;
+        if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
+            if (keys[this.controls.left]) this.angle -= this.rotSpeed;
+            if (keys[this.controls.right]) this.angle += this.rotSpeed;
 
-    ctx.restore(); 
+            if (!this.zFiring) {
+                let throttle = 0;
+                if (keys[this.controls.up]) throttle += 1;
+                if (keys[this.controls.down]) throttle -= 1;
+                if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) { currentSpeed *= 1.18; }
+                if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
+            }
+        } else if (this.dashState === 2) {
+            this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
+        }
+
+        if (this.recoil > 0.1) { this.x -= Math.cos(this.angle) * this.recoil; this.y -= Math.sin(this.angle) * this.recoil; this.recoil *= 0.8; }
+
+        this.checkWallCollisions();
+        this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+        this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+
+        if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
+            const now = Date.now();
+            
+            if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
+                if (this.config.id === 'tempest') {
+                    let cdReduction = (this.tempestCSpdStacks || 0) * 50; 
+                    this.cooldowns.c = now + (this.maxCooldowns.c - cdReduction); 
+                    this.recoil = 4; 
+                    const tip = this.getTip();
+                    createMuzzleFlash(tip.x, tip.y, this.angle, 1.0);
+                    projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 18, 5, 3.5, '#aaffff', 'tempest_c', 0));
+                } else if (this.config.id === 'abyss') {
+                    this.cooldowns.c = now + 150; 
+                    this.kbX -= Math.cos(this.angle) * 0.5; this.kbY -= Math.sin(this.angle) * 0.5; this.kbTimer = 5;
+
+                    const tip = this.getTip();
+                    let isDomainActive = hazards.some(h => h.type === 'abyss_domain' && h.owner === this.owner);
+                    
+                    if (isDomainActive) {
+                        projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 20, 5, 0.5, '#000000', 'abyss_rapid_empowered', 0));
+                        createMuzzleFlash(tip.x, tip.y, this.angle, 1.2);
+                    } else {
+                        projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle + (Math.random() - 0.5) * 0.15, 18, 3, 0.5, '#4a0080', 'abyss_rapid', 0));
+                        createMuzzleFlash(tip.x, tip.y, this.angle, 0.8);
+                    }
+                } else {
+                    this.fireC(now);
+                }
+            }
+
+            if (this.config.id === 'orion') {
+                if (keys[this.controls.z] && now > this.cooldowns.z) {
+                    this.zHoldTimer++;
+                    this.zHeldLastFrame = true;
+                    if (this.zHoldTimer === 15) {
+                        this.recoil = 8; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
+                        projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 6, 3, '#ff33cc', 'orion_z_lift', 0));
+                        this.cooldowns.z = now + this.maxCooldowns.z; 
+                    }
+                } else if (!keys[this.controls.z] && this.zHeldLastFrame) {
+                    if (this.zHoldTimer > 0 && this.zHoldTimer < 15 && now > this.cooldowns.z) {
+                        if (!this.portalA) { this.portalA = { x: this.x, y: this.y }; createParticles(this.x, this.y, 15, '#ff33cc', 2, 0.5); } 
+                        else if (!this.portalB) { this.portalB = { x: this.x, y: this.y }; createParticles(this.x, this.y, 15, '#ff33cc', 2, 0.5); this.portalTimer = 600; }
+                    }
+                    this.zHeldLastFrame = false; this.zHoldTimer = 0;
+                }
+            }
+            
+            if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
+                if (keys[this.controls.x] && now > this.cooldowns.x && !this.destroLocked) {
+                    this.destroAiming = true; this.destroAimDist = Math.min(600, this.destroAimDist + 6); this.xHeld = true;
+                } else if (!keys[this.controls.x] && this.destroAiming) {
+                    this.destroAiming = false; this.cooldowns.x = now + this.maxCooldowns.x;
+                    
+                    if (this.config.id === 'destroyer') {
+                        let targets = []; let cx = this.x + Math.cos(this.angle) * this.destroAimDist; let cy = this.y + Math.sin(this.angle) * this.destroAimDist;
+                        for(let i=0; i<8; i++) { let r = Math.random() * 80; let a = Math.random() * Math.PI * 2; targets.push({x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r}); }
+                        hazards.push({ owner: this.owner, type: 'destro_strike_manager', targets: targets, launched: [], timer: 0, state: 'launching', tank: this, life: 9999 });
+                    } else if (this.config.id === 'abyss') {
+                        let targetX = this.x + Math.cos(this.angle) * this.destroAimDist; let targetY = this.y + Math.sin(this.angle) * this.destroAimDist;
+                        let orbThrow = new Projectile(this.owner, this.x, this.y, this.angle, 15, 0, 0, '#1a0033', 'abyss_orb_throw', 0);
+                        orbThrow.targetX = targetX; orbThrow.targetY = targetY; orbThrow.throwDist = this.destroAimDist; orbThrow.startX = this.x; orbThrow.startY = this.y;
+                        projectiles.push(orbThrow); createMuzzleFlash(this.x, this.y, this.angle, 2.0);
+                        this.cooldowns.z -= 3500;
+                        if (this.cooldowns.z > Date.now()) floatingTexts.push({x: this.x, y: this.y - 60, text: "-3.5s Z-CD!", life: 40, color: '#ff0000'});
+                    }
+                    this.destroAimDist = 100;
+                }
+                
+                let isMoving = keys[this.controls.up] || keys[this.controls.down] || keys[this.controls.left] || keys[this.controls.right];
+                if (isMoving && this.destroAiming) { this.destroAiming = false; this.destroAimDist = 100; }
+            } else if (this.config.id !== 'dreadnaught') {
+                if (keys[this.controls.x]) { if (!this.xHeld) { this.fireX(now); this.xHeld = true; } } else { this.xHeld = false; }
+            }
+
+            if (this.config.id !== 'seraph' && this.config.id !== 'orion') { if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now); }
+        }
+    }
+
+    checkWallCollisions() {
+        for (let w of currentMap.walls) {
+            let testX = this.x; let testY = this.y;
+            if (this.x < w.x) testX = w.x; else if (this.x > w.x + w.w) testX = w.x + w.w;
+            if (this.y < w.y) testY = w.y; else if (this.y > w.y + w.h) testY = w.y + w.h;
+            let distance = Math.hypot(this.x - testX, this.y - testY);
+            if (distance < this.radius) {
+                let push = this.radius - distance;
+                this.x += ((this.x - testX) / distance) * push; this.y += ((this.y - testY) / distance) * push;
+            }
+        }
+        for (let r of currentMap.rocks) {
+            let dx = this.x - r.x; let dy = this.y - r.y; let dist = Math.hypot(dx, dy);
+            if (dist < this.radius + r.r) { let push = (this.radius + r.r) - dist; this.x += (dx / dist) * push; this.y += (dy / dist) * push; }
+        }
+    }
+
+    getTip() { const offset = (this.config.img.width * 0.12 * this.scaleMod) / 2; return { x: this.x + Math.cos(this.angle)*offset, y: this.y + Math.sin(this.angle)*offset }; }
+
+    fireC(now) {
+        this.cooldowns.c = now + this.maxCooldowns.c; 
+        this.recoil = 4; const tip = this.getTip();
+        
+        if (this.config.id === 'scorpion') { this.burstsLeft = 3; this.burstTimer = 0; } 
+        else if (this.config.id === 'dreadnaught') {
+            createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 11, 8, 14, '#ff4500', 'dread_c', 2));
+        } else if (this.config.id === 'seraph') {
+            createMuzzleFlash(tip.x, tip.y, this.angle, 1.5); this.cShots++;
+            let p = new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 5, '#00ffff', 'seraph_c', 1);
+            p.isFifth = (this.cShots % 5 === 0); projectiles.push(p);
+        } else if (this.config.id === 'pyro') {
+            this.pyroCShots++;
+            if (this.pyroCShots % 4 === 0) {
+                floatingTexts.push({x: this.x, y: this.y - 40, text: "SUPERCHARGED FIRE MISSILES", life: 60, color: '#ff0000'});
+                createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 6, 15, '#ff0000', 'firebolt', 0));
+            } else {
+                createMuzzleFlash(tip.x, tip.y, this.angle);
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
+            }
+        } else if (this.config.id === 'phantom') {
+            createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 5, 9, '#9d00ff', 'phantom_bounce', 1));
+        } else if (this.config.id === 'orion') {
+            createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 5, 4, '#ff33cc', 'orion_c', 3));
+        } else {
+            createMuzzleFlash(tip.x, tip.y, this.angle);
+            if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
+                if (this.config.id === 'grizzly') playSound(sfx.basicShot);
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 10, '#b533ff', 'bullet', 0));
+            } else {
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
+            }
+        }
+    }
+        
+    fireMG(now) {
+        this.cooldowns.x = now + 100; 
+        const w = this.config.img.width * 0.12 * this.scaleMod; const h = this.config.img.height * 0.12 * this.scaleMod;
+        const fwd = w * 0.25; const side = h * 0.35;
+        let px1 = this.x + Math.cos(this.angle)*fwd - Math.sin(this.angle)*side; let py1 = this.y + Math.sin(this.angle)*fwd + Math.cos(this.angle)*side;
+        let px2 = this.x + Math.cos(this.angle)*fwd - Math.sin(this.angle)*(-side); let py2 = this.y + Math.sin(this.angle)*fwd + Math.cos(this.angle)*(-side);
+        createMuzzleFlash(px1, py1, this.angle, 0.3); createMuzzleFlash(px2, py2, this.angle, 0.3); 
+        projectiles.push(new Projectile(this.owner, px1, py1, this.angle + (Math.random() - 0.5) * 0.2, 18, 2, 0.6, '#ffcc00', 'mg', 0));
+        projectiles.push(new Projectile(this.owner, px2, py2, this.angle + (Math.random() - 0.5) * 0.2, 18, 2, 0.6, '#ffcc00', 'mg', 0));
+        this.mgAmmo -= 2;
+        if (this.mgAmmo <= 0) { this.mgAmmo = 0; this.mgReloading = true; this.maxCooldowns.x = 15000; this.cooldowns.x = now + 15000; }
+    }
+
+    fireX(now) {
+        if (this.config.id === 'tempest') {
+            if (now < this.cooldowns.x || Math.floor(this.tempestStacks) < 3) return;
+            this.cooldowns.x = now + this.maxCooldowns.x;
+            this.tempestStacks -= 3;
+            this.recoil = 6;
+            const tip = this.getTip();
+            createMuzzleFlash(tip.x, tip.y, this.angle, 2);
+            for (let i = 0; i < 3; i++) {
+                let spreadAngle = this.angle - 0.7 + (1.4 / 2) * i; 
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, spreadAngle, 12, 10, 0, '#aaffff', 'tempest_x', 0));
+            }
+            return;
+        }
+
+        if (this.config.id === 'orion') {
+            if (now < this.cooldowns.x) return;
+            this.cooldowns.x = now + this.maxCooldowns.x;
+            setTimeout(() => { playSound(sfx.orionX); }, 2500);
+            hazards.push({ owner: this.owner, type: 'orion_chrono', x: this.x, y: this.y, radius: 175, life: 300, maxLife: 300 });
+            return;
+        }
+
+        if (this.config.id === 'phantom') {
+            if (now < this.cooldowns.x) return;
+            this.cooldowns.x = now + this.maxCooldowns.x;
+            this.recoil = 5;
+            const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
+            for (let i = 0; i < 5; i++) {
+                let spreadAngle = this.angle - 0.3 + (0.6 / 4) * i;
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, spreadAngle, 16, 3, 1.5, '#9d00ff', 'phantom_sg', 0, now));
+            }
+            return;
+        }
+
+        if (this.config.id === 'pyro') {
+            if (now < this.cooldowns.x) return;
+            this.cooldowns.x = now + this.maxCooldowns.x;
+            this.dashState = 3; this.dashTimer = 15; this.isGhosting = true; this.ghostHitTanks = [];
+            this.dashCount++; if (this.dashCount % 3 === 0) this.activateFireShield();
+            return; 
+        }
+
+        if (this.config.id === 'scorpion') {
+            if (this.hookState !== 'ready' || now < this.cooldowns.x) return;
+            this.recoil = 6; this.hookState = 'fired'; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
+            let arrow = new Projectile(this.owner, tip.x, tip.y, this.angle, 15, 5, 5, '#00ff66', 'arrow', 0);
+            projectiles.push(arrow); this.activeArrow = arrow; return;
+        }
+
+        if (now < this.cooldowns.x) return;
+        this.cooldowns.x = now + this.maxCooldowns.x; this.recoil = 7;
+        
+        if (this.config.id === 'grizzly') {
+            playSound(sfx.cluster); const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
+            for (let i = 0; i < 5; i++) projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle - 0.4 + (0.8 / 4) * i, 8, 4, 6, '#ff6600', 'rocket', 3));
+        } else if (this.config.id === 'seraph') {
+            const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 10, 6, 3, '#00ffff', 'seraph_x', 1));
+        }
+    }
+
+    fireZ(now) {
+        if (this.config.id === 'tempest') {
+            this.cooldowns.z = now + this.maxCooldowns.z;
+            this.recoil = 5; 
+            const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2.5);
+            for (let i = 0; i < 3; i++) {
+                let spreadAngle = this.angle - 0.5 + (1.0 / 2) * i;
+                let p = new Projectile(this.owner, tip.x, tip.y, spreadAngle, 4, 15, 2, '#ffffff', 'tempest_z', 0);
+                p.side = (i === 0) ? 'left' : (i === 1 ? 'center' : 'right');
+                projectiles.push(p);
+            }
+            return;
+        }
+
+        if (this.config.id === 'phantom') {
+            this.cooldowns.z = now + this.maxCooldowns.z; this.phantomEvasiveTimer = 360; this.isGhost = true;
+            this.ghostToggleTimer = Math.floor(Math.random() * (120 - 30 + 1) + 30);
+            floatingTexts.push({x: this.x, y: this.y - 40, text: "Evasive Maneuvers Activated", life: 60, color: '#9d00ff'}); return;
+        }
+
+        if (this.config.id === 'dreadnaught') {
+            if (hazards.filter(h => h.owner === this.owner && h.type === 'mine').length >= 6) return; 
+            this.cooldowns.z = now + this.maxCooldowns.z;
+            hazards.push({ owner: this.owner, type: 'mine', x: this.x, y: this.y, radius: 15, life: 999999, age: 0, visible: true, triggering: false, triggerTimer: 0 }); return;
+        }
+
+        this.cooldowns.z = now + this.maxCooldowns.z;
+        if (this.config.id === 'grizzly') {
+            this.recoil = 12; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 3);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 9, 8, 15, '#8a2be2', 'missile', 0));
+        } else if (this.config.id === 'pyro') {
+            this.dashState = 1; this.dashTimer = 18; this.dashCount++; if (this.dashCount % 3 === 0) this.activateFireShield();
+        } else if (this.config.id === 'scorpion') {
+            hazards.push({ owner: this.owner, type: 'poison_pool', x: this.x, y: this.y, radius: 70, life: 1200 });
+            createParticles(this.x, this.y, 20, '#00ff66', 2, 1.5);
+        } else if (this.config.id === 'destroyer') {
+            this.recoil = 10; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 3.0);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 10, 20, '#ff0000', 'destro_missile', 0));
+        } else if (this.config.id === 'abyss') {
+            this.recoil = 8; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 6, 4, '#000000', 'abyss_z', 1)); 
+        }
+    }
+
+    draw() {
+        if (this.isDead) return;
+        if (this.invulnTimer > 0 && Math.floor(this.invulnTimer / 10) % 2 === 0) return;
+        
+        if (this.config.id === 'tempest') {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.passiveAuraRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(170, 255, 255, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 10]);
+            ctx.lineDashOffset = -frameCount * 0.5;
+            ctx.stroke();
+            
+            // Render the 3 Orbiting Tornadoes
+            if (images.tempestTyphoon && images.tempestTyphoon.complete) {
+                for (let i = 0; i < 3; i++) {
+                    let angleOffset = this.tempestOrbitalAngle + (i * ((Math.PI * 2) / 3));
+                    let tx = this.x + Math.cos(angleOffset) * this.passiveAuraRadius;
+                    let ty = this.y + Math.sin(angleOffset) * this.passiveAuraRadius;
+                    
+                    ctx.save();
+                    ctx.translate(tx, ty);
+                    
+                    let spinSpeedMult = 1 + (this.tempestSpeedStacks * 0.70);
+                    let visualScale = 0.16 * (1 + (this.tempestSpeedStacks * 0.05)); 
+                    
+                    ctx.scale(Math.floor((frameCount * spinSpeedMult) / 6) % 2 === 0 ? -1 : 1, 1);
+                    
+                    const w = images.tempestTyphoon.width * visualScale; 
+                    const h_img = images.tempestTyphoon.height * visualScale;
+                    
+                    ctx.shadowBlur = 15; ctx.shadowColor = '#aaffff';
+                    ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
+                    ctx.restore();
+                }
+            }
+            ctx.restore();
+        }
+
+        if (this.poisons.length > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI*2); ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill(); }
+
+        if (this.config.id === 'pyro' && this.fireShieldActive) {
+            ctx.save(); ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 45, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 69, 0, 0.15)'; ctx.fill(); ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 3;
+            ctx.shadowBlur = 15; ctx.shadowColor = '#ff4500'; ctx.setLineDash([10, 10]); ctx.lineDashOffset = -Date.now() / 20; ctx.stroke(); ctx.restore();
+        }
+
+        if ((this.config.id === 'destroyer' || this.config.id === 'abyss') && this.destroAiming) {
+            let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : 'rgba(255, 0, 0, 0.1)'; let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : 'rgba(255, 0, 0, 0.6)';
+            ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 80, 0, Math.PI*2);
+            ctx.fillStyle = aimColor; ctx.fill(); ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist);
+            ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]);
+        }
+
+        if (this.electrocutedTimer > 0) {
+            ctx.save();
+            for(let i=0; i<3; i++) {
+                if (Math.random() > 0.3) {
+                    ctx.beginPath(); ctx.moveTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
+                    ctx.lineTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; ctx.stroke();
+                }
+            }
+            ctx.restore();
+        }
+
+        if (this.phantomShockTimer > 0) {
+            ctx.save();
+            for(let i=0; i<3; i++) {
+                if (Math.random() > 0.3) {
+                    ctx.beginPath(); ctx.moveTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5);
+                    ctx.lineTo(this.x + (Math.random()-0.5)*this.radius*2.5, this.y + (Math.random()-0.5)*this.radius*2.5); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.shadowBlur = 10; ctx.shadowColor = '#9d00ff'; ctx.stroke();
+                }
+            }
+            ctx.restore();
+        }
+
+        if (this.phantomMarks > 0) {
+            ctx.save(); ctx.shadowBlur = 15 + Math.sin(Date.now() / 150) * 10; ctx.shadowColor = '#9d00ff'; 
+            let icon = (images.phantomp2 && images.phantomp2.complete) ? images.phantomp2 : images.phantomp;
+            if (icon && icon.complete) { ctx.drawImage(icon, this.x - this.radius - 25, this.y - this.radius - 25, 32, 32); }
+            ctx.shadowBlur = 5; ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'left';
+            ctx.fillText(this.phantomMarks, this.x - this.radius + 10, this.y - this.radius - 3); ctx.restore();
+        }
+        
+        if (this.stunTimer > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 8, 0, Math.PI*2); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3; ctx.stroke(); }
+
+        ctx.save(); 
+        
+        if (this.zHeight > 0) {
+            let shadowScale = Math.max(0.2, 1 - (this.zHeight / 200)); let shadowAlpha = Math.max(0.1, 0.6 - (this.zHeight / 300));
+            ctx.beginPath(); ctx.ellipse(this.x, this.y, this.radius * shadowScale * 1.5, this.radius * shadowScale * 0.8, 0, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha})`; ctx.fill();
+        }
+
+        ctx.translate(this.x, this.y - this.zHeight); 
+        
+        if (this.config.id === 'seraph') {
+            ctx.save(); ctx.fillStyle = '#222'; ctx.fillRect(-25, -45, 50, 6);
+            ctx.fillStyle = this.zReady ? '#fff' : '#00ffff';
+            if (this.zReady) { ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; } else { ctx.shadowBlur = 0; }
+            ctx.fillRect(-25, -45, (this.energy / 100) * 50, 6); ctx.restore();
+        }
+
+        ctx.rotate(this.angle + this.zRotation);
+
+        ctx.shadowBlur = this.dashState === 2 || this.dashState === 3 || this.dashState === 4 ? 30 : 15;
+        ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : this.config.color;
+        
+        let visualScaleMod = this.scaleMod;
+        if (this.zHeight > 0) { visualScaleMod += (this.zHeight / 400); }
+
+        const w = this.config.img.width * 0.12 * visualScaleMod; 
+        const h = this.config.img.height * 0.12 * visualScaleMod;
+        
+        let imgToDraw = this.config.img;
+        if (this.config.id === 'phantom') {
+            if (this.isGhost) {
+                if (images.phantomB && images.phantomB.complete) imgToDraw = images.phantomB;
+                ctx.globalAlpha = 0.4; ctx.filter = 'brightness(1.5)';
+            } else {
+                if (images.phantomA && images.phantomA.complete) imgToDraw = images.phantomA;
+                ctx.filter = 'brightness(0.7)';
+            }
+        }
+        
+        if (this.zHeight > 0) ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
+
+        ctx.drawImage(imgToDraw, -w / 2, -h / 2, w, h); 
+        ctx.filter = 'none'; ctx.globalAlpha = 1.0; ctx.restore();
+    }
 }
-
-function loop() { update(); draw(); requestAnimationFrame(loop); }
-requestAnimationFrame(loop);
