@@ -287,15 +287,12 @@ class Tank {
         if (this.isDead) return;
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
-        // --- NEW: Blackout Passive Laser Interceptor & Dynamic Zones ---
         if (this.config.id === 'blackout' && !this.isDead && this.zHeight === 0) {
             
-            // Process timers
             if (this.blackoutLaserTimer > 0) this.blackoutLaserTimer--;
             if (this.greenFlareTimer > 0) this.greenFlareTimer--;
             if (this.decloakTimer > 0) this.decloakTimer--;
             
-            // Evaluate Red Zone Threat
             this.redZoneActive = false;
             players.forEach(p => {
                 if (p.owner !== this.owner && !p.isDead) {
@@ -319,7 +316,6 @@ class Tank {
                         
                         if (enemyDist > 350) {
                             proj.dead = true;
-                            // Make interceptor particles black/gray
                             createParticles(proj.x, proj.y, 5, '#000000', 1.5, 0.5);
                             this.blackoutLasers.push({ startX: this.x, startY: this.y, endX: proj.x, endY: proj.y, life: 10 });
                             
@@ -633,7 +629,8 @@ class Tank {
                 let throttle = 0;
                 if (keys[this.controls.up]) throttle += 1;
                 if (keys[this.controls.down]) throttle -= 1;
-                if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) { currentSpeed *= 1.18; }
+                // --- FIXED: Phantom Speed Boost Buffed to 2.0 (100% Boost) ---
+                if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) { currentSpeed *= 2.0; }
                 if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
             }
         } else if (this.dashState === 2) {
@@ -655,13 +652,13 @@ class Tank {
                     this.xHeldLastFrame = true;
                     if (this.xHoldTimer === 30 && this.blackoutAnchor) {
                         this.blackoutAnchor = null;
-                        floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR CLEARED!", life: 40, color: '#000000'}); // Blackout text
+                        floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR CLEARED!", life: 40, color: '#000000'}); 
                     }
                 } else if (!keys[this.controls.x] && this.xHeldLastFrame) {
                     if (this.xHoldTimer < 30) {
                         if (!this.blackoutAnchor) {
                             this.blackoutAnchor = { x: this.x, y: this.y, angle: this.angle };
-                            floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR SET!", life: 40, color: '#000000'}); // Blackout text
+                            floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR SET!", life: 40, color: '#000000'}); 
                         } else if (now > this.cooldowns.x) {
                             this.fireX(now);
                         }
@@ -874,7 +871,6 @@ class Tank {
         }
         
         if (this.config.id === 'blackout') {
-            // --- FIXED: Pitch Black teleport departure ---
             createParticles(this.x, this.y, 15, '#000000', 2, 0.5);
             createMuzzleFlash(this.x, this.y, this.angle, 2.0); 
 
@@ -882,13 +878,11 @@ class Tank {
             this.y = this.blackoutAnchor.y;
             this.angle = this.blackoutAnchor.angle;
             
-            // --- FIXED: Pitch Black teleport arrival ---
             createParticles(this.x, this.y, 15, '#000000', 2, 0.5);
             this.decloakTimer = 30; 
             
             this.cooldowns.x = now + this.maxCooldowns.x;
             this.cooldowns.c = now; 
-            // --- FIXED: Pitch Black Recalled text ---
             floatingTexts.push({x: this.x, y: this.y - 40, text: "RECALLED!", life: 40, color: '#000000'});
             return;
         }
@@ -1018,7 +1012,7 @@ class Tank {
             if (this.blackoutLasers) {
                 ctx.save();
                 ctx.lineWidth = 1.5;
-                ctx.strokeStyle = '#000000'; // --- FIXED: Black interceptor laser ---
+                ctx.strokeStyle = '#000000'; 
                 ctx.shadowBlur = 10;
                 ctx.shadowColor = '#000000';
                 this.blackoutLasers.forEach(l => {
@@ -1036,7 +1030,6 @@ class Tank {
                 ctx.translate(this.blackoutAnchor.x, this.blackoutAnchor.y);
                 ctx.rotate(this.blackoutAnchor.angle);
                 ctx.globalAlpha = 0.4;
-                // --- FIXED: Pitch Black shadow/filter for teleport anchor ---
                 ctx.filter = 'drop-shadow(0 0 10px #000000) brightness(0.2) grayscale(100%)'; 
                 const wAnchor = this.config.img.width * 0.12 * this.scaleMod;
                 const hAnchor = this.config.img.height * 0.12 * this.scaleMod;
@@ -1125,7 +1118,6 @@ class Tank {
         }
 
         if ((this.config.id === 'destroyer' || this.config.id === 'abyss' || this.config.id === 'blackout') && this.destroAiming) {
-            // --- FIXED: Dark Gray/Black aiming reticle for Blackout ---
             let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 0, 0, 0.1)');
             let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 0, 0, 0.6)');
             ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 80, 0, Math.PI*2);
@@ -1233,7 +1225,6 @@ class Tank {
             ctx.lineWidth = 1.5;
             let linesCount = Math.floor(Math.random() * 6 * (this.decloakTimer / 30));
             for(let i = 0; i < linesCount; i++) {
-                // --- FIXED: Pitch Black glitch lines ---
                 ctx.strokeStyle = Math.random() > 0.5 ? '#000000' : '#333333';
                 ctx.beginPath();
                 let lineY = -h/2 + Math.random() * h;
