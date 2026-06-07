@@ -157,11 +157,15 @@ class Projectile {
 
     triggerExplosion() {
         this.dead = true;
+        
+        // --- NEW: Identify the shooter and their team to prevent friendly-fire AoE ---
+        let shooter = players.find(p => p.owner === this.owner);
+        let shooterTeam = shooter ? shooter.team : null;
+
         if (this.type === 'arrow') {
-            let ownerTank = players.find(p => p.owner === this.owner);
-            if (ownerTank && ownerTank.hookState === 'fired') {
-                ownerTank.hookState = 'ready';
-                ownerTank.cooldowns.x = Date.now() + ownerTank.maxCooldowns.x;
+            if (shooter && shooter.hookState === 'fired') {
+                shooter.hookState = 'ready';
+                shooter.cooldowns.x = Date.now() + shooter.maxCooldowns.x;
             }
         }
 
@@ -180,12 +184,12 @@ class Projectile {
         } else if (this.type === 'destro_rocket' || this.type === 'blackout_strike') {
             createKaboom(this.x, this.y, 1.5);
             players.forEach(tank => {
-                if (tank.owner !== this.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                // Ignore teammates
+                if (tank.owner !== this.owner && tank.team !== shooterTeam && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 60) {
                         tank.hp -= this.type === 'blackout_strike' ? 30 : 12;
                         tank.stunTimer = Math.max(tank.stunTimer, 15);
                         
-                        // --- FIXED: Only apply mini knockback for Blackout Strike ---
                         if (this.type === 'blackout_strike') {
                             let angle = Math.atan2(tank.y - this.y, tank.x - this.x);
                             tank.kbX = Math.cos(angle) * 8; tank.kbY = Math.sin(angle) * 8; tank.kbTimer = 10;
@@ -193,8 +197,6 @@ class Projectile {
                         
                         tank.destroSlowTimer = Math.max(tank.destroSlowTimer || 0, 120);
                         
-                        // --- NEW: Destroyer Passive CD Reduction on Mortar Strike Hit ---
-                        let shooter = players.find(p => p.owner === this.owner);
                         if (shooter && shooter.config.id === 'destroyer' && this.type === 'destro_rocket') {
                             shooter.cooldowns.z -= 1000;
                         }
@@ -220,7 +222,8 @@ class Projectile {
             if (this.type === 'phantom_bounce') createKaboom(this.x, this.y, 1.0);
         } else if (this.type === 'abyss_orb_throw') {
             players.forEach(tank => {
-                if (tank.owner !== this.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                // Ignore teammates
+                if (tank.owner !== this.owner && tank.team !== shooterTeam && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 75) {
                         tank.hp -= 3;
                         tank.isSlowed = true;
@@ -252,11 +255,10 @@ class Projectile {
             }
         }
 
-        // --- NEW: Destroyer Passive CD Reduction on General Cannon Fire Hit ---
         players.forEach(tank => {
-            if (tank.owner !== this.owner && !tank.isDead && tank.invulnTimer <= 0) {
+            // Ignore teammates
+            if (tank.owner !== this.owner && tank.team !== shooterTeam && !tank.isDead && tank.invulnTimer <= 0) {
                 if (Math.hypot(this.x - tank.x, this.y - tank.y) < tank.radius + this.radius) {
-                    let shooter = players.find(p => p.owner === this.owner);
                     if (shooter && shooter.config.id === 'destroyer' && this.type === 'bullet') {
                         shooter.cooldowns.z -= 1000;
                     }
