@@ -52,6 +52,12 @@ function startMode(mode) {
             aiDifficulty = document.getElementById('diff-select').value;
             toggleReady(2);
         };
+        
+        // Ensure Arcade doesn't accidentally load the giant raid map if they hit 'back'
+        if(selectedMapIndex === 2) {
+            selectedMapIndex = 0;
+            currentMap = mapsData[selectedMapIndex];
+        }
     } else {
         // Reset to normal 2P settings
         document.getElementById('btn-p2-ready').style.display = 'block';
