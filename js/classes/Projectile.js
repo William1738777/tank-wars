@@ -88,12 +88,10 @@ class Projectile {
             this.vy *= 0.985;
             this.radius += 0.12;
         } else if (this.type === 'blackout_snipe') {
-            // --- FIXED: Mathematical straight gray line tracer ---
             let steps = Math.ceil(this.speed / 4);
             for (let i = 0; i < steps; i++) {
                 let interpX = this.lastX + (this.x - this.lastX) * (i / steps);
                 let interpY = this.lastY + (this.y - this.lastY) * (i / steps);
-                // vx: 0, vy: 0 ensures the particles stay exactly where they spawned, creating a solid fading line
                 particles.push({ x: interpX, y: interpY, vx: 0, vy: 0, life: 0.8, size: 2, color: 'rgba(150, 150, 150, 0.6)' });
             }
         } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
@@ -186,15 +184,27 @@ class Projectile {
                     if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 60) {
                         tank.hp -= this.type === 'blackout_strike' ? 30 : 12;
                         tank.stunTimer = Math.max(tank.stunTimer, 15);
-                        let angle = Math.atan2(tank.y - this.y, tank.x - this.x);
-                        tank.kbX = Math.cos(angle) * 8; tank.kbY = Math.sin(angle) * 8; tank.kbTimer = 10;
+                        
+                        // --- FIXED: Only apply mini knockback for Blackout Strike ---
+                        if (this.type === 'blackout_strike') {
+                            let angle = Math.atan2(tank.y - this.y, tank.x - this.x);
+                            tank.kbX = Math.cos(angle) * 8; tank.kbY = Math.sin(angle) * 8; tank.kbTimer = 10;
+                        }
+                        
                         tank.destroSlowTimer = Math.max(tank.destroSlowTimer || 0, 120);
+                        
+                        // --- NEW: Destroyer Passive CD Reduction on Mortar Strike Hit ---
+                        let shooter = players.find(p => p.owner === this.owner);
+                        if (shooter && shooter.config.id === 'destroyer' && this.type === 'destro_rocket') {
+                            shooter.cooldowns.z -= 1000;
+                        }
+
                         floatingTexts.push({
                             x: tank.x, 
                             y: tank.y - 40, 
                             text: this.type === 'blackout_strike' ? "TRAP STRIKE!" : "BOMBED!", 
                             life: 50, 
-                            color: this.type === 'blackout_strike' ? '#000000' : '#ff4500' // FIXED: Pure black text
+                            color: this.type === 'blackout_strike' ? '#000000' : '#ff4500' 
                         });
                     }
                 }
@@ -204,7 +214,7 @@ class Projectile {
             createParticles(this.x, this.y, 10, '#ff0000', 1.5, 0.4);
         } else if (this.type === 'blackout_snipe') {
             createKaboom(this.x, this.y, 1.0);
-            createParticles(this.x, this.y, 10, '#000000', 1.5, 0.5); // FIXED: Black explosion particles
+            createParticles(this.x, this.y, 10, '#000000', 1.5, 0.5); 
         } else if (this.type.startsWith('phantom_')) {
             createParticles(this.x, this.y, 8, '#9d00ff', 1.5, 0.5);
             if (this.type === 'phantom_bounce') createKaboom(this.x, this.y, 1.0);
@@ -241,6 +251,18 @@ class Projectile {
                 projectiles.push(new Projectile(this.owner, this.x, this.y, crAngle, 7, 4, 5, '#ff6600', 'rocket', 1));
             }
         }
+
+        // --- NEW: Destroyer Passive CD Reduction on General Cannon Fire Hit ---
+        players.forEach(tank => {
+            if (tank.owner !== this.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                if (Math.hypot(this.x - tank.x, this.y - tank.y) < tank.radius + this.radius) {
+                    let shooter = players.find(p => p.owner === this.owner);
+                    if (shooter && shooter.config.id === 'destroyer' && this.type === 'bullet') {
+                        shooter.cooldowns.z -= 1000;
+                    }
+                }
+            }
+        });
     }
 
     draw() {
@@ -275,7 +297,6 @@ class Projectile {
         } else if ((this.type === 'destro_rocket' || this.type === 'destro_up' || this.type === 'blackout_strike' || this.type === 'blackout_up') && images.destroRocket.complete) {
             ctx.rotate(Math.PI/2); 
             const w = images.destroRocket.width * 0.15; const h = images.destroRocket.height * 0.15;
-            // --- FIXED: Pitch Black shadow/filter for the trap missiles ---
             ctx.shadowBlur = 15; ctx.shadowColor = this.type.startsWith('blackout') ? '#000000' : '#ffaa00'; 
             if (this.type.startsWith('blackout')) ctx.filter = 'brightness(0.2) grayscale(100%) drop-shadow(0 0 5px rgba(0,0,0,0.8))';
             
@@ -358,11 +379,10 @@ class Projectile {
             ctx.shadowBlur = 20; ctx.shadowColor = '#aaffff';
             ctx.drawImage(images.tempestWindCutter, -w/2, -h/2, w, h);
         } else if (this.type === 'blackout_snipe' && images.blackoutProj && images.blackoutProj.complete) {
-            // --- FIXED: Smaller C-missile and Black Outline Glow ---
-            const scale = 0.1; // Reduced from 0.2 down to 0.1
+            const scale = 0.1; 
             const w = images.blackoutProj.width * scale;
             const h = images.blackoutProj.height * scale;
-            ctx.shadowBlur = 10; ctx.shadowColor = '#000000'; // Pure black shadow/outline
+            ctx.shadowBlur = 10; ctx.shadowColor = '#000000'; 
             ctx.drawImage(images.blackoutProj, -w/2, -h/2, w, h);
         } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up' && this.type !== 'blackout_strike' && this.type !== 'blackout_up') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
