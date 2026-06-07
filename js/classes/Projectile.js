@@ -26,16 +26,16 @@ class Projectile {
             return; 
         }
         
-        if (this.type === 'destro_rocket') {
+        if (this.type === 'destro_rocket' || this.type === 'blackout_strike') {
             this.x += this.vx; this.y += this.vy;
             if (this.y >= this.targetY) { this.y = this.targetY; this.triggerExplosion(); }
             return;
         }
 
-        if (this.type === 'destro_up') {
+        if (this.type === 'destro_up' || this.type === 'blackout_up') {
             this.x += this.vx; this.y += this.vy; this.life--;
             if (this.life <= 0) this.dead = true;
-            createParticles(this.x, this.y + 10, 1, '#ffaa00', 1, 0.2);
+            createParticles(this.x, this.y + 10, 1, this.type === 'blackout_up' ? '#33ff33' : '#ffaa00', 1, 0.2);
             return;
         }
 
@@ -87,13 +87,15 @@ class Projectile {
             this.vx *= 0.985;
             this.vy *= 0.985;
             this.radius += 0.12;
+        } else if (this.type === 'blackout_snipe') {
+            createParticles(this.x, this.y, 1, '#33ff33', 2, 0.4);
+            if (Math.random() > 0.5) createParticles(this.x, this.y, 1, '#ffffff', 1, 0.2);
         } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
             createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
         }
 
         let collided = false;
         
-        // --- NEW: Tempest Z ignores all Map Geometry and Canvas Bounds ---
         if (this.type !== 'tempest_z') {
             if (this.x - this.radius < 0) { this.x = this.radius; this.vx *= -1; collided = true; } 
             else if (this.x + this.radius > canvas.width) { this.x = canvas.width - this.radius; this.vx *= -1; collided = true; }
@@ -171,23 +173,32 @@ class Projectile {
             hazards.push({ owner: this.owner, type: 'seraph_emitter', x: this.x, y: this.y, radius: 10, life: 240 });
         } else if (this.type === 'destro_missile') {
             createKaboom(this.x, this.y, 2.5);
-        } else if (this.type === 'destro_rocket') {
+        } else if (this.type === 'destro_rocket' || this.type === 'blackout_strike') {
             createKaboom(this.x, this.y, 1.5);
             players.forEach(tank => {
                 if (tank.owner !== this.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 60) {
-                        tank.hp -= 12;
+                        tank.hp -= this.type === 'blackout_strike' ? 30 : 12;
                         tank.stunTimer = Math.max(tank.stunTimer, 15);
                         let angle = Math.atan2(tank.y - this.y, tank.x - this.x);
                         tank.kbX = Math.cos(angle) * 8; tank.kbY = Math.sin(angle) * 8; tank.kbTimer = 10;
                         tank.destroSlowTimer = Math.max(tank.destroSlowTimer || 0, 120);
-                        floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BOMBED!", life: 50, color: '#ff4500'});
+                        floatingTexts.push({
+                            x: tank.x, 
+                            y: tank.y - 40, 
+                            text: this.type === 'blackout_strike' ? "TRAP STRIKE!" : "BOMBED!", 
+                            life: 50, 
+                            color: this.type === 'blackout_strike' ? '#33ff33' : '#ff4500'
+                        });
                     }
                 }
             });
         } else if (this.type === 'firebolt') {
             createKaboom(this.x, this.y, 1.2);
             createParticles(this.x, this.y, 10, '#ff0000', 1.5, 0.4);
+        } else if (this.type === 'blackout_snipe') {
+            createKaboom(this.x, this.y, 1.0);
+            createParticles(this.x, this.y, 10, '#33ff33', 1.5, 0.5);
         } else if (this.type.startsWith('phantom_')) {
             createParticles(this.x, this.y, 8, '#9d00ff', 1.5, 0.5);
             if (this.type === 'phantom_bounce') createKaboom(this.x, this.y, 1.0);
@@ -255,10 +266,14 @@ class Projectile {
             const w = images.destroMissile.width * 0.08; 
             const h = images.destroMissile.height * 0.08;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000'; ctx.drawImage(images.destroMissile, -w/2, -h/2, w, h);
-        } else if ((this.type === 'destro_rocket' || this.type === 'destro_up') && images.destroRocket.complete) {
+        } else if ((this.type === 'destro_rocket' || this.type === 'destro_up' || this.type === 'blackout_strike' || this.type === 'blackout_up') && images.destroRocket.complete) {
             ctx.rotate(Math.PI/2); 
             const w = images.destroRocket.width * 0.15; const h = images.destroRocket.height * 0.15;
-            ctx.shadowBlur = 15; ctx.shadowColor = '#ffaa00'; ctx.drawImage(images.destroRocket, -w/2, -h/2, w, h);
+            ctx.shadowBlur = 15; ctx.shadowColor = this.type.startsWith('blackout') ? '#33ff33' : '#ffaa00'; 
+            
+            if (this.type.startsWith('blackout')) ctx.filter = 'hue-rotate(90deg) saturate(200%)';
+            ctx.drawImage(images.destroRocket, -w/2, -h/2, w, h);
+            ctx.filter = 'none';
         } else if (this.type === 'firebolt' && images.firebolt.complete) {
             const scale = 0.15;
             const w = images.firebolt.width * scale;
@@ -312,9 +327,7 @@ class Projectile {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = '#000000'; ctx.shadowBlur = 15; ctx.shadowColor = '#ff33cc'; ctx.fill();
             ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2; ctx.stroke();
-        } 
-        
-        else if (this.type === 'tempest_c' && images.tempestProj.complete) {
+        } else if (this.type === 'tempest_c' && images.tempestProj.complete) {
             const scale = 0.15; 
             const w = images.tempestProj.width * scale; 
             const h = images.tempestProj.height * scale;
@@ -337,7 +350,14 @@ class Projectile {
             const h = images.tempestWindCutter.height * dynamicScale;
             ctx.shadowBlur = 20; ctx.shadowColor = '#aaffff';
             ctx.drawImage(images.tempestWindCutter, -w/2, -h/2, w, h);
-        } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up') {
+        } else if (this.type === 'blackout_snipe' && images.blackoutProj && images.blackoutProj.complete) {
+            // THIS is the block drawing your image!
+            const scale = 0.2; 
+            const w = images.blackoutProj.width * scale;
+            const h = images.blackoutProj.height * scale;
+            ctx.shadowBlur = 15; ctx.shadowColor = '#33ff33';
+            ctx.drawImage(images.blackoutProj, -w/2, -h/2, w, h);
+        } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up' && this.type !== 'blackout_strike' && this.type !== 'blackout_up') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = this.color; ctx.shadowBlur = 10; ctx.shadowColor = this.color; ctx.fill();
         }
