@@ -52,6 +52,44 @@ function recordDamage(attackerOwner, amount, isBounce = false, isXSkill = false)
     }
 }
 
+// --- VISUAL EFFECTS HELPERS ---
+function createMuzzleFlash(x, y, angle, scale = 1.0) {
+    flashes.push({ x: x, y: y, radius: 8 * scale, life: 1.0, color: '#ffddaa' });
+    for (let i = 0; i < 3; i++) {
+        let speed = (Math.random() * 4 + 2) * scale;
+        let pAngle = angle + (Math.random() - 0.5) * 0.6;
+        particles.push({
+            x: x, y: y,
+            vx: Math.cos(pAngle) * speed,
+            vy: Math.sin(pAngle) * speed,
+            life: Math.random() * 0.5 + 0.5,
+            size: (Math.random() * 3 + 1) * scale,
+            color: '#ffaa00'
+        });
+    }
+}
+
+function createParticles(x, y, count, color, speedMultiplier = 1, sizeMultiplier = 1) {
+    for (let i = 0; i < count; i++) {
+        let angle = Math.random() * Math.PI * 2;
+        let speed = Math.random() * 4 * speedMultiplier;
+        particles.push({
+            x: x, y: y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: Math.random() * 0.6 + 0.4,
+            size: (Math.random() * 3 + 1) * sizeMultiplier,
+            color: color
+        });
+    }
+}
+
+function createKaboom(x, y, scale = 1.0) {
+    flashes.push({ x: x, y: y, radius: 15 * scale, life: 1.0, color: '#ff4500' });
+    createParticles(x, y, Math.floor(20 * scale), '#ff3300', 1.5 * scale, 1.5 * scale);
+    createParticles(x, y, Math.floor(10 * scale), '#ffffff', 2.5 * scale, 1.0 * scale);
+}
+
 // --- ENGINE LOGIC ---
 function startGame() {
     document.getElementById('select-screen').style.display = 'none';
@@ -1059,3 +1097,7 @@ function draw() {
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
+
+}
+this one is much cleaner 
+the first one works perfectly btw but i would like it applied to this one as well.
