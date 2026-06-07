@@ -14,7 +14,7 @@ let projectiles = []; let particles = []; let flashes = []; let hazards = []; le
 let screenShakeTimer = 0;
 let screenShakeIntensity = 0;
 
-// Global Tracker for AI Difficulty
+// --- NEW: Global Tracker for AI Difficulty ---
 let aiDifficulty = 'NORMAL';
 
 const keys = {};
@@ -112,12 +112,13 @@ function handleDeath(loserIndex) {
             loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
             loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
             
+            // Tempest tracking resets
             loser.tempestStacks = 0; loser.tempestSpeedStacks = 0; loser.tempestSpeedTimer = 0;
             loser.tempestCSpdStacks = 0; loser.tempestCSpdTimer = 0; loser.tempestSlowTimer = 0;
-            loser.tempestShieldHp = 0; loser.tempestShieldTimer = 0; 
+            loser.tempestShieldHp = 0; loser.tempestShieldTimer = 0; // RESTORED
             loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
             loser.typhoonMarks = 0;
-            loser.inTornado = false; 
+            loser.inTornado = false; // Reset to prevent floating bug on respawn
             
             loser.zHeight = 0; loser.zRotation = 0;
             loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
@@ -177,21 +178,34 @@ function update() {
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
         
+        // --- Tempest Trap Helpless Tumbling Physics ---
         if (h.type === 'whirlwind_trap') {
             if (h.targetTank && !h.targetTank.isDead) {
-                if (h.startX === undefined) { h.startX = h.targetTank.x; h.startY = h.targetTank.y; }
-                h.x = h.startX; h.y = h.startY;
+                // Lock the trap position permanently to where it hit
+                if (h.startX === undefined) { 
+                    h.startX = h.targetTank.x; 
+                    h.startY = h.targetTank.y; 
+                }
+                h.x = h.startX;
+                h.y = h.startY;
 
                 let age = h.maxLife - h.life;
+                
+                // Override target's movement and gravity physics
                 h.targetTank.inTornado = true;
                 h.targetTank.zHeightActive = true;
                 h.targetTank.knockupSource = 'tempest';
                 
+                // Wild, erratic round-and-round motion
                 h.targetTank.x = h.startX + Math.cos(age * 0.25) * 35;
                 h.targetTank.y = h.startY + Math.sin(age * 0.25) * 35;
+                
+                // Violent Up and down bouncing
                 h.targetTank.zHeight = 50 + Math.sin(age * 0.2) * 40; 
+                
                 h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); 
-                h.targetTank.kbTimer = 0; h.targetTank.zRotation += 0.3; 
+                h.targetTank.kbTimer = 0; 
+                h.targetTank.zRotation += 0.3; 
                 
                 if (h.life % 30 === 0) {
                     let progress = 1 - (h.life / h.maxLife); 
@@ -201,7 +215,12 @@ function update() {
                     floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
                 }
                 
-                if (h.life <= 1) { h.targetTank.inTornado = false; h.targetTank.zHeightActive = false; h.targetTank.zHeight = 0; }
+                // Ensure physics are gracefully returned when the trap ends
+                if (h.life <= 1) {
+                    h.targetTank.inTornado = false;
+                    h.targetTank.zHeightActive = false;
+                    h.targetTank.zHeight = 0;
+                }
                 
                 createParticles(h.x + (Math.random()-0.5)*100, h.y + (Math.random()-0.5)*100, 2, '#ffffff', 2, 0.5);
                 createParticles(h.x, h.y, 1, '#aaffff', 3, 0.4);
@@ -218,20 +237,30 @@ function update() {
                     h.particles.push({ vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, x: 0, y: 0, size: Math.random() * 7 + 3, color: pColor });
                 }
                 h.initialized = true;
-            } else { h.particles.forEach(part => { part.x += part.vx; part.y += part.vy; part.vx *= 0.92; part.vy *= 0.92; }); }
+            } else {
+                h.particles.forEach(part => { part.x += part.vx; part.y += part.vy; part.vx *= 0.92; part.vy *= 0.92; });
+            }
         } else if (h.type === 'abyss_domain') {
             if (!h.initialized) {
                 h.particles = [];
-                for (let j = 0; j < 45; j++) { h.particles.push({ angle: Math.random() * Math.PI * 2, radius: 120 + Math.random() * 100, speed: (Math.random() * 0.03) + 0.01, size: Math.random() * 6 + 2, isBlack: Math.random() > 0.4 }); }
+                for (let j = 0; j < 45; j++) {
+                    h.particles.push({ angle: Math.random() * Math.PI * 2, radius: 120 + Math.random() * 100, speed: (Math.random() * 0.03) + 0.01, size: Math.random() * 6 + 2, isBlack: Math.random() > 0.4 });
+                }
                 h.initialized = true;
-            } else { h.particles.forEach(p => { p.angle -= p.speed; p.radius -= 0.5; if (p.radius < 30) p.radius = h.radius * 0.9 + Math.random() * 50; }); }
+            } else {
+                h.particles.forEach(p => { p.angle -= p.speed; p.radius -= 0.5; if (p.radius < 30) p.radius = h.radius * 0.9 + Math.random() * 50; });
+            }
             
             h.tickTimer--;
             players.forEach(tank => {
                 if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
-                        let startHp = tank.hp; tank.hp -= h.dps / 60;
-                        if (h.tickTimer <= 0) { tank.hp -= 2; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "DOMAIN BURST!", life: 40, color: '#ff3333'}); }
+                        let startHp = tank.hp;
+                        tank.hp -= h.dps / 60;
+                        if (h.tickTimer <= 0) {
+                            tank.hp -= 2; 
+                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "DOMAIN BURST!", life: 40, color: '#ff3333'});
+                        }
                         let damageTaken = startHp - tank.hp;
                         if (damageTaken > 0) recordDamage(h.owner, damageTaken);
                     }
@@ -246,7 +275,8 @@ function update() {
                     let dx = h.x - tank.x; let dy = h.y - tank.y; let dist = Math.hypot(dx, dy);
                     if (dist < h.radius && dist > 0.1) { 
                         tank.x += (dx / dist) * 2; tank.y += (dy / dist) * 2; 
-                        let startHp = tank.hp; tank.hp -= 1 / 60; 
+                        let startHp = tank.hp;
+                        tank.hp -= 1 / 60; 
                         let damageTaken = startHp - tank.hp;
                         if (damageTaken > 0) recordDamage(h.owner, damageTaken);
                     }
@@ -265,17 +295,24 @@ function update() {
             }
         }
         else if (h.type === 'orion_chrono') {
-            let age = h.maxLife - h.life; h.isFullyCharged = age >= 90; 
+            let age = h.maxLife - h.life;
+            h.isFullyCharged = age >= 90; 
             
             projectiles.forEach(proj => {
                 let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
                 if (dist < h.radius) {
-                    if (h.isFullyCharged) { proj.isTimeDilated = true; proj.vx *= 0.92; proj.vy *= 0.92; }
+                    if (h.isFullyCharged) {
+                        proj.isTimeDilated = true;
+                        proj.vx *= 0.92;
+                        proj.vy *= 0.92;
+                    }
                 }
             });
 
             if (h.life === 1) {
-                createParticles(h.x, h.y, 40, '#ff33cc', 2.5, 0.6); triggerScreenShake(15, 6);
+                createParticles(h.x, h.y, 40, '#ff33cc', 2.5, 0.6);
+                triggerScreenShake(15, 6);
+                
                 projectiles.forEach(proj => {
                     let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
                     if (dist < h.radius && proj.isTimeDilated) {
@@ -291,6 +328,7 @@ function update() {
             players.forEach(tank => { if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) { if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) tank.inFireTrail = true; } });
         } else if (h.type === 'mine') {
             h.age++; if (h.age > 120 && !h.triggering) h.visible = false;
+            
             if (h.triggering) {
                 h.triggerTimer--;
                 if (h.triggerTimer % 5 === 0) createParticles(h.x, h.y, 2, '#ff0000', 1.5, 0.2);
@@ -298,9 +336,11 @@ function update() {
                     players.forEach((tank, tIndex) => {
                         if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                             if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius + 30) {
-                                let startHp = tank.hp; tank.hp -= 20; let angle = Math.atan2(tank.y - h.y, tank.x - h.x);
+                                let startHp = tank.hp;
+                                tank.hp -= 20; let angle = Math.atan2(tank.y - h.y, tank.x - h.x);
                                 tank.kbX = Math.cos(angle) * 15; tank.kbY = Math.sin(angle) * 15; tank.kbTimer = 15; 
                                 tank.stunTimer = 75; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLASTED!", life: 60, color: '#ff3333'});
+                                
                                 let damageTaken = startHp - tank.hp;
                                 if (damageTaken > 0) recordDamage(h.owner, damageTaken);
                             }
@@ -340,33 +380,26 @@ function update() {
                     } else { h.life = 0; }
                 }
             }
-        }
-        else if (h.type === 'blackout_trap') {
+        } else if (h.type === 'blackout_trap') {
             players.forEach(tank => {
                 if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                    // Check if an enemy steps on the invisible or subtle map mark
                     if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) {
-                        h.life = 0; // Destroy the trap mark hazard upon activation
+                        h.life = 0; 
                         
-                        // Execute the launch animation instantly at Blackout's location
                         let ownerTank = players.find(p => p.owner === h.owner);
                         let spawnX = ownerTank ? ownerTank.x : h.x;
                         let spawnY = ownerTank ? ownerTank.y - 10 : h.y - 10;
                         
-                        // Launch the upward projectile asset sequence
                         projectiles.push(new Projectile(h.owner, spawnX, spawnY, -Math.PI / 2, 18, 2, 0, '#33ff33', 'blackout_up', 0));
                         createMuzzleFlash(spawnX, spawnY, -Math.PI / 2, 1.5);
                         
-                        // Queue the mortar strike manager sequence targeting the exact map mark position
                         let targets = [];
-                        // Generate clustered mortar drop positions around the activated trap marker coordinates
                         for (let j = 0; j < 6; j++) {
                             let r = Math.random() * 40;
                             let a = Math.random() * Math.PI * 2;
                             targets.push({ x: h.x + Math.cos(a) * r, y: h.y + Math.sin(a) * r });
                         }
                         
-                        // Create custom variant manager re-routing falling payloads to 'blackout_strike' projectiles
                         hazards.push({ owner: h.owner, type: 'blackout_strike_manager', targets: targets, launched: [], timer: 0, state: 'launching', tank: ownerTank, life: 9999 });
                     }
                 }
@@ -387,7 +420,6 @@ function update() {
                 if (h.timer <= 0) {
                     if (h.launched.length > 0) {
                         let t = h.launched.shift();
-                        // Drop falling payloads dealing the requested 30 points of damage
                         let p = new Projectile(h.owner, t.x, t.y - 800, Math.PI / 2, 22, 8, 30, '#33ff33', 'blackout_strike', 0);
                         p.targetY = t.y; projectiles.push(p); h.timer = Math.floor(Math.random() * 4 + 8);
                     } else { h.life = 0; }
@@ -400,35 +432,54 @@ function update() {
     players.forEach((tank, tIndex) => {
         if (tank.zHeightActive) {
             tank.zFrameCounter++;
+            
             let insideChronosphere = hazards.some(h => h.type === 'orion_chrono' && h.isFullyCharged && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius);
             
             if (insideChronosphere && !tank.chronoIntercepted && tank.zFrameCounter < tank.zMaxDuration) {
-                tank.chronoIntercepted = true; tank.zMaxDuration += 120; tank.zHeight += 150; 
+                tank.chronoIntercepted = true;
+                tank.zMaxDuration += 120; 
+                tank.zHeight += 150; 
                 floatingTexts.push({x: tank.x, y: tank.y - 80, text: "TIME-DILATED SUSPENSION!", life: 60, color: '#ff33cc', fontSize: '15px'});
             }
 
             let progress = tank.zFrameCounter / tank.zMaxDuration;
             
+            // Gravity suspension bypass when inside the Tornado Trap
             if (progress <= 1.0) {
                 if (tank.chronoIntercepted) {
-                    if (progress > 0.2 && progress < 0.8) { tank.zHeight = tank.zHeightBaseMax + 150 + Math.sin(frameCount * 0.4) * 8; } 
-                    else if (progress >= 0.8) { let fallProgress = (progress - 0.8) / 0.2; tank.zHeight = (tank.zHeightBaseMax + 150) * (1 - fallProgress * fallProgress); }
-                } else if (!tank.inTornado) { tank.zHeight = Math.sin(progress * Math.PI) * tank.zHeightBaseMax; }
+                    if (progress > 0.2 && progress < 0.8) {
+                        tank.zHeight = tank.zHeightBaseMax + 150 + Math.sin(frameCount * 0.4) * 8;
+                    } else if (progress >= 0.8) {
+                        let fallProgress = (progress - 0.8) / 0.2;
+                        tank.zHeight = (tank.zHeightBaseMax + 150) * (1 - fallProgress * fallProgress);
+                    }
+                } else if (!tank.inTornado) {
+                    tank.zHeight = Math.sin(progress * Math.PI) * tank.zHeightBaseMax;
+                }
             }
 
             if (progress >= 1.0 || tank.zHeight <= 0) {
-                tank.zHeight = 0; tank.zHeightActive = false; tank.stunTimer = 0; 
+                tank.zHeight = 0;
+                tank.zHeightActive = false;
+                tank.stunTimer = 0; 
+                
                 let startHp = tank.hp;
                 
                 if (tank.knockupSource === 'tempest') {
                     tank.knockupSource = null; 
                 } else if (tank.chronoIntercepted) {
-                    tank.hp -= 40; tank.afterStunSlow = 180; tank.fireSlowTimer = 180; triggerScreenShake(24, 12); 
-                    createParticles(tank.x, tank.y, 35, '#ff33cc', 2.5, 0.8); createParticles(tank.x, tank.y, 25, '#222222', 4, 1);
+                    tank.hp -= 40;
+                    tank.afterStunSlow = 180; 
+                    tank.fireSlowTimer = 180; 
+                    triggerScreenShake(24, 12); 
+                    createParticles(tank.x, tank.y, 35, '#ff33cc', 2.5, 0.8);
+                    createParticles(tank.x, tank.y, 25, '#222222', 4, 1);
                     floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ORBITAL ANNIHILATION!", life: 80, color: '#ff33cc', fontSize: '24px'});
                     tank.zRotation = 12.5; 
                 } else {
-                    tank.hp -= 25; triggerScreenShake(12, 5); createParticles(tank.x, tank.y, 15, '#ff33cc', 1.5, 0.5);
+                    tank.hp -= 25;
+                    triggerScreenShake(12, 5);
+                    createParticles(tank.x, tank.y, 15, '#ff33cc', 1.5, 0.5);
                     floatingTexts.push({x: tank.x, y: tank.y - 40, text: "CRASH LANDING!", life: 60, color: '#ff33cc'});
                 }
                 
@@ -439,12 +490,15 @@ function update() {
             }
         }
 
-        if (!tank.zHeightActive && tank.zRotation > 0.01) { tank.zRotation *= 0.88; }
+        if (!tank.zHeightActive && tank.zRotation > 0.01) {
+            tank.zRotation *= 0.88;
+        }
 
         if (tank.inFireTrail && tank.invulnTimer <= 0) {
             tank.fireTrailTicks++; let multiplier = Math.pow(1.2, Math.floor(tank.fireTrailTicks / 30)); 
             
-            let startHp = tank.hp; tank.hp -= (1 / 60) * multiplier;
+            let startHp = tank.hp;
+            tank.hp -= (1 / 60) * multiplier;
             let damageTaken = startHp - tank.hp;
             
             if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken, false, true); 
@@ -462,10 +516,12 @@ function update() {
                 
                 if (distTankToA < orionTank.radius && !orionTank.justWarped) {
                     orionTank.x = orionTank.portalB.x; orionTank.y = orionTank.portalB.y;
-                    orionTank.justWarped = true; createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
+                    orionTank.justWarped = true;
+                    createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
                 } else if (distTankToB < orionTank.radius && !orionTank.justWarped) {
                     orionTank.x = orionTank.portalA.x; orionTank.y = orionTank.portalA.y;
-                    orionTank.justWarped = true; createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
+                    orionTank.justWarped = true;
+                    createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
                 }
                 if (distTankToA > orionTank.radius + 15 && distTankToB > orionTank.radius + 15) orionTank.justWarped = false;
             }
@@ -479,7 +535,9 @@ function update() {
 
         pA.update();
 
-        if (pA.type === 'abyss_rapid_empowered' && frameCount % 2 === 0) { createParticles(pA.x, pA.y, 1, '#ff0000', 1.5, 0.3); }
+        if (pA.type === 'abyss_rapid_empowered' && frameCount % 2 === 0) {
+            createParticles(pA.x, pA.y, 1, '#ff0000', 1.5, 0.3);
+        }
 
         players.forEach(orionTank => {
             if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
@@ -515,8 +573,11 @@ function update() {
                     } else if ((pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') && pA.owner === h.owner) {
                         h.orbHp -= 1; pA.triggerExplosion(); createParticles(h.x, h.y, 3, '#ff0000', 1.5, 0.3);
                         if (h.orbHp <= 0) {
-                            h.life = 0; hazards.push({ owner: h.owner, type: 'abyss_domain', x: h.x, y: h.y, radius: 170, life: 720, dps: 0.5, tickTimer: 120 });
-                            playSound(sfx.abyssDom); floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
+                            h.life = 0;
+                            hazards.push({ owner: h.owner, type: 'abyss_domain', x: h.x, y: h.y, radius: 170, life: 720, dps: 0.5, tickTimer: 120 });
+                            playSound(sfx.abyssDom); 
+                            floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
+                            
                             let domainOwner = players.find(p => p.owner === h.owner);
                             if (domainOwner) {
                                 let cdReduction = domainOwner.maxCooldowns.x * 0.5;
@@ -577,33 +638,46 @@ function update() {
                         } else if (pA.type === 'tempest_c') {
                             tank.hp -= pA.damage;
                             if (shooter && shooter.config.id === 'tempest') {
+                                // Grant Ammo for X-Skill
                                 shooter.tempestStacks = Math.min(9, (shooter.tempestStacks || 0) + 1);
+                                // Grant Speed Stacks for Passive
                                 shooter.tempestSpeedStacks = Math.min(10, (shooter.tempestSpeedStacks || 0) + 1);
-                                shooter.tempestSpeedTimer = 180; 
+                                shooter.tempestSpeedTimer = 180; // 3 seconds
                                 floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "ACCEL + AMMO!", life: 30, color: '#aaffff', fontSize: '14px'});
                             }
                         } else if (pA.type === 'tempest_x') {
                             tank.hp -= pA.damage;
+                            
+                            // Tempest Shield Generation on X-Skill Hit
                             if (shooter && shooter.config.id === 'tempest') {
                                 shooter.tempestShieldHp = Math.min(30, (shooter.tempestShieldHp || 0) + 10);
                                 shooter.tempestShieldTimer = 960; 
                                 shooter.matchStats.shieldGenerated += 10;
                             }
+                            
                             if (!tank.zHeightActive) {
-                                tank.zHeightActive = true; tank.zFrameCounter = 0; tank.zMaxDuration = 30; 
-                                tank.zHeightBaseMax = 50; tank.chronoIntercepted = false; tank.knockupSource = 'tempest'; 
+                                tank.zHeightActive = true;
+                                tank.zFrameCounter = 0;
+                                tank.zMaxDuration = 30; 
+                                tank.zHeightBaseMax = 50; 
+                                tank.chronoIntercepted = false;
+                                tank.knockupSource = 'tempest'; 
                             }
+                            
                             tank.typhoonMarks = (tank.typhoonMarks || 0) + 1;
+                            
                             if (tank.typhoonMarks >= 3) {
                                 tank.typhoonMarks = 0;
                                 hazards.push({ owner: pA.owner, type: 'whirlwind_trap', x: tank.x, y: tank.y, radius: 80, life: 360, maxLife: 360, targetTank: tank });
                                 floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
                             }
                         } else if (pA.type === 'tempest_z') {
+                            // Tempest Z-Skill Piercing Physics
                             if (frameCount % 10 === 0) { 
                                 tank.hp -= pA.damage;
                                 if (typeof recordDamage === 'function') recordDamage(pA.owner, pA.damage);
                             }
+                            // Apply 60% slow for 1.5 seconds (90 frames)
                             tank.tempestSlowTimer = 90; 
                         } else if (pA.type === 'blackout_snipe') {
                             tank.hp -= pA.damage;
@@ -648,7 +722,9 @@ function update() {
 
                     if (tank.hp < startHp) { let ownerTank = players.find(p => p.owner === pA.owner); if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5); }
                     
-                    if (pA.type !== 'tempest_z') { pA.triggerExplosion(); }
+                    if (pA.type !== 'tempest_z') {
+                        pA.triggerExplosion();
+                    }
                 }
             }
         });
@@ -656,6 +732,7 @@ function update() {
         for (let j = i + 1; j < projectiles.length; j++) {
             let pB = projectiles[j]; if (pA.dead || pB.dead) continue;
             
+            // Tempest Z ignores all projectile collisions
             if (pA.type === 'tempest_z' || pB.type === 'tempest_z') continue;
 
             if (pA.owner !== pB.owner) {
@@ -742,7 +819,7 @@ function draw() {
                 ctx.restore();
             });
         } 
-        else if (h.type === 'blackhole') {
+        else if (h.type === 'black_hole') {
             let age = 240 - h.life; ctx.save(); ctx.translate(h.x, h.y);
             let grad = ctx.createRadialGradient(0, 0, 10, 0, 0, 150);
             grad.addColorStop(0, '#000000'); grad.addColorStop(0.4, 'rgba(15, 0, 0, 0.95)'); grad.addColorStop(1, 'transparent');
@@ -855,6 +932,7 @@ function draw() {
         }
     });
 
+    // --- DRAWING ORION QUANTUM PORTAL ANCHORS ---
     players.forEach(p => {
         if (p.config.id === 'orion' && p.portalA) {
             ctx.save(); ctx.translate(p.portalA.x, p.portalA.y);
