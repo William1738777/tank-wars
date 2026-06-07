@@ -49,3 +49,58 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ammo-text { position: absolute; top: 2px; right: 4px; color: gold; font-size: 0.9rem; font-weight: bold; z-index: 3; text-shadow: 1px 1px 1px #000; }
 
 #victory-screen { display: none; }
+
+/* =========================================
+   UI FIXES: ALIGNMENT AND FIXED ARROWS
+========================================= */
+
+/* 1. Center the Ready Buttons strictly */
+#btn-p1-ready, #btn-p2-ready {
+    margin: 20px auto;
+    align-self: center; /* Forces center if parent is a flex column */
+    display: block;
+    width: 200px; /* Uniform size */
+    text-align: center;
+}
+
+/* 2. Anchor the Selector Box to stop jumping */
+.selector-box {
+    position: relative; 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 250px; /* Locks container height so stats don't stretch it */
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 60px; /* Creates inner padding so the tank text doesn't hit the arrows */
+}
+
+/* 3. Strip layout flow from Arrows and make them absolute */
+.selector-box .arrow-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    z-index: 10;
+}
+
+/* 4. Pin Left Arrow to the absolute left */
+.selector-box .arrow-btn:nth-of-type(1) {
+    left: 10px;
+}
+
+/* 5. Pin Right Arrow to the absolute right */
+.selector-box .arrow-btn:nth-of-type(2) {
+    right: 10px;
+}
+
+/* 6. Constrain the Tank Display so text wraps instead of pushing */
+.tank-display {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    text-align: center;
+}
