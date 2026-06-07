@@ -22,7 +22,7 @@ class Projectile {
         if (this.type === 'destro_missile') {
             createParticles(this.x, this.y, 2, '#ff4500', 2, 0.3);
             this.x += this.vx; this.y += this.vy;
-            if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) this.dead = true;
+            if (this.x < 0 || this.x > mapW || this.y < 0 || this.y > mapH) this.dead = true;
             return; 
         }
         
@@ -102,9 +102,9 @@ class Projectile {
         
         if (this.type !== 'tempest_z') {
             if (this.x - this.radius < 0) { this.x = this.radius; this.vx *= -1; collided = true; } 
-            else if (this.x + this.radius > canvas.width) { this.x = canvas.width - this.radius; this.vx *= -1; collided = true; }
+            else if (this.x + this.radius > mapW) { this.x = mapW - this.radius; this.vx *= -1; collided = true; }
             if (this.y - this.radius < 0) { this.y = this.radius; this.vy *= -1; collided = true; } 
-            else if (this.y + this.radius > canvas.height) { this.y = canvas.height - this.radius; this.vy *= -1; collided = true; }
+            else if (this.y + this.radius > mapH) { this.y = mapH - this.radius; this.vy *= -1; collided = true; }
 
             if (!collided) {
                 for (let w of currentMap.walls) {
