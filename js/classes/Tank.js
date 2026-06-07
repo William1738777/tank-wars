@@ -44,6 +44,7 @@ class Tank {
         this.blackoutLasers = [];
         this.xHoldTimer = 0;
         this.xHeldLastFrame = false;
+        this.blackoutLaserTimer = 0;
 
         // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
@@ -285,9 +286,14 @@ class Tank {
 
         // --- NEW: Blackout Passive Laser Interceptor ---
         if (this.config.id === 'blackout' && !this.isDead && this.zHeight === 0) {
+            // Process cooldown timer
+            if (this.blackoutLaserTimer > 0) {
+                this.blackoutLaserTimer--;
+            }
+
             for (let i = 0; i < projectiles.length; i++) {
                 let proj = projectiles[i];
-                if (proj.owner !== this.owner && !proj.dead) {
+                if (proj.owner !== this.owner && !proj.dead && this.blackoutLaserTimer <= 0) {
                     if (proj.type === 'tempest_z') continue; // Don't intercept massive Z skills
                     if (proj.isTimeDilated) continue; // Skip Chronosphere affected items
                     
@@ -300,6 +306,10 @@ class Tank {
                             proj.dead = true;
                             createParticles(proj.x, proj.y, 5, '#33ff33', 1.5, 0.5);
                             this.blackoutLasers.push({ startX: this.x, startY: this.y, endX: proj.x, endY: proj.y, life: 10 });
+                            
+                            // Apply 0.9 seconds (54 frames) cooldown before intercepting another
+                            this.blackoutLaserTimer = 54;
+                            break; // Break the loop so it only intercepts one at a time per cooldown
                         }
                     }
                 }
@@ -623,7 +633,6 @@ class Tank {
         if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
             const now = Date.now();
             
-            // --- NEW: Blackout X Hold To Clear Anchor ---
             if (this.config.id === 'blackout') {
                 if (keys[this.controls.x]) {
                     this.xHoldTimer++;
@@ -707,11 +716,12 @@ class Tank {
                     let myTraps = hazards.filter(h => h.owner === this.owner && h.type === 'blackout_trap');
                     if (myTraps.length >= 3) {
                         let oldest = myTraps.reduce((prev, curr) => (prev.trapId < curr.trapId ? prev : curr));
-                        oldest.life = 0; // Cull oldest if exceeding 3
+                        oldest.life = 0; 
                     }
 
+                    // Pushing the trap hazard with a 120-frame (2 seconds) arming delay
                     hazards.push({
-                        owner: this.owner, type: 'blackout_trap', x: targetX, y: targetY, radius: 40, life: 999999, maxLife: 999999, trapId: Date.now()
+                        owner: this.owner, type: 'blackout_trap', x: targetX, y: targetY, radius: 40, life: 999999, maxLife: 999999, trapId: Date.now(), armingTimer: 120
                     });
                     
                     createMuzzleFlash(this.x, this.y, this.angle, 2.0);
@@ -807,7 +817,6 @@ class Tank {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 5, 4, '#ff33cc', 'orion_c', 3));
         } else if (this.config.id === 'blackout') {
-            // --- NEW: Blackout Fast Snipe (Random 25-45 Damage) ---
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             let dmgRoll = Math.floor(Math.random() * (45 - 25 + 1)) + 25;
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 24, 4, dmgRoll, '#33ff33', 'blackout_snipe', 0));
@@ -850,7 +859,6 @@ class Tank {
             return;
         }
         
-        // --- NEW: Blackout Teleport Anchor ---
         if (this.config.id === 'blackout') {
             createParticles(this.x, this.y, 15, '#33ff33', 2, 0.5);
             this.x = this.blackoutAnchor.x;
@@ -860,7 +868,7 @@ class Tank {
             createParticles(this.x, this.y, 15, '#33ff33', 2, 0.5);
             
             this.cooldowns.x = now + this.maxCooldowns.x;
-            this.cooldowns.c = now; // Instantly reset C cool down
+            this.cooldowns.c = now; 
             floatingTexts.push({x: this.x, y: this.y - 40, text: "RECALLED!", life: 40, color: '#33ff33'});
             return;
         }
@@ -1086,8 +1094,9 @@ class Tank {
         }
 
         if ((this.config.id === 'destroyer' || this.config.id === 'abyss' || this.config.id === 'blackout') && this.destroAiming) {
-            let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : (this.config.id === 'blackout' ? 'rgba(51, 255, 51, 0.1)' : 'rgba(255, 0, 0, 0.1)');
-            let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : (this.config.id === 'blackout' ? 'rgba(51, 255, 51, 0.6)' : 'rgba(255, 0, 0, 0.6)');
+            // Apply Dark Blue target outline exclusively for Blackout
+            let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 139, 0.1)' : 'rgba(255, 0, 0, 0.1)');
+            let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 139, 0.6)' : 'rgba(255, 0, 0, 0.6)');
             ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 80, 0, Math.PI*2);
             ctx.fillStyle = aimColor; ctx.fill(); ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke();
             ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist);
