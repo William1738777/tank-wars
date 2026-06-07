@@ -5,8 +5,12 @@ class Tank {
         this.isAI = isAI;
         this.difficulty = difficulty; 
         
-        this.speed = 2.5 * (config.speedMod || 1); 
-        this.rotSpeed = 0.045 * (config.speedMod || 1); 
+        // Raid Mode Tracking
+        this.team = null; 
+        this.isHolding = false;
+
+        this.speed = 2.5 * (config.speedMod !== undefined ? config.speedMod : 1); 
+        this.rotSpeed = 0.045 * (config.speedMod !== undefined ? config.speedMod : 1); 
         this.maxHp = config.maxHp || 100;
         this.hp = this.maxHp; 
         this.radius = 25 * (config.scaleMod || 1); 
@@ -30,7 +34,6 @@ class Tank {
         this.tempestStacks = 0; 
         this.tempestShieldHp = 0; 
         this.tempestShieldTimer = 0; 
-
         this.tempestSpeedStacks = 0; 
         this.tempestSpeedTimer = 0;
         this.tempestOrbitalAngle = 0;
@@ -91,13 +94,11 @@ class Tank {
     }
 
     think() {
-        if (!players[0] || players[0].isDead || this.stunTimer > 0 || this.dashState === 2) return;
+        if (this.isDead || this.stunTimer > 0 || this.dashState === 2 || this.isHolding) return;
         
-        let target = players[0]; 
         const now = Date.now();
-
-        let isHitAndRunTank = ['phantom', 'pyro', 'scorpion', 'tempest', 'blackout'].includes(this.config.id);
-        let cReady = now >= this.cooldowns.c;
+        let target = null;
+        let closestDist = Infinity;
 
         let myOrb = null;
         if (this.config.id === 'abyss') {
@@ -105,12 +106,31 @@ class Tank {
             if (myOrb) target = myOrb; 
         }
 
+        // --- NEW: Dynamic Team Targeting ---
+        if (!target) {
+            for (let p of players) {
+                if (p.owner !== this.owner && p.team !== this.team && !p.isDead && p.invulnTimer <= 0) {
+                    let d = Math.hypot(p.x - this.x, p.y - this.y);
+                    if (d < closestDist) {
+                        closestDist = d;
+                        target = p;
+                    }
+                }
+            }
+        }
+
+        if (!target) return; // No valid enemies found
+
+        let isHitAndRunTank = ['phantom', 'pyro', 'scorpion', 'tempest', 'blackout', 'snow_pyro'].includes(this.config.id);
+        let cReady = now >= this.cooldowns.c;
+        let isTurret = this.config.speedMod === 0;
+
         let isLowHp = (this.hp / this.maxHp) < 0.35;
         let tacticalTargetX = target.x;
         let tacticalTargetY = target.y;
         let seekingCover = false;
 
-        if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
+        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && !isTurret) {
             if (isLowHp) {
                 seekingCover = true;
                 let bestCoverDist = Infinity;
@@ -123,7 +143,6 @@ class Tank {
                     let coverX = centerX + Math.cos(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
                     let coverY = centerY + Math.sin(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
                     let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
-                    // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
                     if (coverX > 50 && coverX < mapW - 50 && coverY > 50 && coverY < mapH - 50) {
                         if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
                     }
@@ -134,7 +153,6 @@ class Tank {
                     let coverX = r.x + Math.cos(angleFromPlayer) * (r.r + 60);
                     let coverY = r.y + Math.sin(angleFromPlayer) * (r.r + 60);
                     let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
-                    // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
                     if (coverX > 50 && coverX < mapW - 50 && coverY > 50 && coverY < mapH - 50) {
                         if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
                     }
@@ -155,7 +173,7 @@ class Tank {
 
         let dodgeAngleOffset = 0; let dodgeAngle = null;
 
-        if (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') {
+        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && !isTurret) {
             for (let p of projectiles) {
                 if (p.owner !== this.owner && !p.dead) {
                     let pdx = this.x - p.x; let pdy = this.y - p.y;
@@ -177,7 +195,7 @@ class Tank {
 
         let targetAngle = aimAtPlayerAngle;
 
-        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && isHitAndRunTank && !cReady && !myOrb && !this.destroAiming) {
+        if ((this.difficulty === 'HARD' || this.difficulty === 'HARD_1') && isHitAndRunTank && !cReady && !myOrb && !this.destroAiming && !isTurret) {
             if (seekingCover) { targetAngle = Math.atan2(tacticalTargetY - this.y, tacticalTargetX - this.x); } 
             else { targetAngle = Math.atan2(this.y - predictedY, this.x - predictedX); }
         } 
@@ -188,7 +206,6 @@ class Tank {
         let lookAheadX = this.x + Math.cos(this.angle) * sensorDist; let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
         let lookBehindX = this.x - Math.cos(this.angle) * sensorDist; let lookBehindY = this.y - Math.sin(this.angle) * sensorDist;
 
-        // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
         if (lookAheadX < 50 || lookAheadX > mapW - 50 || lookAheadY < 50 || lookAheadY > mapH - 50) obstacleAhead = true;
         if (lookBehindX < 50 || lookBehindX > mapW - 50 || lookBehindY < 50 || lookBehindY > mapH - 50) obstacleBehind = true;
 
@@ -214,7 +231,7 @@ class Tank {
         if (angleDiff > 0.1) keys[this.controls.right] = true; 
         else if (angleDiff < -0.1) keys[this.controls.left] = true;
 
-        if (!this.destroAiming) {
+        if (!this.destroAiming && !isTurret) {
             if (dodgeAngle !== null && this.difficulty === 'HARD') {
                 let diff = dodgeAngle - this.angle; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
                 if (diff > 0.2) keys[this.controls.right] = true; else if (diff < -0.2) keys[this.controls.left] = true;
@@ -247,6 +264,10 @@ class Tank {
                     }
                 } else {
                     let desiredDist = 150;
+                    // --- RAID AI OVERRIDES: Pyro Rush & Grizzly Support ---
+                    if (this.config.id === 'snow_pyro') desiredDist = 80;
+                    if (this.config.id === 'snow_grizzly') desiredDist = 450;
+
                     if (distToPlayer > desiredDist + 100) keys[this.controls.up] = true; 
                     else if (distToPlayer < desiredDist) keys[this.controls.down] = true; 
                     else if (Math.random() < (this.difficulty === 'EASY' ? 0.02 : 0.05)) keys[this.controls.up] = true;
@@ -268,7 +289,7 @@ class Tank {
         let triggerHappy = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.08 : (this.difficulty === 'NORMAL' ? 0.04 : 0.01);
         let acceptableCombatAngle = (this.difficulty === 'HARD' || this.difficulty === 'HARD_1') ? 0.3 : 0.4;
 
-        if (Math.abs(combatAngleDiff) < acceptableCombatAngle && distToPlayer < 700 && (!obstacleAhead || bankingShot)) {
+        if (Math.abs(combatAngleDiff) < acceptableCombatAngle && distToPlayer < 700 && (!obstacleAhead || bankingShot || isTurret)) {
             if (this.difficulty === 'EASY' && frameCount % 2 === 0) return; 
             if (seekingCover && Math.random() > 0.3) return; 
 
@@ -283,6 +304,9 @@ class Tank {
                 } else if (Math.random() < triggerHappy) { keys[this.controls.x] = true; }
                 if (distToPlayer < 450 && Math.random() < triggerHappy) keys[this.controls.z] = true;
             }
+
+            // --- RAID AI OVERRIDE: Prevent Z Skill Usage ---
+            if (this.config.aiNoZ) keys[this.controls.z] = false;
         }
     }
 
@@ -291,14 +315,14 @@ class Tank {
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
         if (this.config.id === 'blackout' && !this.isDead && this.zHeight === 0) {
-            
             if (this.blackoutLaserTimer > 0) this.blackoutLaserTimer--;
             if (this.greenFlareTimer > 0) this.greenFlareTimer--;
             if (this.decloakTimer > 0) this.decloakTimer--;
             
             this.redZoneActive = false;
             players.forEach(p => {
-                if (p.owner !== this.owner && !p.isDead) {
+                // --- NEW: Team Check to avoid locking onto allies ---
+                if (p.owner !== this.owner && p.team !== this.team && !p.isDead) {
                     let d = Math.hypot(this.x - p.x, this.y - p.y);
                     if (d <= 350) {
                         this.redZoneActive = true;
@@ -315,6 +339,9 @@ class Tank {
                     let distToProj = Math.hypot(this.x - proj.x, this.y - proj.y);
                     if (distToProj <= 250) {
                         let enemyTank = players.find(p => p.owner === proj.owner);
+                        // --- NEW: Discard friendly projectiles from interception ---
+                        if (enemyTank && enemyTank.team === this.team) continue;
+
                         let enemyDist = enemyTank ? Math.hypot(this.x - enemyTank.x, this.y - enemyTank.y) : Infinity;
                         
                         if (enemyDist > 350) {
@@ -367,7 +394,8 @@ class Tank {
             }
             
             players.forEach(enemy => {
-                if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                // --- NEW: Team Check for friendly fire ---
+                if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && enemy.invulnTimer <= 0) {
                     hitboxes.forEach((hb, index) => {
                         if (Math.hypot(enemy.x - hb.x, enemy.y - hb.y) < enemy.radius + 20) {
                             if (now > this.tempestOrbitalCooldowns[index]) {
@@ -384,7 +412,7 @@ class Tank {
                                 this.tempestCSpdStacks = Math.min(5, (this.tempestCSpdStacks || 0) + 1);
                                 this.tempestCSpdTimer = 300; 
                                 
-                                if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
+                                if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner); }
                             }
                         }
                     });
@@ -418,7 +446,6 @@ class Tank {
             this.x += this.kbX; this.y += this.kbY;
             this.checkWallCollisions(); 
             if (this.kbType === 'wall_slam') {
-                // --- FIXED: Use dynamic map borders instead of canvas ---
                 let movedDist = Math.hypot(this.x - oldX, this.y - oldY); let intendedDist = Math.hypot(this.kbX, this.kbY);
                 let hitEdge = this.x <= this.radius || this.x >= mapW - this.radius || this.y <= this.radius || this.y >= mapH - this.radius;
                 if (movedDist < intendedDist - 2 || hitEdge) {
@@ -446,6 +473,10 @@ class Tank {
         
         hazards.forEach(h => {
             if (h.owner !== this.owner && Math.hypot(this.x - h.x, this.y - h.y) < this.radius + h.radius) {
+                // Determine hazard owner team to prevent friendly hazard damage
+                let hOwner = players.find(p => p.owner === h.owner);
+                if (hOwner && hOwner.team === this.team) return;
+
                 if (h.type === 'poison_pool') { this.hp -= 0.5 / 60; this.isSlowed = true; } 
                 else if (h.type === 'seraph_aoe') {
                     this.isSlowed = true; this.electrocutedTimer = Math.max(this.electrocutedTimer, 5);
@@ -453,14 +484,13 @@ class Tank {
                         this.hp -= 3.5; this.stunTimer = Math.max(this.stunTimer, 30);
                         if (typeof recordDamage === 'function') recordDamage(h.owner, 3.5); 
                         floatingTexts.push({x: this.x, y: this.y - 40, text: "SHOCKED!", life: 40, color: '#00ffff'});
-                        let ownerTank = players.find(p => p.owner === h.owner);
-                        if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5);
+                        if (hOwner && hOwner.config.id === 'seraph' && !hOwner.zReady) hOwner.energy = Math.min(100, hOwner.energy + 5);
                     }
                 }
             }
         });
         
-        if (this.hp <= 0 && !this.isDead) { this.isDead = true; createKaboom(this.x, this.y, 2.0 * this.scaleMod); handleDeath(this.owner === 1 ? 0 : 1); return; }
+        if (this.hp <= 0 && !this.isDead) { this.isDead = true; createKaboom(this.x, this.y, 2.0 * this.scaleMod); handleDeath(this.owner); return; }
 
         let currentSpeed = this.isSlowed ? this.speed * 0.5 : this.speed;
         
@@ -491,12 +521,13 @@ class Tank {
                 if (this.hookState === 'pulled') this.hookState = 'ready';
                 
                 players.forEach(enemy => {
-                    if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                    // --- NEW: Team friendly fire check ---
+                    if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius + 45) {
                             let shieldDmg = 3 / 60; enemy.hp -= shieldDmg; 
                             if (typeof recordDamage === 'function') recordDamage(this.owner, shieldDmg); 
                             if (Math.random() > 0.8) createParticles(enemy.x, enemy.y, 1, '#ffaa00', 1, 0.2);
-                            if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
+                            if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner); }
                         }
                     }
                 });
@@ -512,7 +543,8 @@ class Tank {
                 }
             }
             players.forEach(enemy => {
-                if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                // --- NEW: Team friendly fire check ---
+                if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && enemy.invulnTimer <= 0) {
                     let dx = enemy.x - tip.x; let dy = enemy.y - tip.y;
                     if (Math.hypot(dx, dy) < 100) { 
                         let angleToEnemy = Math.atan2(dy, dx);
@@ -522,7 +554,7 @@ class Tank {
                             if (typeof recordDamage === 'function') recordDamage(this.owner, flameDmg); 
                             updateHUD();
                             if (Math.random() > 0.7) createParticles(enemy.x, enemy.y, 1, '#ff4500', 1, 0.2); 
-                            if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
+                            if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner); }
                         }
                     }
                 }
@@ -553,13 +585,14 @@ class Tank {
                     if (hitRock) break; endX = testX; endY = testY;
                 }
                 players.forEach(enemy => {
-                    if (enemy.owner !== this.owner && !enemy.isDead && enemy.invulnTimer <= 0) {
+                    // --- NEW: Team friendly fire check ---
+                    if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (distToSegment({x: enemy.x, y: enemy.y}, tip, {x: endX, y: endY}) < enemy.radius + 15) { 
                             if (frameCount % 30 === 0) { 
                                 enemy.hp -= 2.0; 
                                 if (typeof recordDamage === 'function') recordDamage(this.owner, 2.0); 
                                 enemy.electrocutedTimer = 30; createParticles(enemy.x, enemy.y, 3, '#00ffff', 1.5, 0.3);
-                                if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner === 1 ? 0 : 1); }
+                                if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; createKaboom(enemy.x, enemy.y, 2.0); handleDeath(enemy.owner); }
                             }
                         }
                     }
@@ -598,20 +631,20 @@ class Tank {
             currentSpeed = 16; this.dashTimer--;
             if (frameCount % 3 === 0) { hazards.push({ owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, radius: 30, life: 300, maxLife: 300 }); }
             players.forEach(enemy => {
-                if (enemy.owner !== this.owner && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
+                // --- NEW: Team friendly fire check ---
+                if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
                     if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
                         enemy.hp -= 15; this.ghostHitTanks.push(enemy.owner);
                         if (typeof recordDamage === 'function') recordDamage(this.owner, 15, false, true); 
                         createParticles(enemy.x, enemy.y, 10, '#ff4500', 2, 0.5);
                         floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-15 BURN!", life: 40, color: '#ff3300'});
-                        if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; handleDeath(enemy.owner === 1 ? 0 : 1); }
+                        if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; handleDeath(enemy.owner); }
                     }
                 }
             });
             this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
             if (this.dashTimer <= 0) { this.dashState = 0; this.isGhosting = false; }
             this.checkWallCollisions(); 
-            // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
             this.x = Math.max(this.radius, Math.min(mapW - this.radius, this.x)); 
             this.y = Math.max(this.radius, Math.min(mapH - this.radius, this.y));
             return; 
@@ -628,7 +661,8 @@ class Tank {
             if (this.dashTimer <= 0) { this.dashState = 0; if (this.config.id === 'pyro') this.flameTimer = 300; }
         }
 
-        if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0) { 
+        // --- NEW: Block movement input if tank is on HOLD or is a TURRET ---
+        if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0 && !this.isHolding && this.config.speedMod !== 0) { 
             if (keys[this.controls.left]) this.angle -= this.rotSpeed;
             if (keys[this.controls.right]) this.angle += this.rotSpeed;
 
@@ -641,16 +675,19 @@ class Tank {
             }
         } else if (this.dashState === 2) {
             this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
+        } else if (this.config.speedMod === 0 && !this.isDead && this.stunTimer <= 0) {
+            // Turrets can still aim left and right without moving
+            if (keys[this.controls.left]) this.angle -= this.rotSpeed;
+            if (keys[this.controls.right]) this.angle += this.rotSpeed;
         }
 
         if (this.recoil > 0.1) { this.x -= Math.cos(this.angle) * this.recoil; this.y -= Math.sin(this.angle) * this.recoil; this.recoil *= 0.8; }
 
         this.checkWallCollisions();
-        // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
         this.x = Math.max(this.radius, Math.min(mapW - this.radius, this.x));
         this.y = Math.max(this.radius, Math.min(mapH - this.radius, this.y));
 
-        if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
+        if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring && !this.isHolding) {
             const now = Date.now();
             
             if (this.config.id === 'blackout') {
@@ -723,7 +760,6 @@ class Tank {
             if (this.config.id === 'blackout') {
                 if (keys[this.controls.z] && now > this.cooldowns.z) {
                     this.destroAiming = true;
-                    // --- FIXED: Can aim Z-Skill across the expanded map ---
                     this.destroAimDist = Math.min(1200, this.destroAimDist + 6);
                     this.zHeldLastFrame = true;
                 } else if (!keys[this.controls.z] && this.destroAiming) {
@@ -757,7 +793,6 @@ class Tank {
 
             if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
                 if (keys[this.controls.x] && now > this.cooldowns.x && !this.destroLocked) {
-                    // --- FIXED: Can aim X-Skill across the expanded map ---
                     this.destroAiming = true; this.destroAimDist = Math.min(1200, this.destroAimDist + 6); this.xHeld = true;
                 } else if (!keys[this.controls.x] && this.destroAiming) {
                     this.destroAiming = false; this.cooldowns.x = now + this.maxCooldowns.x;
@@ -820,7 +855,7 @@ class Tank {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5); this.cShots++;
             let p = new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 5, '#00ffff', 'seraph_c', 1);
             p.isFifth = (this.cShots % 5 === 0); projectiles.push(p);
-        } else if (this.config.id === 'pyro') {
+        } else if (this.config.id === 'pyro' || this.config.id === 'snow_pyro') {
             this.pyroCShots++;
             if (this.pyroCShots % 4 === 0) {
                 floatingTexts.push({x: this.x, y: this.y - 40, text: "SUPERCHARGED FIRE MISSILES", life: 60, color: '#ff0000'});
@@ -842,8 +877,8 @@ class Tank {
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 38, 4, dmgRoll, '#33ff33', 'blackout_snipe', 0));
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
-            if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
-                if (this.config.id === 'grizzly') playSound(sfx.basicShot);
+            if (this.config.id === 'grizzly' || this.config.id === 'destroyer' || this.config.id === 'usf_grizzly' || this.config.id === 'snow_grizzly') {
+                if (this.config.id === 'grizzly' || this.config.id === 'usf_grizzly' || this.config.id === 'snow_grizzly') playSound(sfx.basicShot);
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 10, '#b533ff', 'bullet', 0));
             } else {
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 4, 7, '#ff4500', 'bullet', 1));
@@ -916,7 +951,7 @@ class Tank {
             return;
         }
 
-        if (this.config.id === 'pyro') {
+        if (this.config.id === 'pyro' || this.config.id === 'snow_pyro') {
             if (now < this.cooldowns.x) return;
             this.cooldowns.x = now + this.maxCooldowns.x;
             this.dashState = 3; this.dashTimer = 15; this.isGhosting = true; this.ghostHitTanks = [];
@@ -934,7 +969,7 @@ class Tank {
         if (now < this.cooldowns.x) return;
         this.cooldowns.x = now + this.maxCooldowns.x; this.recoil = 7;
         
-        if (this.config.id === 'grizzly') {
+        if (this.config.id === 'grizzly' || this.config.id === 'usf_grizzly' || this.config.id === 'snow_grizzly') {
             playSound(sfx.cluster); const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 2);
             for (let i = 0; i < 5; i++) projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle - 0.4 + (0.8 / 4) * i, 8, 4, 6, '#ff6600', 'rocket', 3));
         } else if (this.config.id === 'seraph') {
@@ -970,10 +1005,10 @@ class Tank {
         }
 
         this.cooldowns.z = now + this.maxCooldowns.z;
-        if (this.config.id === 'grizzly') {
+        if (this.config.id === 'grizzly' || this.config.id === 'usf_grizzly' || this.config.id === 'snow_grizzly') {
             this.recoil = 12; const tip = this.getTip(); createMuzzleFlash(tip.x, tip.y, this.angle, 3);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 9, 8, 15, '#8a2be2', 'missile', 0));
-        } else if (this.config.id === 'pyro') {
+        } else if (this.config.id === 'pyro' || this.config.id === 'snow_pyro') {
             this.dashState = 1; this.dashTimer = 18; this.dashCount++; if (this.dashCount % 3 === 0) this.activateFireShield();
         } else if (this.config.id === 'scorpion') {
             hazards.push({ owner: this.owner, type: 'poison_pool', x: this.x, y: this.y, radius: 70, life: 1200 });
@@ -1120,7 +1155,7 @@ class Tank {
 
         if (this.poisons.length > 0) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI*2); ctx.fillStyle = 'rgba(0, 255, 102, 0.3)'; ctx.fill(); }
 
-        if (this.config.id === 'pyro' && this.fireShieldActive) {
+        if ((this.config.id === 'pyro' || this.config.id === 'snow_pyro') && this.fireShieldActive) {
             ctx.save(); ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 45, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(255, 69, 0, 0.15)'; ctx.fill(); ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 3;
             ctx.shadowBlur = 15; ctx.shadowColor = '#ff4500'; ctx.setLineDash([10, 10]); ctx.lineDashOffset = -Date.now() / 20; ctx.stroke(); ctx.restore();
