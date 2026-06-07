@@ -21,10 +21,6 @@ const keys = {};
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-if (typeof images !== 'undefined' && !images.blackoutProjectile) {
-    images.blackoutProjectile = new Image();
-    images.blackoutProjectile.src = 'BlackoutProjectile.png';
-}
 if (typeof images !== 'undefined' && !images.auraThing) {
     images.auraThing = new Image();
     images.auraThing.src = 'aurathing.png';
@@ -110,7 +106,6 @@ function handleDeath(loserIndex) {
             loser.energy = 0; loser.zReady = false; loser.zFiring = false; loser.zChargeTimer = 0; loser.cShots = 0;
             
             loser.destroAiming = false; loser.destroLocked = false; loser.destroAimDist = 100;
-            loser.blackoutAfterimage = null; loser.blackoutXHeld = false; loser.blackoutHoldTimer = 0; loser.interceptLaserTarget = null;
             loser.afterStunSlow = 0; loser.destroSlowTimer = 0; loser.kbType = null;
             loser.fireShieldActive = false; loser.isGhosting = false; loser.fireTrailTicks = 0;
             loser.phantomEvasiveTimer = 0; loser.isGhost = false; loser.ghostToggleTimer = 0;
@@ -177,54 +172,8 @@ function update() {
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
         
-        if (h.type === 'blackout_mark') {
-            // Check for trigger
-            players.forEach(tank => {
-                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + (h.radius || 50)) {
-                        h.active = true;
-                    }
-                }
-            });
-            
-            if (h.active) {
-                h.life = 0; // Trigger explosion
-                hazards.push({ owner: h.owner, type: 'destro_strike_manager', targets: [{x: h.x, y: h.y}], launched: [], timer: 0, state: 'falling', tank: null, life: 9999 });
-                
-                // Note: The destro_strike_manager expects a tank object. To fake it for falling:
-                let dummyTank = { x: h.x, y: h.y - 800 }; 
-                hazards[hazards.length - 1].tank = dummyTank;
-                hazards[hazards.length - 1].launched = [{x: h.x, y: h.y}];
-                
-                // Directly trigger the 30 damage explosion logic of destroyer
-                createKaboom(h.x, h.y, 2.0);
-                players.forEach(tank => {
-                    if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                        if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + (h.radius || 50) + 20) {
-                            tank.hp -= 30; // 30 Damage
-                            if (typeof recordDamage === 'function') recordDamage(h.owner, 30);
-                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "TRAP DETONATED!", life: 50, color: '#00ff00'});
-                        }
-                    }
-                });
-            }
-        } else if (h.type === 'whirlwind_trap') {
-            if (h.targetTank && !h.targetTank.isDead) {
-                // Lock the trap position permanently to where it hit
-                if (h.startX === undefined) { 
-                    h.startX = h.targetTank.x; 
-                    h.startY = h.targetTank.y; 
-                }
-                h.x = h.startX;
-                h.y = h.startY;
-
-                let age = h.maxLife - h.life;
-                // ... rest of your whirlwind logic goes here
-            } // Close targetTank check
-        } // Close whirlwind_trap check
-            
-            ctx.restore();
-        } else if (h.type === 'whirlwind_trap') {
+        // --- NEW: Tempest Trap Helpless Tumbling Physics ---
+        if (h.type === 'whirlwind_trap') {
             if (h.targetTank && !h.targetTank.isDead) {
                 // Lock the trap position permanently to where it hit
                 if (h.startX === undefined) { 
@@ -612,26 +561,7 @@ function update() {
                     } else {
                         if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
 
-                        if (pA.type === 'blackout_c') {
-                            let dmg = Math.floor(Math.random() * (35 - 20 + 1) + 20); // Roll 20-35
-                            tank.hp -= dmg;
-                            tank.kbX = Math.cos(pA.angle) * 20; // Big Knockback
-                            tank.kbY = Math.sin(pA.angle) * 20; 
-                            tank.kbTimer = 15;
-                            // Randomize Aim
-                            let randomSpin = (Math.random() * Math.PI) - (Math.PI / 2);
-                            tank.angle += randomSpin;
-                            tank.zRotation += randomSpin; 
-                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: `SCRAMBLED! (-${dmg})`, life: 50, color: '#00ff00'});
-                        } else if (pA.type === 'tempest_z') {
-                            // --- NEW: Tempest Z-Skill Piercing Physics ---
-                            if (frameCount % 10 === 0) { 
-                                tank.hp -= pA.damage;
-                                if (typeof recordDamage === 'function') recordDamage(pA.owner, pA.damage);
-                            }
-                            // Apply 60% slow for 1.5 seconds (90 frames)
-                            tank.tempestSlowTimer = 90; 
-                        } else if (pA.type === 'firebolt') {
+                        if (pA.type === 'firebolt') {
                             tank.hp -= pA.damage; let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
                             tank.kbX = Math.cos(angle) * 12; tank.kbY = Math.sin(angle) * 12; tank.kbTimer = 15; tank.fireSlowTimer = 90; 
                         } else if (pA.type === 'toxic_bullet') { tank.hp -= pA.damage; tank.addPoison(0.5, 300); 
@@ -690,6 +620,14 @@ function update() {
                                 hazards.push({ owner: pA.owner, type: 'whirlwind_trap', x: tank.x, y: tank.y, radius: 80, life: 360, maxLife: 360, targetTank: tank });
                                 floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
                             }
+                        } else if (pA.type === 'tempest_z') {
+                            // --- NEW: Tempest Z-Skill Piercing Physics ---
+                            if (frameCount % 10 === 0) { 
+                                tank.hp -= pA.damage;
+                                if (typeof recordDamage === 'function') recordDamage(pA.owner, pA.damage);
+                            }
+                            // Apply 60% slow for 1.5 seconds (90 frames)
+                            tank.tempestSlowTimer = 90; 
                         } else { 
                             tank.hp -= pA.damage; 
                         }
@@ -763,55 +701,7 @@ function draw() {
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     hazards.forEach(h => {
-       if (h.type === 'blackout_mark') {
-    ctx.save();
-    ctx.translate(h.x, h.y);
-    ctx.beginPath();
-    // Added fallback radius (h.radius || 50) to prevent fatal Canvas crashes
-    ctx.arc(0, 0, h.radius || 50, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-    ctx.fill();
-    ctx.strokeStyle = '#00ff00';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.restore();
-    
-    // Removed trigger detection and hazard.push() from the draw loop!
-}
-            
-            // Check for trigger
-            players.forEach(tank => {
-                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) {
-                        h.active = true;
-                    }
-                }
-            });
-            
-            if (h.active) {
-                h.life = 0; // Trigger explosion
-                hazards.push({ owner: h.owner, type: 'destro_strike_manager', targets: [{x: h.x, y: h.y}], launched: [], timer: 0, state: 'falling', tank: null, life: 9999 });
-                
-                // Note: The destro_strike_manager expects a tank object. To fake it for falling:
-                let dummyTank = { x: h.x, y: h.y - 800 }; 
-                hazards[hazards.length - 1].tank = dummyTank;
-                hazards[hazards.length - 1].launched = [{x: h.x, y: h.y}];
-                
-                // Directly trigger the 30 damage explosion logic of destroyer
-                createKaboom(h.x, h.y, 2.0);
-                players.forEach(tank => {
-                    if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                        if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius + 20) {
-                            tank.hp -= 30; // 30 Damage
-                            if (typeof recordDamage === 'function') recordDamage(h.owner, 30);
-                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "TRAP DETONATED!", life: 50, color: '#00ff00'});
-                        }
-                    }
-                });
-            }
-            
-            ctx.restore();
-        } else if (h.type === 'whirlwind_trap') {
+        if (h.type === 'whirlwind_trap') {
             if (images.tempestTyphoon && images.tempestTyphoon.complete) {
                 let age = h.maxLife - h.life;
                 ctx.save();
@@ -942,33 +832,31 @@ function draw() {
         }
         else if (h.type === 'orion_chrono') {
             let age = h.maxLife - h.life;
-            h.isFullyCharged = age >= 90; 
+            ctx.save(); ctx.translate(h.x, h.y);
             
-            projectiles.forEach(proj => {
-                let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
-                if (dist < h.radius) {
-                    if (h.isFullyCharged) {
-                        proj.isTimeDilated = true;
-                        proj.vx *= 0.92;
-                        proj.vy *= 0.92;
-                    }
-                }
-            });
-
-            if (h.life === 1) {
-                createParticles(h.x, h.y, 40, '#ff33cc', 2.5, 0.6);
-                triggerScreenShake(15, 6);
+            if (age < 90) {
+                let chargeRatio = age / 90;
+                ctx.beginPath(); ctx.arc(0, 0, h.radius * chargeRatio, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 51, 204, 0.12)'; ctx.fill();
+                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 1.5; ctx.stroke();
+            } else {
+                ctx.beginPath(); ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+                let pulseGlow = 15 + Math.sin(frameCount * 0.08) * 6;
+                ctx.shadowBlur = pulseGlow; ctx.shadowColor = '#ff33cc';
                 
-                projectiles.forEach(proj => {
-                    let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
-                    if (dist < h.radius && proj.isTimeDilated) {
-                        if (proj.type === 'orion_c') { proj.damage += 5; proj.speed *= 1.5; }
-                        proj.vx = -Math.cos(proj.angle) * proj.speed; proj.vy = -Math.sin(proj.angle) * proj.speed;
-                        proj.angle = Math.atan2(proj.vy, proj.vx); proj.owner = h.owner; proj.isTimeDilated = false;
-                        createParticles(proj.x, proj.y, 4, '#ff33cc', 1, 0.3);
-                    }
-                });
+                let chronoGrad = ctx.createRadialGradient(0, 0, h.radius * 0.2, 0, 0, h.radius);
+                chronoGrad.addColorStop(0, 'rgba(10, 5, 20, 0.4)');
+                chronoGrad.addColorStop(0.75, 'rgba(255, 51, 204, 0.08)');
+                chronoGrad.addColorStop(1.0, 'rgba(255, 51, 204, 0.4)');
+                
+                ctx.fillStyle = chronoGrad; ctx.fill();
+                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2.5; ctx.stroke();
+                
+                ctx.rotate(age * 0.02);
+                ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0, -h.radius + 15);
+                ctx.strokeStyle = 'rgba(255, 51, 204, 0.3)'; ctx.lineWidth = 2; ctx.stroke();
             }
+            ctx.restore();
         }
     });
 
