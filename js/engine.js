@@ -14,7 +14,7 @@ let projectiles = []; let particles = []; let flashes = []; let hazards = []; le
 let screenShakeTimer = 0;
 let screenShakeIntensity = 0;
 
-// --- NEW: Global Tracker for AI Difficulty ---
+// Global Tracker for AI Difficulty
 let aiDifficulty = 'NORMAL';
 
 const keys = {};
@@ -115,10 +115,10 @@ function handleDeath(loserIndex) {
             // Tempest tracking resets
             loser.tempestStacks = 0; loser.tempestSpeedStacks = 0; loser.tempestSpeedTimer = 0;
             loser.tempestCSpdStacks = 0; loser.tempestCSpdTimer = 0; loser.tempestSlowTimer = 0;
-            loser.tempestShieldHp = 0; loser.tempestShieldTimer = 0; // RESTORED
+            loser.tempestShieldHp = 0; loser.tempestShieldTimer = 0;
             loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
             loser.typhoonMarks = 0;
-            loser.inTornado = false; // Reset to prevent floating bug on respawn
+            loser.inTornado = false; 
             
             loser.zHeight = 0; loser.zRotation = 0;
             loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
@@ -128,6 +128,7 @@ function handleDeath(loserIndex) {
             loser.blackoutLasers = [];
             loser.xHoldTimer = 0;
             loser.xHeldLastFrame = false;
+            loser.blackoutLaserTimer = 0;
             
             updateHUD();
         }, 1500); 
@@ -178,10 +179,8 @@ function update() {
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
         
-        // --- Tempest Trap Helpless Tumbling Physics ---
         if (h.type === 'whirlwind_trap') {
             if (h.targetTank && !h.targetTank.isDead) {
-                // Lock the trap position permanently to where it hit
                 if (h.startX === undefined) { 
                     h.startX = h.targetTank.x; 
                     h.startY = h.targetTank.y; 
@@ -191,18 +190,13 @@ function update() {
 
                 let age = h.maxLife - h.life;
                 
-                // Override target's movement and gravity physics
                 h.targetTank.inTornado = true;
                 h.targetTank.zHeightActive = true;
                 h.targetTank.knockupSource = 'tempest';
                 
-                // Wild, erratic round-and-round motion
                 h.targetTank.x = h.startX + Math.cos(age * 0.25) * 35;
                 h.targetTank.y = h.startY + Math.sin(age * 0.25) * 35;
-                
-                // Violent Up and down bouncing
                 h.targetTank.zHeight = 50 + Math.sin(age * 0.2) * 40; 
-                
                 h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); 
                 h.targetTank.kbTimer = 0; 
                 h.targetTank.zRotation += 0.3; 
@@ -215,7 +209,6 @@ function update() {
                     floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
                 }
                 
-                // Ensure physics are gracefully returned when the trap ends
                 if (h.life <= 1) {
                     h.targetTank.inTornado = false;
                     h.targetTank.zHeightActive = false;
@@ -381,49 +374,23 @@ function update() {
                 }
             }
         } else if (h.type === 'blackout_trap') {
-            players.forEach(tank => {
-                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) {
-                        h.life = 0; 
-                        
-                        let ownerTank = players.find(p => p.owner === h.owner);
-                        let spawnX = ownerTank ? ownerTank.x : h.x;
-                        let spawnY = ownerTank ? ownerTank.y - 10 : h.y - 10;
-                        
-                        projectiles.push(new Projectile(h.owner, spawnX, spawnY, -Math.PI / 2, 18, 2, 0, '#33ff33', 'blackout_up', 0));
-                        createMuzzleFlash(spawnX, spawnY, -Math.PI / 2, 1.5);
-                        
-                        let targets = [];
-                        for (let j = 0; j < 6; j++) {
-                            let r = Math.random() * 40;
-                            let a = Math.random() * Math.PI * 2;
-                            targets.push({ x: h.x + Math.cos(a) * r, y: h.y + Math.sin(a) * r });
+            // --- NEW: Blackout 2-Second Arming & Instant Single Strike ---
+            if (h.armingTimer > 0) {
+                h.armingTimer--;
+            } else {
+                players.forEach(tank => {
+                    if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                        // Check if an enemy steps on the trap
+                        if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) {
+                            h.life = 0; // Destroy the trap
+                            
+                            // Immediately drop the single 30-damage blackout strike rocket from above
+                            let strikeProj = new Projectile(h.owner, h.x, h.y - 800, Math.PI / 2, 25, 8, 30, '#33ff33', 'blackout_strike', 0);
+                            strikeProj.targetY = h.y;
+                            projectiles.push(strikeProj);
                         }
-                        
-                        hazards.push({ owner: h.owner, type: 'blackout_strike_manager', targets: targets, launched: [], timer: 0, state: 'launching', tank: ownerTank, life: 9999 });
                     }
-                }
-            });
-        }
-        else if (h.type === 'blackout_strike_manager') {
-            if (h.state === 'launching') {
-                h.timer--;
-                if (h.timer <= 0) {
-                    h.timer = 4;
-                    if (h.targets.length > 0) { h.launched.push(h.targets.pop()); } 
-                    else { h.state = 'falling_delay'; h.timer = 35; }
-                }
-            } else if (h.state === 'falling_delay') {
-                h.timer--; if (h.timer <= 0) { h.state = 'falling'; h.timer = 0; }
-            } else if (h.state === 'falling') {
-                h.timer--;
-                if (h.timer <= 0) {
-                    if (h.launched.length > 0) {
-                        let t = h.launched.shift();
-                        let p = new Projectile(h.owner, t.x, t.y - 800, Math.PI / 2, 22, 8, 30, '#33ff33', 'blackout_strike', 0);
-                        p.targetY = t.y; projectiles.push(p); h.timer = Math.floor(Math.random() * 4 + 8);
-                    } else { h.life = 0; }
-                }
+                });
             }
         }
         h.life--; if (h.life <= 0) hazards.splice(i, 1);
@@ -680,14 +647,17 @@ function update() {
                             // Apply 60% slow for 1.5 seconds (90 frames)
                             tank.tempestSlowTimer = 90; 
                         } else if (pA.type === 'blackout_snipe') {
+                            // --- NEW: Blackout Snipe Mechanics ---
                             tank.hp -= pA.damage;
                             triggerScreenShake(10, 4);
                             
+                            // Directional knockback away from incoming velocity
                             let kbAngle = pA.angle;
                             tank.kbX = Math.cos(kbAngle) * 14; 
                             tank.kbY = Math.sin(kbAngle) * 14; 
                             tank.kbTimer = 15;
                             
+                            // Break enemy line-of-sight and interrupt mechanical firing angles immediately
                             tank.angle = Math.random() * Math.PI * 2;
                             floatingTexts.push({ x: tank.x, y: tank.y - 40, text: `SNIPED! (-${Math.round(pA.damage)})`, life: 50, color: '#33ff33' });
                         } else { 
@@ -806,18 +776,30 @@ function draw() {
         } else if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
             for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) projectiles.push(new Projectile(h.owner, h.x, h.y, angle, 6, 3, 1.5, '#00ffff', 'seraph_spark', 1));
             createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
-        } else if (h.type === 'blackout_trap') {
-            ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(frameCount * 0.02);
-            ctx.strokeStyle = 'rgba(51, 255, 51, 0.4)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, h.radius, 0, Math.PI * 2); ctx.stroke();
-            ctx.fillStyle = 'rgba(51, 255, 51, 0.2)'; ctx.fillRect(-8, -2, 16, 4); ctx.fillRect(-2, -8, 4, 16); ctx.restore();
-        } else if ((h.type === 'destro_strike_manager' || h.type === 'blackout_strike_manager') && images.target.complete) {
+        } else if (h.type === 'destro_strike_manager' && images.target.complete) {
             h.launched.forEach(t => { 
                 let size = 30 + Math.sin(Date.now() / 100) * 5; 
                 ctx.save();
-                if (h.type === 'blackout_strike_manager') { ctx.filter = 'hue-rotate(90deg) saturate(200%)'; }
                 ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size);
                 ctx.restore();
             });
+        } else if (h.type === 'blackout_trap') {
+            // --- NEW: Render Trap Indicator & Arming Visual ---
+            ctx.save();
+            ctx.translate(h.x, h.y);
+            ctx.rotate(frameCount * 0.02);
+            let indicatorAlpha = h.armingTimer > 0 ? 0.2 : 0.6; // Transparent while arming
+            
+            ctx.strokeStyle = `rgba(51, 255, 51, ${indicatorAlpha})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            ctx.fillStyle = `rgba(51, 255, 51, ${indicatorAlpha / 2})`;
+            ctx.fillRect(-8, -2, 16, 4);
+            ctx.fillRect(-2, -8, 4, 16);
+            ctx.restore();
         } 
         else if (h.type === 'black_hole') {
             let age = 240 - h.life; ctx.save(); ctx.translate(h.x, h.y);
