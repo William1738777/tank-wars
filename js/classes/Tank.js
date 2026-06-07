@@ -319,12 +319,11 @@ class Tank {
                         
                         if (enemyDist > 350) {
                             proj.dead = true;
-                            createParticles(proj.x, proj.y, 5, '#33ff33', 1.5, 0.5);
+                            // Make interceptor particles black/gray
+                            createParticles(proj.x, proj.y, 5, '#000000', 1.5, 0.5);
                             this.blackoutLasers.push({ startX: this.x, startY: this.y, endX: proj.x, endY: proj.y, life: 10 });
                             
-                            // Apply BUFFED 0.5 seconds (30 frames) cooldown
                             this.blackoutLaserTimer = 30;
-                            // Trigger Green Interception Flare
                             this.greenFlareTimer = 15;
                             break; 
                         }
@@ -656,13 +655,13 @@ class Tank {
                     this.xHeldLastFrame = true;
                     if (this.xHoldTimer === 30 && this.blackoutAnchor) {
                         this.blackoutAnchor = null;
-                        floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR CLEARED!", life: 40, color: '#33ff33'});
+                        floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR CLEARED!", life: 40, color: '#000000'}); // Blackout text
                     }
                 } else if (!keys[this.controls.x] && this.xHeldLastFrame) {
                     if (this.xHoldTimer < 30) {
                         if (!this.blackoutAnchor) {
                             this.blackoutAnchor = { x: this.x, y: this.y, angle: this.angle };
-                            floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR SET!", life: 40, color: '#33ff33'});
+                            floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR SET!", life: 40, color: '#000000'}); // Blackout text
                         } else if (now > this.cooldowns.x) {
                             this.fireX(now);
                         }
@@ -874,24 +873,23 @@ class Tank {
             return;
         }
         
-        // --- NEW: Blackout Decloaking / Glitch Teleport ---
         if (this.config.id === 'blackout') {
-            // Implosion at the departure point
-            createParticles(this.x, this.y, 15, '#33ff33', 2, 0.5);
+            // --- FIXED: Pitch Black teleport departure ---
+            createParticles(this.x, this.y, 15, '#000000', 2, 0.5);
             createMuzzleFlash(this.x, this.y, this.angle, 2.0); 
 
-            // Execute Teleport
             this.x = this.blackoutAnchor.x;
             this.y = this.blackoutAnchor.y;
             this.angle = this.blackoutAnchor.angle;
             
-            // Explosion and Decloak Effect at the arrival point
-            createParticles(this.x, this.y, 15, '#33ff33', 2, 0.5);
-            this.decloakTimer = 30; // 0.5 seconds glitch sequence
+            // --- FIXED: Pitch Black teleport arrival ---
+            createParticles(this.x, this.y, 15, '#000000', 2, 0.5);
+            this.decloakTimer = 30; 
             
             this.cooldowns.x = now + this.maxCooldowns.x;
             this.cooldowns.c = now; 
-            floatingTexts.push({x: this.x, y: this.y - 40, text: "RECALLED!", life: 40, color: '#33ff33'});
+            // --- FIXED: Pitch Black Recalled text ---
+            floatingTexts.push({x: this.x, y: this.y - 40, text: "RECALLED!", life: 40, color: '#000000'});
             return;
         }
 
@@ -993,14 +991,12 @@ class Tank {
         if (this.config.id === 'blackout') {
             ctx.save();
             
-            // Red Outer Donut (250 - 350)
             ctx.beginPath();
             ctx.arc(this.x, this.y, 350, 0, Math.PI * 2);
             ctx.arc(this.x, this.y, 250, 0, Math.PI * 2, true);
             ctx.fillStyle = this.redZoneActive ? 'rgba(255, 0, 0, 0.15)' : 'rgba(255, 0, 0, 0.02)';
             ctx.fill();
 
-            // Red Outer Border
             ctx.beginPath();
             ctx.arc(this.x, this.y, 350, 0, Math.PI * 2);
             ctx.strokeStyle = this.redZoneActive ? 'rgba(255, 0, 0, 0.6)' : 'rgba(255, 0, 0, 0.1)';
@@ -1008,13 +1004,11 @@ class Tank {
             ctx.setLineDash([5, 10]);
             ctx.stroke();
 
-            // Green Inner Circle (0 - 250)
             ctx.beginPath();
             ctx.arc(this.x, this.y, 250, 0, Math.PI * 2);
             ctx.fillStyle = this.greenFlareTimer > 0 ? 'rgba(51, 255, 51, 0.15)' : 'rgba(51, 255, 51, 0.02)';
             ctx.fill();
 
-            // Green Inner Border
             ctx.strokeStyle = this.greenFlareTimer > 0 ? 'rgba(51, 255, 51, 0.6)' : 'rgba(51, 255, 51, 0.1)';
             ctx.setLineDash([]);
             ctx.stroke();
@@ -1024,9 +1018,9 @@ class Tank {
             if (this.blackoutLasers) {
                 ctx.save();
                 ctx.lineWidth = 1.5;
-                ctx.strokeStyle = '#33ff33';
+                ctx.strokeStyle = '#000000'; // --- FIXED: Black interceptor laser ---
                 ctx.shadowBlur = 10;
-                ctx.shadowColor = '#33ff33';
+                ctx.shadowColor = '#000000';
                 this.blackoutLasers.forEach(l => {
                     ctx.globalAlpha = l.life / 10;
                     ctx.beginPath();
@@ -1042,7 +1036,8 @@ class Tank {
                 ctx.translate(this.blackoutAnchor.x, this.blackoutAnchor.y);
                 ctx.rotate(this.blackoutAnchor.angle);
                 ctx.globalAlpha = 0.4;
-                ctx.filter = 'drop-shadow(0 0 10px #33ff33) sepia(1) hue-rotate(80deg) saturate(3)'; 
+                // --- FIXED: Pitch Black shadow/filter for teleport anchor ---
+                ctx.filter = 'drop-shadow(0 0 10px #000000) brightness(0.2) grayscale(100%)'; 
                 const wAnchor = this.config.img.width * 0.12 * this.scaleMod;
                 const hAnchor = this.config.img.height * 0.12 * this.scaleMod;
                 ctx.drawImage(this.config.img, -wAnchor / 2, -hAnchor / 2, wAnchor, hAnchor);
@@ -1130,8 +1125,9 @@ class Tank {
         }
 
         if ((this.config.id === 'destroyer' || this.config.id === 'abyss' || this.config.id === 'blackout') && this.destroAiming) {
-            let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 139, 0.1)' : 'rgba(255, 0, 0, 0.1)');
-            let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 139, 0.6)' : 'rgba(255, 0, 0, 0.6)');
+            // --- FIXED: Dark Gray/Black aiming reticle for Blackout ---
+            let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 0, 0, 0.1)');
+            let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 0, 0, 0.6)');
             ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 80, 0, Math.PI*2);
             ctx.fillStyle = aimColor; ctx.fill(); ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke();
             ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist);
@@ -1214,19 +1210,16 @@ class Tank {
             }
         }
         
-        // --- NEW: Blackout Decloak Rendering ---
         let isDecloaking = (this.config.id === 'blackout' && this.decloakTimer > 0);
         
         if (isDecloaking) {
-            let glitchProgress = this.decloakTimer / 30; // Scales from 1.0 to 0.0
-            ctx.globalAlpha = 0.5 + Math.random() * 0.5; // Rapid flickering opacity
+            let glitchProgress = this.decloakTimer / 30; 
+            ctx.globalAlpha = 0.5 + Math.random() * 0.5; 
             
-            // Randomly offset the position slightly to simulate glitching instability
             let offsetX = (Math.random() - 0.5) * 10 * glitchProgress;
             let offsetY = (Math.random() - 0.5) * 10 * glitchProgress;
             ctx.translate(offsetX, offsetY);
             
-            // Apply heavy filter distortion that settles as timer drops
             ctx.filter = `contrast(${100 + glitchProgress * 200}%) brightness(${100 + glitchProgress * 100}%) blur(${glitchProgress * 2}px) hue-rotate(${Math.random() * 90}deg)`;
         } else if (this.zHeight > 0) {
             ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
@@ -1236,12 +1229,12 @@ class Tank {
         ctx.filter = 'none'; 
         ctx.globalAlpha = 1.0;
         
-        // Render overlapping static/glitch lines directly over the tank if decloaking
         if (isDecloaking) {
             ctx.lineWidth = 1.5;
             let linesCount = Math.floor(Math.random() * 6 * (this.decloakTimer / 30));
             for(let i = 0; i < linesCount; i++) {
-                ctx.strokeStyle = Math.random() > 0.5 ? '#33ff33' : '#ffffff';
+                // --- FIXED: Pitch Black glitch lines ---
+                ctx.strokeStyle = Math.random() > 0.5 ? '#000000' : '#333333';
                 ctx.beginPath();
                 let lineY = -h/2 + Math.random() * h;
                 ctx.moveTo(-w/2 - 15, lineY);
