@@ -3,14 +3,17 @@ const images = {
     grizzly: new Image(), pyro: new Image(), scorpion: new Image(), dreadnaught: new Image(), seraph: new Image(), destroyer: new Image(), phantomA: new Image(), phantomB: new Image(), abyss: new Image(), orion: new Image(), tempest: new Image(), blackout: new Image(),
     missile: new Image(), cluster: new Image(), arrow: new Image(), bg1: new Image(), bg2: new Image(), RaidModeBG: new Image(), goo: new Image(), lightning: new Image(), static: new Image(),
     destroRocket: new Image(), destroMissile: new Image(), target: new Image(), firebolt: new Image(), phantomMissile: new Image(), phantomSGMissile: new Image(), phantomp: new Image(), phantomp2: new Image(),
-    abyssOrb: new Image(), abyssProj: new Image(), auraThing: new Image(), orionProj: new Image(), tempestProj: new Image(), tempestTyphoon: new Image(), tempestWindCutter: new Image(), blackoutProj: new Image()
+    abyssOrb: new Image(), abyssProj: new Image(), auraThing: new Image(), orionProj: new Image(), tempestProj: new Image(), tempestTyphoon: new Image(), tempestWindCutter: new Image(), blackoutProj: new Image(),
+    
+    // NEW RAID ASSETS
+    snowGrizzly: new Image(), snowPyro: new Image(), usfGrizzly: new Image(), turret: new Image(), smallTurret: new Image()
 };
 
 let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
-    // Increased to 37 to account for the new RaidModeBG
-    if (loadedCount === 37) { 
+    // Increased to 42 to account for the 5 new Raid Mode assets
+    if (loadedCount === 42) { 
         const btnStart = document.getElementById('btn-start');
         if (btnStart) {
             btnStart.innerText = "Single Player"; 
@@ -74,6 +77,13 @@ images.tempestWindCutter.onload = onAssetLoad; images.tempestWindCutter.src = 'a
 // Blackout Specific Assets
 images.blackoutProj.onload = onAssetLoad; images.blackoutProj.src = 'assets/BlackoutProjectile.png';
 
+// NEW RAID ASSETS
+images.snowGrizzly.onload = onAssetLoad; images.snowGrizzly.src = 'assets/SnowGrizzly.png';
+images.snowPyro.onload = onAssetLoad; images.snowPyro.src = 'assets/SnowPyro.png';
+images.usfGrizzly.onload = onAssetLoad; images.usfGrizzly.src = 'assets/USF Grizzly.png';
+images.turret.onload = onAssetLoad; images.turret.src = 'assets/Turret.png';
+images.smallTurret.onload = onAssetLoad; images.smallTurret.src = 'assets/SmallTurret.png';
+
 // --- GAME CONFIG & DATA ---
 const tanksData = [
     { id: 'grizzly', name: 'GRIZZLY', img: images.grizzly, color: '#b533ff', desc: 'Normal [C | \']: Cannon (10)<br>Skill 1 [X | ;]: Cluster (6)<br>Skill 2 [Z | L]: Heavy Missile (15)' },
@@ -86,7 +96,14 @@ const tanksData = [
     { id: 'abyss', name: 'ABYSS', img: images.abyss, color: '#1a0033', desc: 'Normal [C | \']: Shadow Bolt (Hold for Rapid Fire)<br>Skill 1 [X | ;]: Void Orb (Deploy trap, shoot 15x for Domain)<br>Skill 2 [Z | L]: Event Horizon (Bouncing Black Hole)' },
     { id: 'orion', name: 'ORION', img: images.orion, color: '#ff33cc', desc: 'Normal [C | \']: Shockwave Missile (Bounces/Portals)<br>Skill 1 [X | ;]: Chronosphere (Slow & Reflect)<br>Skill 2 [Z | L]: Quantum Portals (Tap) / Anti-Grav Lift (Hold)' },
     { id: 'tempest', name: 'TEMPEST', img: images.tempest, color: '#aaffff', desc: 'Normal [C | \']: Wind Shot Dash (Alternates Shoot/Dash)<br>Skill 1 [X | ;]: Typhoon\'s Embrace (Consumes 3 Marks, Shields, Trap)<br>Skill 2 [Z | L]: Windcutter (Slow Converging Crescents)', maxHp: 60, speedMod: 1.45 },
-    { id: 'blackout', name: 'BLACKOUT', img: images.blackout, color: '#33ff33', desc: 'Normal [C | \']: Snipe (High speed, random dmg, disrupts aim)<br>Skill 1 [X | ;]: Teleport Anchor (Teleport resets C. Hold to clear)<br>Skill 2 [Z | L]: Mark Trap (Hold to aim, triggers on step)' }
+    { id: 'blackout', name: 'BLACKOUT', img: images.blackout, color: '#33ff33', desc: 'Normal [C | \']: Snipe (High speed, random dmg, disrupts aim)<br>Skill 1 [X | ;]: Teleport Anchor (Teleport resets C. Hold to clear)<br>Skill 2 [Z | L]: Mark Trap (Hold to aim, triggers on step)' },
+    
+    // --- RAID MODE UNITS ---
+    { id: 'usf_grizzly', name: 'USF GRIZZLY', img: images.usfGrizzly, color: '#33aa33', desc: 'Allied Frontline', maxHp: 100 },
+    { id: 'snow_grizzly', name: 'SNOW GRIZZLY', img: images.snowGrizzly, color: '#aaddff', desc: 'Enemy Support (No Heavy Missile)', maxHp: 100, aiNoZ: true },
+    { id: 'snow_pyro', name: 'SNOW PYRO', img: images.snowPyro, color: '#ff4444', desc: 'Enemy Rusher', maxHp: 100 },
+    { id: 'facility_turret', name: 'HEAVY TURRET', img: images.turret, color: '#aaaaaa', desc: 'Stationary Defense', maxHp: 1000, speedMod: 0 },
+    { id: 'small_turret', name: 'LIGHT TURRET', img: images.smallTurret, color: '#888888', desc: 'Stationary Defense', maxHp: 350, speedMod: 0 }
 ];
 
 // --- AUDIO ASSETS ---
