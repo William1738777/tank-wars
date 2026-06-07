@@ -197,6 +197,7 @@ function update() {
                 h.targetTank.x = h.startX + Math.cos(age * 0.25) * 35;
                 h.targetTank.y = h.startY + Math.sin(age * 0.25) * 35;
                 h.targetTank.zHeight = 50 + Math.sin(age * 0.2) * 40; 
+                
                 h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); 
                 h.targetTank.kbTimer = 0; 
                 h.targetTank.zRotation += 0.3; 
@@ -374,7 +375,7 @@ function update() {
                 }
             }
         } else if (h.type === 'blackout_trap') {
-            // --- NEW: Blackout 2-Second Arming & Instant Single Strike ---
+            // --- Blackout 2-Second Arming & Instant Single Strike ---
             if (h.armingTimer > 0) {
                 h.armingTimer--;
             } else {
@@ -647,7 +648,7 @@ function update() {
                             // Apply 60% slow for 1.5 seconds (90 frames)
                             tank.tempestSlowTimer = 90; 
                         } else if (pA.type === 'blackout_snipe') {
-                            // --- NEW: Blackout Snipe Mechanics ---
+                            // --- Blackout Snipe Mechanics ---
                             tank.hp -= pA.damage;
                             triggerScreenShake(10, 4);
                             
@@ -659,7 +660,7 @@ function update() {
                             
                             // Break enemy line-of-sight and interrupt mechanical firing angles immediately
                             tank.angle = Math.random() * Math.PI * 2;
-                            floatingTexts.push({ x: tank.x, y: tank.y - 40, text: `SNIPED! (-${Math.round(pA.damage)})`, life: 50, color: '#33ff33' });
+                            floatingTexts.push({ x: tank.x, y: tank.y - 40, text: `SNIPED! (-${Math.round(pA.damage)})`, life: 50, color: '#000000' });
                         } else { 
                             tank.hp -= pA.damage; 
                         }
@@ -784,19 +785,19 @@ function draw() {
                 ctx.restore();
             });
         } else if (h.type === 'blackout_trap') {
-            // --- NEW: Render Trap Indicator & Arming Visual ---
+            // --- FIXED: Render Pitch Black Trap Marker Outline ---
             ctx.save();
             ctx.translate(h.x, h.y);
             ctx.rotate(frameCount * 0.02);
-            let indicatorAlpha = h.armingTimer > 0 ? 0.2 : 0.6; // Transparent while arming
+            let indicatorAlpha = h.armingTimer > 0 ? 0.2 : 0.6; 
             
-            ctx.strokeStyle = `rgba(51, 255, 51, ${indicatorAlpha})`;
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = `rgba(0, 0, 0, ${indicatorAlpha})`; // Stark black outline path
+            ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
             ctx.stroke();
             
-            ctx.fillStyle = `rgba(51, 255, 51, ${indicatorAlpha / 2})`;
+            ctx.fillStyle = `rgba(0, 0, 0, ${indicatorAlpha / 2})`; // Subtle dark inner crosshair fill
             ctx.fillRect(-8, -2, 16, 4);
             ctx.fillRect(-2, -8, 4, 16);
             ctx.restore();
