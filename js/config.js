@@ -80,7 +80,7 @@ images.blackoutProj.onload = onAssetLoad; images.blackoutProj.src = 'assets/Blac
 // NEW RAID ASSETS
 images.snowGrizzly.onload = onAssetLoad; images.snowGrizzly.src = 'assets/SnowGrizzly.png';
 images.snowPyro.onload = onAssetLoad; images.snowPyro.src = 'assets/SnowPyro.png';
-images.usfGrizzly.onload = onAssetLoad; images.usfGrizzly.src = 'assets/USF Grizzly.png';
+images.usfGrizzly.onload = onAssetLoad; images.usfGrizzly.src = 'assets/USFGrizzly.png';
 images.turret.onload = onAssetLoad; images.turret.src = 'assets/Turret.png';
 images.smallTurret.onload = onAssetLoad; images.smallTurret.src = 'assets/SmallTurret.png';
 
