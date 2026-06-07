@@ -99,29 +99,19 @@ function startGame() {
     p1Score = 0; p2Score = 0; frameCount = 0;
     projectiles = []; particles = []; flashes = []; hazards = []; floatingTexts = [];
     
-    // --- NEW: Branching Mode Initialization ---
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
-        // Massive 3000x2000 Map for Raid Mode
         mapW = 3000;
         mapH = 2000;
         
-        // Spawn Player 1 on the far left
+        // Spawn Player 1
         players = [
             new Tank(1, tanksData[p1Selection], 200, mapH / 2, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false)
         ];
         
-        // Retrieve Grizzly Data
-        let grizzlyConfig = tanksData.find(t => t.id === 'grizzly') || tanksData[0];
-        
-        // Create dummy controls for AI so they don't corrupt the global keys object
-        let dummyControls = {up:'ai_u', down:'ai_d', left:'ai_l', right:'ai_r', c:'ai_c', x:'ai_x', z:'ai_z'};
-        
-        // Spawn 4 AI Grizzlies defending the facility on the far right
-        players.push(new Tank(2, grizzlyConfig, mapW - 600, mapH / 2 - 400, Math.PI, dummyControls, true, 'HARD'));
-        players.push(new Tank(3, grizzlyConfig, mapW - 600, mapH / 2 + 400, Math.PI, dummyControls, true, 'HARD'));
-        players.push(new Tank(4, grizzlyConfig, mapW - 300, mapH / 2 - 200, Math.PI, dummyControls, true, 'HARD'));
-        players.push(new Tank(5, grizzlyConfig, mapW - 300, mapH / 2 + 200, Math.PI, dummyControls, true, 'HARD'));
-        
+        // Trigger the RaidManager to spawn allies and enemies
+        if (typeof raidManager !== 'undefined') {
+            raidManager.init();
+        }
     } else {
         // Standard 1v1 Screen Mode
         mapW = canvas.width;
@@ -137,19 +127,24 @@ function startGame() {
     gameState = 'PLAYING'; updateHUD();
 }
 
-function handleDeath(loserIndex) {
-    // --- NEW: RAID Mode Win/Loss Conditions ---
+function handleDeath(loserOwnerId) {
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
-        if (loserIndex === 0) {
+        if (loserOwnerId === 1) {
             // Player Died -> Raid Failed
             gameState = 'OVER';
             document.getElementById('victory-title').innerText = `RAID FAILED`;
             document.getElementById('victory-title').style.color = '#ff3333';
             setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
         } else {
-            // An AI Died -> Check if all enemies are wiped out
-            let aliveEnemies = players.filter(p => p.owner !== 1 && !p.isDead).length;
-            if (aliveEnemies === 0) {
+            // An AI Died -> Send them to the respawn queue (Turrets ignore this internally)
+            let deadTank = players.find(p => p.owner === loserOwnerId);
+            if (typeof raidManager !== 'undefined' && deadTank) {
+                raidManager.queueRespawn(deadTank);
+            }
+
+            // Win Condition: All Heavy Turrets destroyed
+            let turretsAlive = players.filter(p => p.config.id === 'facility_turret' && !p.isDead).length;
+            if (turretsAlive === 0) {
                 gameState = 'OVER';
                 document.getElementById('victory-title').innerText = `FACILITY BREACHED!`;
                 document.getElementById('victory-title').style.color = '#00ff66';
@@ -160,8 +155,8 @@ function handleDeath(loserIndex) {
     }
 
     // --- STANDARD 1v1 Logic ---
-    let winnerIndex = loserIndex === 0 ? 1 : 0;
-    if (winnerIndex === 0) p1Score++; else p2Score++;
+    let winnerOwnerId = loserOwnerId === 1 ? 2 : 1;
+    if (winnerOwnerId === 1) p1Score++; else p2Score++;
     
     document.getElementById('score-p1').innerText = p1Score; document.getElementById('score-p2').innerText = p2Score;
     
@@ -170,8 +165,12 @@ function handleDeath(loserIndex) {
         document.getElementById('victory-title').innerText = `${winnerText} WINS!`;
         document.getElementById('victory-title').style.color = p1Score >= 3 ? '#00aaff' : '#ff3333';
         
-        const p1Stats = players[0].matchStats;
-        const p2Stats = players[1].matchStats;
+        let p1Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
+        let p2Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
+        let p1Obj = players.find(p => p.owner === 1);
+        let p2Obj = players.find(p => p.owner === 2);
+        if(p1Obj) p1Stats = p1Obj.matchStats;
+        if(p2Obj) p2Stats = p2Obj.matchStats;
         
         document.getElementById('stats-p1').innerHTML = `
             Damage Dealt: <b>${Math.round(p1Stats.totalDamage)}</b><br>
@@ -189,7 +188,11 @@ function handleDeath(loserIndex) {
         setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
     } else {
         setTimeout(() => {
-            let loser = players[loserIndex]; let winner = players[winnerIndex];
+            let loser = players.find(p => p.owner === loserOwnerId);
+            let winner = players.find(p => p.owner === winnerOwnerId);
+            
+            if(!loser || !winner) return;
+
             let bestSpawn = spawnPoints[0]; let maxDist = -1;
             for(let sp of spawnPoints) { let dist = Math.hypot(sp.x - winner.x, sp.y - winner.y); if (dist > maxDist) { maxDist = dist; bestSpawn = sp; } }
             
@@ -207,23 +210,17 @@ function handleDeath(loserIndex) {
             loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
             loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
             
-            // Tempest tracking resets
             loser.tempestStacks = 0; loser.tempestSpeedStacks = 0; loser.tempestSpeedTimer = 0;
             loser.tempestCSpdStacks = 0; loser.tempestCSpdTimer = 0; loser.tempestSlowTimer = 0;
             loser.tempestShieldHp = 0; loser.tempestShieldTimer = 0;
             loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
-            loser.typhoonMarks = 0;
-            loser.inTornado = false; 
+            loser.typhoonMarks = 0; loser.inTornado = false; 
             
             loser.zHeight = 0; loser.zRotation = 0;
             loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
 
-            // Blackout tracking resets
-            loser.blackoutAnchor = null;
-            loser.blackoutLasers = [];
-            loser.xHoldTimer = 0;
-            loser.xHeldLastFrame = false;
-            loser.blackoutLaserTimer = 0;
+            loser.blackoutAnchor = null; loser.blackoutLasers = [];
+            loser.xHoldTimer = 0; loser.xHeldLastFrame = false; loser.blackoutLaserTimer = 0;
             
             updateHUD();
         }, 1500); 
@@ -235,8 +232,12 @@ function update() {
 
     frameCount++; players.forEach(p => p.update());
     players.forEach(p => p.inFireTrail = false); 
+    
+    // Allow RaidManager to process respawns and ally release logic
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
+        raidManager.update();
+    }
 
-    // --- NEW: Dynamic Multi-Tank Collision (Required for 4x Raid Enemies) ---
     for (let i = 0; i < players.length; i++) {
         for (let j = i + 1; j < players.length; j++) {
             let p1 = players[i]; let p2 = players[j];
@@ -252,13 +253,11 @@ function update() {
         }
     }
 
-    // --- NEW: Camera Tracking Logic ---
     if (players[0] && !players[0].isDead) {
         camera.x = players[0].x - canvas.width / 2;
         camera.y = players[0].y - canvas.height / 2;
     }
     
-    // Clamp the camera so it doesn't show the void outside the map bounds
     camera.x = Math.max(0, Math.min(camera.x, mapW - canvas.width));
     camera.y = Math.max(0, Math.min(camera.y, mapH - canvas.height));
 
@@ -498,7 +497,6 @@ function update() {
 
             let progress = tank.zFrameCounter / tank.zMaxDuration;
             
-            // Gravity suspension bypass when inside the Tornado Trap
             if (progress <= 1.0) {
                 if (tank.chronoIntercepted) {
                     if (progress > 0.2 && progress < 0.8) {
@@ -540,7 +538,7 @@ function update() {
                 let damageTaken = startHp - tank.hp;
                 if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken); 
 
-                if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
+                if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tank.owner); }
             }
         }
 
@@ -558,7 +556,7 @@ function update() {
             if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken, false, true); 
 
             if (Math.random() < 0.1) createParticles(tank.x, tank.y, 1, '#ff3300', 1.5, 0.3);
-            if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tIndex); }
+            if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tank.owner); }
         } else { tank.fireTrailTicks = 0; }
     });
 
@@ -651,17 +649,19 @@ function update() {
         });
 
         players.forEach((tank, tIndex) => {
-            if (pA.owner !== tank.owner && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
+            let shooter = players.find(p => p.owner === pA.owner);
+            let isEnemy = !shooter || shooter.team !== tank.team;
+
+            if (pA.owner !== tank.owner && isEnemy && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
                 if (tank.config.id === 'phantom' && tank.isGhost) return;
                 if (tank.zHeight > 0) return;
 
                 if (Math.hypot(pA.x - tank.x, pA.y - tank.y) < tank.radius + pA.radius) {
-                    let shooter = players.find(p => p.owner === pA.owner);
                     if (shooter && shooter.config.id === 'grizzly') playSound(sfx.tankHit);
 
                     let startHp = tank.hp;
 
-                    if (tank.config.id === 'pyro' && tank.fireShieldActive) {
+                    if ((tank.config.id === 'pyro' || tank.config.id === 'snow_pyro') && tank.fireShieldActive) {
                         tank.fireShieldHp -= pA.damage; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLOCKED!", life: 20, color: '#ffaa00'});
                     } else {
                         if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
@@ -692,17 +692,14 @@ function update() {
                         } else if (pA.type === 'tempest_c') {
                             tank.hp -= pA.damage;
                             if (shooter && shooter.config.id === 'tempest') {
-                                // Grant Ammo for X-Skill
                                 shooter.tempestStacks = Math.min(9, (shooter.tempestStacks || 0) + 1);
-                                // Grant Speed Stacks for Passive
                                 shooter.tempestSpeedStacks = Math.min(10, (shooter.tempestSpeedStacks || 0) + 1);
-                                shooter.tempestSpeedTimer = 180; // 3 seconds
+                                shooter.tempestSpeedTimer = 180; 
                                 floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "ACCEL + AMMO!", life: 30, color: '#aaffff', fontSize: '14px'});
                             }
                         } else if (pA.type === 'tempest_x') {
                             tank.hp -= pA.damage;
                             
-                            // Tempest Shield Generation on X-Skill Hit
                             if (shooter && shooter.config.id === 'tempest') {
                                 shooter.tempestShieldHp = Math.min(30, (shooter.tempestShieldHp || 0) + 10);
                                 shooter.tempestShieldTimer = 960; 
@@ -726,12 +723,10 @@ function update() {
                                 floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
                             }
                         } else if (pA.type === 'tempest_z') {
-                            // Tempest Z-Skill Piercing Physics
                             if (frameCount % 10 === 0) { 
                                 tank.hp -= pA.damage;
                                 if (typeof recordDamage === 'function') recordDamage(pA.owner, pA.damage);
                             }
-                            // Apply 60% slow for 1.5 seconds (90 frames)
                             tank.tempestSlowTimer = 90; 
                         } else if (pA.type === 'blackout_snipe') {
                             tank.hp -= pA.damage;
@@ -766,12 +761,6 @@ function update() {
                                 }
                             }
                         }
-
-                        if (shooter && shooter.config.id === 'destroyer' && pA.type === 'bullet') {
-                            shooter.cooldowns.z -= 1000;
-                            floatingTexts.push({x: shooter.x, y: shooter.y - 65, text: "-1s Z-CD!", life: 30, color: '#ff3333', fontSize: '14px'});
-                        }
-
                     }
                     
                     let damageTaken = startHp - tank.hp;
@@ -826,6 +815,11 @@ function draw() {
         ctx.drawImage(images[currentMap.bgImg], 0, 0, mapW, mapH);
     } else {
         ctx.clearRect(camera.x, camera.y, canvas.width, canvas.height);
+    }
+
+    // Call the Raid Manager to render the structural bunkers under the tanks
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
+        raidManager.drawBunkers(ctx);
     }
 
     hazards.forEach(h => {
@@ -1097,3 +1091,5 @@ function draw() {
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
+
+}
