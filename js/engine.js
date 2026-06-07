@@ -17,6 +17,11 @@ let screenShakeIntensity = 0;
 // Global Tracker for AI Difficulty
 let aiDifficulty = 'NORMAL';
 
+// --- NEW: Camera and Map Dimension Variables ---
+let camera = { x: 0, y: 0 };
+let mapW = canvas.width;
+let mapH = canvas.height;
+
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -54,17 +59,69 @@ function startGame() {
     document.getElementById('p1-skills').style.display = 'flex'; document.getElementById('p2-skills').style.display = 'flex';
     
     p1Score = 0; p2Score = 0; frameCount = 0;
-    
-    players = [
-        new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false),
-        new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL')
-    ];
-    
     projectiles = []; particles = []; flashes = []; hazards = []; floatingTexts = [];
+    
+    // --- NEW: Branching Mode Initialization ---
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
+        // Massive 3000x2000 Map for Raid Mode
+        mapW = 3000;
+        mapH = 2000;
+        
+        // Setup custom Raid Map logic
+        currentMap = { bgImg: 'RaidModeBG', walls: [], rocks: [] }; // We will add the facility layout here later
+        
+        // Spawn Player 1 on the far left
+        players = [
+            new Tank(1, tanksData[p1Selection], 200, mapH / 2, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false)
+        ];
+        
+        // Retrieve Grizzly Data
+        let grizzlyConfig = tanksData.find(t => t.id === 'grizzly') || tanksData[0];
+        
+        // Spawn 4 AI Grizzlies defending the facility on the far right
+        players.push(new Tank(2, grizzlyConfig, mapW - 600, mapH / 2 - 400, Math.PI, {}, true, 'HARD'));
+        players.push(new Tank(3, grizzlyConfig, mapW - 600, mapH / 2 + 400, Math.PI, {}, true, 'HARD'));
+        players.push(new Tank(4, grizzlyConfig, mapW - 300, mapH / 2 - 200, Math.PI, {}, true, 'HARD'));
+        players.push(new Tank(5, grizzlyConfig, mapW - 300, mapH / 2 + 200, Math.PI, {}, true, 'HARD'));
+        
+    } else {
+        // Standard 1v1 Screen Mode
+        mapW = canvas.width;
+        mapH = canvas.height;
+        currentMap = mapsData[selectedMapIndex];
+        
+        players = [
+            new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false),
+            new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL')
+        ];
+    }
+    
     gameState = 'PLAYING'; updateHUD();
 }
 
 function handleDeath(loserIndex) {
+    // --- NEW: RAID Mode Win/Loss Conditions ---
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
+        if (loserIndex === 0) {
+            // Player Died -> Raid Failed
+            gameState = 'OVER';
+            document.getElementById('victory-title').innerText = `RAID FAILED`;
+            document.getElementById('victory-title').style.color = '#ff3333';
+            setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
+        } else {
+            // An AI Died -> Check if all enemies are wiped out
+            let aliveEnemies = players.filter(p => p.owner !== 1 && !p.isDead).length;
+            if (aliveEnemies === 0) {
+                gameState = 'OVER';
+                document.getElementById('victory-title').innerText = `FACILITY BREACHED!`;
+                document.getElementById('victory-title').style.color = '#00ff66';
+                setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
+            }
+        }
+        return;
+    }
+
+    // --- STANDARD 1v1 Logic ---
     let winnerIndex = loserIndex === 0 ? 1 : 0;
     if (winnerIndex === 0) p1Score++; else p2Score++;
     
@@ -135,42 +192,37 @@ function handleDeath(loserIndex) {
     }
 }
 
-function createKaboom(x, y, scale = 1.0) {
-    flashes.push({ x, y, radius: 5*scale, maxRadius: 30*scale, life: 1.0 });
-    for (let i = 0; i < 25*scale; i++) {
-        const isSmoke = Math.random() > 0.5;
-        particles.push({ x, y, vx: (Math.random()-0.5)*(isSmoke?6:12)*scale, vy: (Math.random()-0.5)*(isSmoke?6:12)*scale, life: 1.0, size: (Math.random()*4 + 2)*scale, color: isSmoke ? '#444' : (Math.random() > 0.5 ? '#ff3300' : '#ffaa00') });
-    }
-}
-
-function createParticles(x, y, count, color, sizeMultiplier=1, lifeMultiplier=1) {
-    for (let i = 0; i < count; i++) particles.push({ x, y, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3, life: (Math.random()*0.5 + 0.5)*lifeMultiplier, size: (Math.random()*3 + 1)*sizeMultiplier, color });
-}
-
-function createMuzzleFlash(x, y, angle, size=1) {
-    for (let i = 0; i < 8*size; i++) {
-        const speed = (Math.random() + 0.5) * 5; const pAngle = angle + (Math.random() - 0.5) * 0.5;
-        particles.push({ x, y, vx: Math.cos(pAngle)*speed, vy: Math.sin(pAngle)*speed, life: Math.random()*0.3 + 0.2, size: Math.random()*3*size + 1, color: 'rgba(200, 200, 200, 0.6)' });
-    }
-}
-
 function update() {
     if (gameState !== 'PLAYING') return;
 
     frameCount++; players.forEach(p => p.update());
     players.forEach(p => p.inFireTrail = false); 
 
-    if (players[0] && players[1] && !players[0].isDead && !players[1].isDead) {
-        if (!players[0].isGhosting && !players[1].isGhosting) {
-            let dx = players[1].x - players[0].x; let dy = players[1].y - players[0].y;
-            let dist = Math.hypot(dx, dy); let minDist = players[0].radius + players[1].radius;
-            if (dist < minDist) {
-                let overlap = minDist - dist; let nx = dx / dist; let ny = dy / dist;
-                players[0].x -= nx * (overlap / 2); players[0].y -= ny * (overlap / 2);
-                players[1].x += nx * (overlap / 2); players[1].y += ny * (overlap / 2);
+    // --- NEW: Dynamic Multi-Tank Collision (Required for 4x Raid Enemies) ---
+    for (let i = 0; i < players.length; i++) {
+        for (let j = i + 1; j < players.length; j++) {
+            let p1 = players[i]; let p2 = players[j];
+            if (!p1.isDead && !p2.isDead && !p1.isGhosting && !p2.isGhosting) {
+                let dx = p2.x - p1.x; let dy = p2.y - p1.y;
+                let dist = Math.hypot(dx, dy); let minDist = p1.radius + p2.radius;
+                if (dist < minDist) {
+                    let overlap = minDist - dist; let nx = dx / dist; let ny = dy / dist;
+                    p1.x -= nx * (overlap / 2); p1.y -= ny * (overlap / 2);
+                    p2.x += nx * (overlap / 2); p2.y += ny * (overlap / 2);
+                }
             }
         }
     }
+
+    // --- NEW: Camera Tracking Logic ---
+    if (players[0] && !players[0].isDead) {
+        camera.x = players[0].x - canvas.width / 2;
+        camera.y = players[0].y - canvas.height / 2;
+    }
+    
+    // Clamp the camera so it doesn't show the void outside the map bounds
+    camera.x = Math.max(0, Math.min(camera.x, mapW - canvas.width));
+    camera.y = Math.max(0, Math.min(camera.y, mapH - canvas.height));
 
     updateHUD(); updateCooldownUI();
 
@@ -375,17 +427,13 @@ function update() {
                 }
             }
         } else if (h.type === 'blackout_trap') {
-            // --- Blackout 2-Second Arming & Instant Single Strike ---
             if (h.armingTimer > 0) {
                 h.armingTimer--;
             } else {
                 players.forEach(tank => {
                     if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
-                        // Check if an enemy steps on the trap
                         if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) {
-                            h.life = 0; // Destroy the trap
-                            
-                            // Immediately drop the single 30-damage blackout strike rocket from above
+                            h.life = 0; 
                             let strikeProj = new Projectile(h.owner, h.x, h.y - 800, Math.PI / 2, 25, 8, 30, '#33ff33', 'blackout_strike', 0);
                             strikeProj.targetY = h.y;
                             projectiles.push(strikeProj);
@@ -648,17 +696,14 @@ function update() {
                             // Apply 60% slow for 1.5 seconds (90 frames)
                             tank.tempestSlowTimer = 90; 
                         } else if (pA.type === 'blackout_snipe') {
-                            // --- Blackout Snipe Mechanics ---
                             tank.hp -= pA.damage;
                             triggerScreenShake(10, 4);
                             
-                            // Directional knockback away from incoming velocity
                             let kbAngle = pA.angle;
                             tank.kbX = Math.cos(kbAngle) * 14; 
                             tank.kbY = Math.sin(kbAngle) * 14; 
                             tank.kbTimer = 15;
                             
-                            // Break enemy line-of-sight and interrupt mechanical firing angles immediately
                             tank.angle = Math.random() * Math.PI * 2;
                             floatingTexts.push({ x: tank.x, y: tank.y - 40, text: `SNIPED! (-${Math.round(pA.damage)})`, life: 50, color: '#000000' });
                         } else { 
@@ -684,7 +729,6 @@ function update() {
                             }
                         }
 
-                        // --- NEW: Destroyer Passive CD Reduction on Normal C Hit ---
                         if (shooter && shooter.config.id === 'destroyer' && pA.type === 'bullet') {
                             shooter.cooldowns.z -= 1000;
                             floatingTexts.push({x: shooter.x, y: shooter.y - 65, text: "-1s Z-CD!", life: 30, color: '#ff3333', fontSize: '14px'});
@@ -710,7 +754,6 @@ function update() {
         for (let j = i + 1; j < projectiles.length; j++) {
             let pB = projectiles[j]; if (pA.dead || pB.dead) continue;
             
-            // Tempest Z ignores all projectile collisions
             if (pA.type === 'tempest_z' || pB.type === 'tempest_z') continue;
 
             if (pA.owner !== pB.owner) {
@@ -737,8 +780,15 @@ function draw() {
         let dx = (Math.random() - 0.5) * screenShakeIntensity; let dy = (Math.random() - 0.5) * screenShakeIntensity; ctx.translate(dx, dy);
     }
 
-    if (images[currentMap.bgImg] && images[currentMap.bgImg].complete) ctx.drawImage(images[currentMap.bgImg], 0, 0, canvas.width, canvas.height);
-    else ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // --- NEW: Apply Camera Translation ---
+    ctx.translate(-camera.x, -camera.y);
+
+    // --- NEW: Draw Background Over the Expanded Map Size ---
+    if (images[currentMap.bgImg] && images[currentMap.bgImg].complete) {
+        ctx.drawImage(images[currentMap.bgImg], 0, 0, mapW, mapH);
+    } else {
+        ctx.clearRect(camera.x, camera.y, canvas.width, canvas.height);
+    }
 
     hazards.forEach(h => {
         if (h.type === 'whirlwind_trap') {
@@ -792,19 +842,18 @@ function draw() {
                 ctx.restore();
             });
         } else if (h.type === 'blackout_trap') {
-            // --- FIXED: Render Pitch Black Trap Marker Outline ---
             ctx.save();
             ctx.translate(h.x, h.y);
             ctx.rotate(frameCount * 0.02);
             let indicatorAlpha = h.armingTimer > 0 ? 0.2 : 0.6; 
             
-            ctx.strokeStyle = `rgba(0, 0, 0, ${indicatorAlpha})`; // Stark black outline path
+            ctx.strokeStyle = `rgba(0, 0, 0, ${indicatorAlpha})`; 
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
             ctx.stroke();
             
-            ctx.fillStyle = `rgba(0, 0, 0, ${indicatorAlpha / 2})`; // Subtle dark inner crosshair fill
+            ctx.fillStyle = `rgba(0, 0, 0, ${indicatorAlpha / 2})`; 
             ctx.fillRect(-8, -2, 16, 4);
             ctx.fillRect(-2, -8, 4, 16);
             ctx.restore();
@@ -922,7 +971,6 @@ function draw() {
         }
     });
 
-    // --- DRAWING ORION QUANTUM PORTAL ANCHORS ---
     players.forEach(p => {
         if (p.config.id === 'orion' && p.portalA) {
             ctx.save(); ctx.translate(p.portalA.x, p.portalA.y);
