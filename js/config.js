@@ -1,7 +1,7 @@
 // --- ASSET MANAGEMENT ---
 const images = {
     grizzly: new Image(), pyro: new Image(), scorpion: new Image(), dreadnaught: new Image(), seraph: new Image(), destroyer: new Image(), phantomA: new Image(), phantomB: new Image(), abyss: new Image(), orion: new Image(), tempest: new Image(), blackout: new Image(),
-    missile: new Image(), cluster: new Image(), arrow: new Image(), bg1: new Image(), bg2: new Image(), goo: new Image(), lightning: new Image(), static: new Image(),
+    missile: new Image(), cluster: new Image(), arrow: new Image(), bg1: new Image(), bg2: new Image(), RaidModeBG: new Image(), goo: new Image(), lightning: new Image(), static: new Image(),
     destroRocket: new Image(), destroMissile: new Image(), target: new Image(), firebolt: new Image(), phantomMissile: new Image(), phantomSGMissile: new Image(), phantomp: new Image(), phantomp2: new Image(),
     abyssOrb: new Image(), abyssProj: new Image(), auraThing: new Image(), orionProj: new Image(), tempestProj: new Image(), tempestTyphoon: new Image(), tempestWindCutter: new Image(), blackoutProj: new Image()
 };
@@ -9,8 +9,8 @@ const images = {
 let loadedCount = 0;
 function onAssetLoad() {
     loadedCount++;
-    // Increased to 36 to account for the new Blackout assets
-    if (loadedCount === 36) { 
+    // Increased to 37 to account for the new RaidModeBG
+    if (loadedCount === 37) { 
         const btnStart = document.getElementById('btn-start');
         if (btnStart) {
             btnStart.innerText = "Single Player"; 
@@ -48,6 +48,7 @@ images.firebolt.onload = onAssetLoad; images.firebolt.src = 'assets/Firebolt.png
 // Environments
 images.bg1.onload = onAssetLoad; images.bg1.src = 'assets/BGbattle.png'; 
 images.bg2.onload = onAssetLoad; images.bg2.src = 'assets/BGbattle2.png';
+images.RaidModeBG.onload = onAssetLoad; images.RaidModeBG.src = 'assets/RaidModeBG.png';
 
 // Phantom Specific Assets
 images.phantomA.onload = onAssetLoad; images.phantomA.src = 'assets/PhantomFormA.png';
@@ -105,13 +106,33 @@ function playSound(audio) {
 
 const mapsData = [
     {
-        id: 'dusk', name: 'DUSK', bgImg: 'bg1',
+        id: 'dusk', name: 'DUSK', bgImg: 'bg1', width: 1000, height: 700,
         walls: [ {x: 350, y: 150, w: 20, h: 150}, {x: 630, y: 150, w: 20, h: 150}, {x: 350, y: 400, w: 20, h: 150}, {x: 630, y: 400, w: 20, h: 150}, {x: 450, y: 340, w: 100, h: 20} ], rocks: []
     },
     {
-        id: 'plains', name: 'PLAINS', bgImg: 'bg2',
+        id: 'plains', name: 'PLAINS', bgImg: 'bg2', width: 1000, height: 700,
         walls: [ {x: 350, y: 50, w: 300, h: 20}, {x: 350, y: 630, w: 300, h: 20} ],
         rocks: [ {x: 250, y: 200, r: 40}, {x: 750, y: 200, r: 40}, {x: 250, y: 500, r: 40}, {x: 750, y: 500, r: 40}, {x: 500, y: 350, r: 60} ]
+    },
+    {
+        id: 'raid_facility', name: 'RAID: ENEMY FACILITY', bgImg: 'RaidModeBG', width: 3000, height: 2000,
+        walls: [ 
+            // Top and Bottom enclosing walls for the facility on the right
+            {x: 2300, y: 400, w: 700, h: 40},
+            {x: 2300, y: 1560, w: 700, h: 40},
+            // Left-side facing wall of the facility with 2 entrance gaps
+            {x: 2300, y: 440, w: 40, h: 360},  // Top segment
+            {x: 2300, y: 1000, w: 40, h: 200}, // Middle segment between doors
+            {x: 2300, y: 1400, w: 40, h: 160}, // Bottom segment
+            // Inner defensive barricades
+            {x: 2600, y: 750, w: 150, h: 40},
+            {x: 2600, y: 1250, w: 150, h: 40}
+        ],
+        rocks: [ 
+            // Cover scattered approaching the facility
+            {x: 1800, y: 800, r: 80}, {x: 1800, y: 1200, r: 80},
+            {x: 1400, y: 1000, r: 120}, {x: 2100, y: 500, r: 60}, {x: 2100, y: 1500, r: 60}
+        ]
     }
 ];
 
