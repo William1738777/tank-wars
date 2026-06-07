@@ -35,7 +35,7 @@ class Projectile {
         if (this.type === 'destro_up' || this.type === 'blackout_up') {
             this.x += this.vx; this.y += this.vy; this.life--;
             if (this.life <= 0) this.dead = true;
-            createParticles(this.x, this.y + 10, 1, this.type === 'blackout_up' ? '#33ff33' : '#ffaa00', 1, 0.2);
+            createParticles(this.x, this.y + 10, 1, this.type === 'blackout_up' ? '#000000' : '#ffaa00', 1, 0.2);
             return;
         }
 
@@ -88,9 +88,14 @@ class Projectile {
             this.vy *= 0.985;
             this.radius += 0.12;
         } else if (this.type === 'blackout_snipe') {
-            createParticles(this.x, this.y, 2, 'rgba(150, 150, 150, 0.5)', 3.5, 0.6);
-            createParticles(this.x, this.y, 1, 'rgba(200, 200, 200, 0.7)', 2, 0.3);
-            if (Math.random() > 0.7) createParticles(this.x, this.y, 1, '#33ff33', 1, 0.3);
+            // --- FIXED: Mathematical straight gray line tracer ---
+            let steps = Math.ceil(this.speed / 4);
+            for (let i = 0; i < steps; i++) {
+                let interpX = this.lastX + (this.x - this.lastX) * (i / steps);
+                let interpY = this.lastY + (this.y - this.lastY) * (i / steps);
+                // vx: 0, vy: 0 ensures the particles stay exactly where they spawned, creating a solid fading line
+                particles.push({ x: interpX, y: interpY, vx: 0, vy: 0, life: 0.8, size: 2, color: 'rgba(150, 150, 150, 0.6)' });
+            }
         } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
             createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
         }
@@ -189,7 +194,7 @@ class Projectile {
                             y: tank.y - 40, 
                             text: this.type === 'blackout_strike' ? "TRAP STRIKE!" : "BOMBED!", 
                             life: 50, 
-                            color: this.type === 'blackout_strike' ? '#33ff33' : '#ff4500'
+                            color: this.type === 'blackout_strike' ? '#000000' : '#ff4500' // FIXED: Pure black text
                         });
                     }
                 }
@@ -199,7 +204,7 @@ class Projectile {
             createParticles(this.x, this.y, 10, '#ff0000', 1.5, 0.4);
         } else if (this.type === 'blackout_snipe') {
             createKaboom(this.x, this.y, 1.0);
-            createParticles(this.x, this.y, 10, '#33ff33', 1.5, 0.5);
+            createParticles(this.x, this.y, 10, '#000000', 1.5, 0.5); // FIXED: Black explosion particles
         } else if (this.type.startsWith('phantom_')) {
             createParticles(this.x, this.y, 8, '#9d00ff', 1.5, 0.5);
             if (this.type === 'phantom_bounce') createKaboom(this.x, this.y, 1.0);
@@ -270,9 +275,10 @@ class Projectile {
         } else if ((this.type === 'destro_rocket' || this.type === 'destro_up' || this.type === 'blackout_strike' || this.type === 'blackout_up') && images.destroRocket.complete) {
             ctx.rotate(Math.PI/2); 
             const w = images.destroRocket.width * 0.15; const h = images.destroRocket.height * 0.15;
-            ctx.shadowBlur = 15; ctx.shadowColor = this.type.startsWith('blackout') ? '#33ff33' : '#ffaa00'; 
+            // --- FIXED: Pitch Black shadow/filter for the trap missiles ---
+            ctx.shadowBlur = 15; ctx.shadowColor = this.type.startsWith('blackout') ? '#000000' : '#ffaa00'; 
+            if (this.type.startsWith('blackout')) ctx.filter = 'brightness(0.2) grayscale(100%) drop-shadow(0 0 5px rgba(0,0,0,0.8))';
             
-            if (this.type.startsWith('blackout')) ctx.filter = 'hue-rotate(90deg) saturate(200%)';
             ctx.drawImage(images.destroRocket, -w/2, -h/2, w, h);
             ctx.filter = 'none';
         } else if (this.type === 'firebolt' && images.firebolt.complete) {
@@ -352,10 +358,11 @@ class Projectile {
             ctx.shadowBlur = 20; ctx.shadowColor = '#aaffff';
             ctx.drawImage(images.tempestWindCutter, -w/2, -h/2, w, h);
         } else if (this.type === 'blackout_snipe' && images.blackoutProj && images.blackoutProj.complete) {
-            const scale = 0.2; 
+            // --- FIXED: Smaller C-missile and Black Outline Glow ---
+            const scale = 0.1; // Reduced from 0.2 down to 0.1
             const w = images.blackoutProj.width * scale;
             const h = images.blackoutProj.height * scale;
-            ctx.shadowBlur = 15; ctx.shadowColor = '#33ff33';
+            ctx.shadowBlur = 10; ctx.shadowColor = '#000000'; // Pure black shadow/outline
             ctx.drawImage(images.blackoutProj, -w/2, -h/2, w, h);
         } else if (this.type !== 'destro_rocket' && this.type !== 'destro_up' && this.type !== 'blackout_strike' && this.type !== 'blackout_up') {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
