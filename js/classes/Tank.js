@@ -45,6 +45,9 @@ class Tank {
         this.xHoldTimer = 0;
         this.xHeldLastFrame = false;
         this.blackoutLaserTimer = 0;
+        this.redZoneActive = false;
+        this.greenFlareTimer = 0;
+        this.decloakTimer = 0;
 
         // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
@@ -284,18 +287,30 @@ class Tank {
         if (this.isDead) return;
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
-        // --- NEW: Blackout Passive Laser Interceptor ---
+        // --- NEW: Blackout Passive Laser Interceptor & Dynamic Zones ---
         if (this.config.id === 'blackout' && !this.isDead && this.zHeight === 0) {
-            // Process cooldown timer
-            if (this.blackoutLaserTimer > 0) {
-                this.blackoutLaserTimer--;
-            }
+            
+            // Process timers
+            if (this.blackoutLaserTimer > 0) this.blackoutLaserTimer--;
+            if (this.greenFlareTimer > 0) this.greenFlareTimer--;
+            if (this.decloakTimer > 0) this.decloakTimer--;
+            
+            // Evaluate Red Zone Threat
+            this.redZoneActive = false;
+            players.forEach(p => {
+                if (p.owner !== this.owner && !p.isDead) {
+                    let d = Math.hypot(this.x - p.x, this.y - p.y);
+                    if (d <= 350) {
+                        this.redZoneActive = true;
+                    }
+                }
+            });
 
             for (let i = 0; i < projectiles.length; i++) {
                 let proj = projectiles[i];
                 if (proj.owner !== this.owner && !proj.dead && this.blackoutLaserTimer <= 0) {
-                    if (proj.type === 'tempest_z') continue; // Don't intercept massive Z skills
-                    if (proj.isTimeDilated) continue; // Skip Chronosphere affected items
+                    if (proj.type === 'tempest_z') continue; 
+                    if (proj.isTimeDilated) continue; 
                     
                     let distToProj = Math.hypot(this.x - proj.x, this.y - proj.y);
                     if (distToProj <= 250) {
@@ -307,9 +322,11 @@ class Tank {
                             createParticles(proj.x, proj.y, 5, '#33ff33', 1.5, 0.5);
                             this.blackoutLasers.push({ startX: this.x, startY: this.y, endX: proj.x, endY: proj.y, life: 10 });
                             
-                            // Apply 0.9 seconds (54 frames) cooldown before intercepting another
-                            this.blackoutLaserTimer = 54;
-                            break; // Break the loop so it only intercepts one at a time per cooldown
+                            // Apply BUFFED 0.5 seconds (30 frames) cooldown
+                            this.blackoutLaserTimer = 30;
+                            // Trigger Green Interception Flare
+                            this.greenFlareTimer = 15;
+                            break; 
                         }
                     }
                 }
@@ -700,7 +717,6 @@ class Tank {
                 }
             }
             
-            // --- NEW: Blackout Z-Skill Traps Aiming Block ---
             if (this.config.id === 'blackout') {
                 if (keys[this.controls.z] && now > this.cooldowns.z) {
                     this.destroAiming = true;
@@ -719,7 +735,6 @@ class Tank {
                         oldest.life = 0; 
                     }
 
-                    // Pushing the trap hazard with a 120-frame (2 seconds) arming delay
                     hazards.push({
                         owner: this.owner, type: 'blackout_trap', x: targetX, y: targetY, radius: 40, life: 999999, maxLife: 999999, trapId: Date.now(), armingTimer: 120
                     });
@@ -819,7 +834,7 @@ class Tank {
         } else if (this.config.id === 'blackout') {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             let dmgRoll = Math.floor(Math.random() * (45 - 25 + 1)) + 25;
-            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 24, 4, dmgRoll, '#33ff33', 'blackout_snipe', 0));
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 38, 4, dmgRoll, '#33ff33', 'blackout_snipe', 0));
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
             if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
@@ -859,13 +874,20 @@ class Tank {
             return;
         }
         
+        // --- NEW: Blackout Decloaking / Glitch Teleport ---
         if (this.config.id === 'blackout') {
+            // Implosion at the departure point
             createParticles(this.x, this.y, 15, '#33ff33', 2, 0.5);
+            createMuzzleFlash(this.x, this.y, this.angle, 2.0); 
+
+            // Execute Teleport
             this.x = this.blackoutAnchor.x;
             this.y = this.blackoutAnchor.y;
             this.angle = this.blackoutAnchor.angle;
             
+            // Explosion and Decloak Effect at the arrival point
             createParticles(this.x, this.y, 15, '#33ff33', 2, 0.5);
+            this.decloakTimer = 30; // 0.5 seconds glitch sequence
             
             this.cooldowns.x = now + this.maxCooldowns.x;
             this.cooldowns.c = now; 
@@ -968,21 +990,35 @@ class Tank {
         if (this.isDead) return;
         if (this.invulnTimer > 0 && Math.floor(this.invulnTimer / 10) % 2 === 0) return;
         
-        // --- NEW: Blackout Passive Indicator Rings & Interceptor Lasers ---
         if (this.config.id === 'blackout') {
             ctx.save();
+            
+            // Red Outer Donut (250 - 350)
             ctx.beginPath();
             ctx.arc(this.x, this.y, 350, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+            ctx.arc(this.x, this.y, 250, 0, Math.PI * 2, true);
+            ctx.fillStyle = this.redZoneActive ? 'rgba(255, 0, 0, 0.15)' : 'rgba(255, 0, 0, 0.02)';
+            ctx.fill();
+
+            // Red Outer Border
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 350, 0, Math.PI * 2);
+            ctx.strokeStyle = this.redZoneActive ? 'rgba(255, 0, 0, 0.6)' : 'rgba(255, 0, 0, 0.1)';
             ctx.lineWidth = 2;
             ctx.setLineDash([5, 10]);
             ctx.stroke();
 
+            // Green Inner Circle (0 - 250)
             ctx.beginPath();
             ctx.arc(this.x, this.y, 250, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(51, 255, 51, 0.3)';
+            ctx.fillStyle = this.greenFlareTimer > 0 ? 'rgba(51, 255, 51, 0.15)' : 'rgba(51, 255, 51, 0.02)';
+            ctx.fill();
+
+            // Green Inner Border
+            ctx.strokeStyle = this.greenFlareTimer > 0 ? 'rgba(51, 255, 51, 0.6)' : 'rgba(51, 255, 51, 0.1)';
             ctx.setLineDash([]);
             ctx.stroke();
+            
             ctx.restore();
 
             if (this.blackoutLasers) {
@@ -1094,7 +1130,6 @@ class Tank {
         }
 
         if ((this.config.id === 'destroyer' || this.config.id === 'abyss' || this.config.id === 'blackout') && this.destroAiming) {
-            // Apply Dark Blue target outline exclusively for Blackout
             let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 139, 0.1)' : 'rgba(255, 0, 0, 0.1)');
             let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : (this.config.id === 'blackout' ? 'rgba(0, 0, 139, 0.6)' : 'rgba(255, 0, 0, 0.6)');
             ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 80, 0, Math.PI*2);
@@ -1155,7 +1190,12 @@ class Tank {
         ctx.rotate(this.angle + this.zRotation);
 
         ctx.shadowBlur = this.dashState === 2 || this.dashState === 3 || this.dashState === 4 ? 30 : 15;
-        ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : this.config.color;
+        if (this.config.id === 'blackout') {
+            ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : '#000000';
+            ctx.shadowBlur = 10;
+        } else {
+            ctx.shadowColor = this.stunTimer > 0 ? '#00ffff' : this.config.color;
+        }
         
         let visualScaleMod = this.scaleMod;
         if (this.zHeight > 0) { visualScaleMod += (this.zHeight / 400); }
@@ -1174,9 +1214,42 @@ class Tank {
             }
         }
         
-        if (this.zHeight > 0) ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
+        // --- NEW: Blackout Decloak Rendering ---
+        let isDecloaking = (this.config.id === 'blackout' && this.decloakTimer > 0);
+        
+        if (isDecloaking) {
+            let glitchProgress = this.decloakTimer / 30; // Scales from 1.0 to 0.0
+            ctx.globalAlpha = 0.5 + Math.random() * 0.5; // Rapid flickering opacity
+            
+            // Randomly offset the position slightly to simulate glitching instability
+            let offsetX = (Math.random() - 0.5) * 10 * glitchProgress;
+            let offsetY = (Math.random() - 0.5) * 10 * glitchProgress;
+            ctx.translate(offsetX, offsetY);
+            
+            // Apply heavy filter distortion that settles as timer drops
+            ctx.filter = `contrast(${100 + glitchProgress * 200}%) brightness(${100 + glitchProgress * 100}%) blur(${glitchProgress * 2}px) hue-rotate(${Math.random() * 90}deg)`;
+        } else if (this.zHeight > 0) {
+            ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
+        }
 
         ctx.drawImage(imgToDraw, -w / 2, -h / 2, w, h); 
-        ctx.filter = 'none'; ctx.globalAlpha = 1.0; ctx.restore();
+        ctx.filter = 'none'; 
+        ctx.globalAlpha = 1.0;
+        
+        // Render overlapping static/glitch lines directly over the tank if decloaking
+        if (isDecloaking) {
+            ctx.lineWidth = 1.5;
+            let linesCount = Math.floor(Math.random() * 6 * (this.decloakTimer / 30));
+            for(let i = 0; i < linesCount; i++) {
+                ctx.strokeStyle = Math.random() > 0.5 ? '#33ff33' : '#ffffff';
+                ctx.beginPath();
+                let lineY = -h/2 + Math.random() * h;
+                ctx.moveTo(-w/2 - 15, lineY);
+                ctx.lineTo(w/2 + 15, lineY);
+                ctx.stroke();
+            }
+        }
+        
+        ctx.restore();
     }
 }
