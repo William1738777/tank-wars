@@ -13,12 +13,26 @@ function startMode(mode) {
     document.getElementById('sp-menu').style.display = 'none';
     document.getElementById('select-screen').style.display = 'flex';
     
-    if (gameMode === 'ARCADE') {
+    // Restoring elements to default before altering them based on mode
+    document.getElementById('p2-panel').style.display = 'block';
+    document.getElementById('map-selector-ui').style.display = 'flex';
+    document.getElementById('p2-ready-text').style.display = 'none';
+    document.getElementById('p2-arrow-left').style.display = 'block';
+    document.getElementById('p2-arrow-right').style.display = 'block';
+
+    if (gameMode === 'RAID') {
+        // Raid Mode is 1 Player only, lock the map and hide P2 UI
+        document.getElementById('p2-panel').style.display = 'none';
+        document.getElementById('map-selector-ui').style.display = 'none'; // Lock map selection
+        
+        selectedMapIndex = 2; // Assuming index 2 is 'raid_facility'
+        currentMap = mapsData[selectedMapIndex];
+        
+        p2Ready = true; // Auto-ready P2 so the game can start when P1 is ready
+    }
+    else if (gameMode === 'ARCADE') {
         // CPU now allows tank selection!
         document.getElementById('btn-p2-ready').style.display = 'block';
-        document.getElementById('p2-ready-text').style.display = 'none';
-        document.getElementById('p2-arrow-left').style.display = 'block';
-        document.getElementById('p2-arrow-right').style.display = 'block';
         
         // Add a dropdown to pick difficulty
         document.getElementById('p2-title').innerHTML = `
@@ -42,14 +56,18 @@ function startMode(mode) {
         // Reset to normal 2P settings
         document.getElementById('btn-p2-ready').style.display = 'block';
         document.getElementById('btn-p2-ready').onclick = function() { toggleReady(2); };
-        document.getElementById('p2-ready-text').style.display = 'none';
-        document.getElementById('p2-arrow-left').style.display = 'block';
-        document.getElementById('p2-arrow-right').style.display = 'block';
         document.getElementById('p2-title').innerText = 'PLAYER 2 (ARROWS + L, ;, \')';
         document.getElementById('hud-p2-name').innerText = 'PLAYER 2';
         p2Ready = false;
+        
+        // Ensure 1v1 doesn't accidentally load the giant raid map if they hit 'back'
+        if(selectedMapIndex === 2) {
+            selectedMapIndex = 0;
+            currentMap = mapsData[selectedMapIndex];
+        }
     }
     
+    document.getElementById('map-name-display').innerText = currentMap.name;
     updateDisplays();
     drawMinimap();
 }
@@ -61,7 +79,12 @@ function cycleTank(playerNum, dir) {
 }
 
 function cycleMap(dir) {
-    selectedMapIndex = (selectedMapIndex + dir + mapsData.length) % mapsData.length;
+    if (gameMode === 'RAID') return; // Cannot change map in raid mode
+    // Lock out the raid map (index 2) from standard rotation
+    do {
+        selectedMapIndex = (selectedMapIndex + dir + mapsData.length) % mapsData.length;
+    } while (selectedMapIndex === 2);
+    
     currentMap = mapsData[selectedMapIndex];
     document.getElementById('map-name-display').innerText = currentMap.name;
     drawMinimap();
@@ -73,8 +96,12 @@ function drawMinimap() {
     const mCtx = mCanvas.getContext('2d');
     mCtx.clearRect(0, 0, mCanvas.width, mCanvas.height);
     
-    const scaleX = mCanvas.width / canvas.width;
-    const scaleY = mCanvas.height / canvas.height;
+    // Dynamically scale based on map size vs standard canvas width
+    let mapDisplayW = currentMap.width || 1000;
+    let mapDisplayH = currentMap.height || 700;
+    
+    const scaleX = mCanvas.width / mapDisplayW;
+    const scaleY = mCanvas.height / mapDisplayH;
 
     mCtx.fillStyle = '#5c3a92';
     currentMap.walls.forEach(w => {
@@ -108,7 +135,12 @@ function toggleReady(playerNum) {
         document.getElementById('p2-ready-text').style.display = 'block';
         document.getElementById('p2-panel').style.borderColor = '#00ff00';
     }
-    if (p1Ready && p2Ready) setTimeout(startGame, 800);
+    
+    if (gameMode === 'RAID') {
+        if (p1Ready) setTimeout(startGame, 800);
+    } else {
+        if (p1Ready && p2Ready) setTimeout(startGame, 800);
+    }
 }
 
 function updateHUD() {
@@ -120,18 +152,28 @@ function updateHUD() {
         document.getElementById('p1-hp').style.width = '0%';
     }
     
-    if (players[1] && !players[1].isDead) {
-        const p2Hp = document.getElementById('p2-hp');
-        p2Hp.style.width = Math.min(100, Math.max(0, (players[1].hp / players[1].maxHp) * 100)) + '%'; 
-        p2Hp.style.background = (players[1].hp / players[1].maxHp) > 0.3 ? '#00ff00' : '#ff0000';
-    } else if (players[1]) {
-        document.getElementById('p2-hp').style.width = '0%';
+    // Hide standard P2 HUD in Raid Mode as there are multiple enemies
+    if (gameMode === 'RAID') {
+        document.getElementById('hud-p2-box').style.display = 'none';
+        document.getElementById('hud-score').style.display = 'none';
+        document.getElementById('p2-skills').style.display = 'none';
+    } else {
+        if (players[1] && !players[1].isDead) {
+            const p2Hp = document.getElementById('p2-hp');
+            p2Hp.style.width = Math.min(100, Math.max(0, (players[1].hp / players[1].maxHp) * 100)) + '%'; 
+            p2Hp.style.background = (players[1].hp / players[1].maxHp) > 0.3 ? '#00ff00' : '#ff0000';
+        } else if (players[1]) {
+            document.getElementById('p2-hp').style.width = '0%';
+        }
     }
 }
 
 function updateCooldownUI() {
     const now = Date.now();
     players.forEach((p, index) => {
+        // Only track UI cooldowns for human players (P1, or P2 in Local Multiplayer)
+        if (p.isAI) return;
+        
         const pPrefix = index === 0 ? 'p1' : 'p2';
         const skills = ['c', 'x', 'z'];
         
@@ -143,9 +185,8 @@ function updateCooldownUI() {
                 ammoTextXEl.style.color = p.mgReloading ? '#ff3333' : 'gold';
                 if (!p.mgReloading) p.maxCooldowns.x = 100;
             } else if (p.config.id === 'tempest') {
-                // NEW: Tempest Stack Display
                 let stacks = p.tempestStacks || 0;
-                ammoTextXEl.innerText = `${stacks}/9`;
+                ammoTextXEl.innerText = `${Math.floor(stacks)}/9`;
                 ammoTextXEl.style.color = stacks >= 3 ? '#aaffff' : '#777777';
             } else {
                 ammoTextXEl.innerText = '';
