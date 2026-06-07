@@ -683,6 +683,13 @@ function update() {
                                 }
                             }
                         }
+
+                        // --- NEW: Destroyer Passive CD Reduction on Normal C Hit ---
+                        if (shooter && shooter.config.id === 'destroyer' && pA.type === 'bullet') {
+                            shooter.cooldowns.z -= 1000;
+                            floatingTexts.push({x: shooter.x, y: shooter.y - 65, text: "-1s Z-CD!", life: 30, color: '#ff3333', fontSize: '14px'});
+                        }
+
                     }
                     
                     let damageTaken = startHp - tank.hp;
