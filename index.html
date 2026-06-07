@@ -25,6 +25,7 @@
             <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
                 <button disabled style="background: #333; color: #777; border-color: #555;">Story Mode (Locked)</button>
                 <button onclick="startMode('ARCADE')">Arcade Mode</button>
+                <button onclick="startMode('RAID')">Raid Mode</button>
                 <button onclick="showMenu('main-menu')">Back</button>
             </div>
         </div>
@@ -35,7 +36,7 @@
                 <canvas id="minimapCanvas" width="200" height="140" style="border: 1px solid #333; background-color: #0f0f0f; box-shadow: none;"></canvas>
             </div>
 
-            <div class="map-selector">
+            <div class="map-selector" id="map-selector-ui">
                 <button class="arrow-btn" onclick="cycleMap(-1)">&#9664;</button>
                 <h2 id="map-name-display">DUSK</h2>
                 <button class="arrow-btn" onclick="cycleMap(1)">&#9654;</button>
@@ -70,13 +71,12 @@
             <h1 id="victory-title">PLAYER WINS!</h1>
             <p class="subtitle">MATCH COMPLETE</p>
             
-            <!-- NEW: Dynamic Statistics Panel -->
             <div id="victory-stats" style="display: flex; gap: 40px; margin: 20px 0; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 1px solid #555;">
-                <div style="text-align: left; color: #00aaff;">
+                <div style="text-align: left; color: #00aaff;" id="p1-stats-container">
                     <h3>PLAYER 1 STATS</h3>
                     <div id="stats-p1" style="font-size: 1.1rem; line-height: 1.5; color: #ccc;"></div>
                 </div>
-                <div style="text-align: left; color: #ff3333;">
+                <div style="text-align: left; color: #ff3333;" id="p2-stats-container">
                     <h3>PLAYER 2 STATS</h3>
                     <div id="stats-p2" style="font-size: 1.1rem; line-height: 1.5; color: #ccc;"></div>
                 </div>
@@ -86,17 +86,17 @@
         </div>
 
         <div id="hud">
-            <div class="hp-box" style="border-color: #00aaff;">
+            <div class="hp-box" style="border-color: #00aaff;" id="hud-p1-box">
                 <b style="color: #00aaff;">PLAYER 1</b>
                 <div class="hp-bar-bg"><div id="p1-hp" class="hp-bar-fill"></div></div>
             </div>
             
-            <div class="score-board">
+            <div class="score-board" id="hud-score">
                 <span class="score-p1" id="score-p1">0</span> &nbsp;-&nbsp; <span class="score-p2" id="score-p2">0</span>
-                <div style="font-size:0.8rem; color:#aaa; text-align:center; margin-top:5px;">BEST OF 5</div>
+                <div style="font-size:0.8rem; color:#aaa; text-align:center; margin-top:5px;" id="best-of-text">BEST OF 5</div>
             </div>
 
-            <div class="hp-box" style="border-color: #ff3333;">
+            <div class="hp-box" style="border-color: #ff3333;" id="hud-p2-box">
                 <b id="hud-p2-name" style="color: #ff3333;">PLAYER 2</b>
                 <div class="hp-bar-bg"><div id="p2-hp" class="hp-bar-fill"></div></div>
             </div>
