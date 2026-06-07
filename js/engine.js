@@ -19,8 +19,8 @@ let aiDifficulty = 'NORMAL';
 
 // --- NEW: Camera and Map Dimension Variables ---
 let camera = { x: 0, y: 0 };
-let mapW = canvas.width;
-let mapH = canvas.height;
+var mapW = canvas.width; // Changed to var to fix the scope crash
+var mapH = canvas.height; // Changed to var to fix the scope crash
 
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
@@ -105,9 +105,6 @@ function startGame() {
         mapW = 3000;
         mapH = 2000;
         
-        // Setup custom Raid Map logic
-        currentMap = { bgImg: 'RaidModeBG', walls: [], rocks: [] }; // We will add the facility layout here later
-        
         // Spawn Player 1 on the far left
         players = [
             new Tank(1, tanksData[p1Selection], 200, mapH / 2, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false)
@@ -116,11 +113,14 @@ function startGame() {
         // Retrieve Grizzly Data
         let grizzlyConfig = tanksData.find(t => t.id === 'grizzly') || tanksData[0];
         
+        // Create dummy controls for AI so they don't corrupt the global keys object
+        let dummyControls = {up:'ai_u', down:'ai_d', left:'ai_l', right:'ai_r', c:'ai_c', x:'ai_x', z:'ai_z'};
+        
         // Spawn 4 AI Grizzlies defending the facility on the far right
-        players.push(new Tank(2, grizzlyConfig, mapW - 600, mapH / 2 - 400, Math.PI, {}, true, 'HARD'));
-        players.push(new Tank(3, grizzlyConfig, mapW - 600, mapH / 2 + 400, Math.PI, {}, true, 'HARD'));
-        players.push(new Tank(4, grizzlyConfig, mapW - 300, mapH / 2 - 200, Math.PI, {}, true, 'HARD'));
-        players.push(new Tank(5, grizzlyConfig, mapW - 300, mapH / 2 + 200, Math.PI, {}, true, 'HARD'));
+        players.push(new Tank(2, grizzlyConfig, mapW - 600, mapH / 2 - 400, Math.PI, dummyControls, true, 'HARD'));
+        players.push(new Tank(3, grizzlyConfig, mapW - 600, mapH / 2 + 400, Math.PI, dummyControls, true, 'HARD'));
+        players.push(new Tank(4, grizzlyConfig, mapW - 300, mapH / 2 - 200, Math.PI, dummyControls, true, 'HARD'));
+        players.push(new Tank(5, grizzlyConfig, mapW - 300, mapH / 2 + 200, Math.PI, dummyControls, true, 'HARD'));
         
     } else {
         // Standard 1v1 Screen Mode
@@ -1097,7 +1097,3 @@ function draw() {
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
-
-}
-this one is much cleaner 
-the first one works perfectly btw but i would like it applied to this one as well.
