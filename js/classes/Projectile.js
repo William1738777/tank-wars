@@ -88,8 +88,9 @@ class Projectile {
             this.vy *= 0.985;
             this.radius += 0.12;
         } else if (this.type === 'blackout_snipe') {
-            createParticles(this.x, this.y, 1, '#33ff33', 2, 0.4);
-            if (Math.random() > 0.5) createParticles(this.x, this.y, 1, '#ffffff', 1, 0.2);
+            createParticles(this.x, this.y, 2, 'rgba(150, 150, 150, 0.5)', 3.5, 0.6);
+            createParticles(this.x, this.y, 1, 'rgba(200, 200, 200, 0.7)', 2, 0.3);
+            if (Math.random() > 0.7) createParticles(this.x, this.y, 1, '#33ff33', 1, 0.3);
         } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
             createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
         }
@@ -351,7 +352,6 @@ class Projectile {
             ctx.shadowBlur = 20; ctx.shadowColor = '#aaffff';
             ctx.drawImage(images.tempestWindCutter, -w/2, -h/2, w, h);
         } else if (this.type === 'blackout_snipe' && images.blackoutProj && images.blackoutProj.complete) {
-            // THIS is the block drawing your image!
             const scale = 0.2; 
             const w = images.blackoutProj.width * scale;
             const h = images.blackoutProj.height * scale;
