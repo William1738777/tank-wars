@@ -123,7 +123,8 @@ class Tank {
                     let coverX = centerX + Math.cos(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
                     let coverY = centerY + Math.sin(angleFromPlayer) * (Math.max(w.w, w.h) + 60);
                     let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
-                    if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
+                    // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
+                    if (coverX > 50 && coverX < mapW - 50 && coverY > 50 && coverY < mapH - 50) {
                         if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
                     }
                 }
@@ -133,7 +134,8 @@ class Tank {
                     let coverX = r.x + Math.cos(angleFromPlayer) * (r.r + 60);
                     let coverY = r.y + Math.sin(angleFromPlayer) * (r.r + 60);
                     let distToCover = Math.hypot(coverX - this.x, coverY - this.y);
-                    if (coverX > 50 && coverX < canvas.width - 50 && coverY > 50 && coverY < canvas.height - 50) {
+                    // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
+                    if (coverX > 50 && coverX < mapW - 50 && coverY > 50 && coverY < mapH - 50) {
                         if (distToCover < bestCoverDist) { bestCoverDist = distToCover; bestCoverX = coverX; bestCoverY = coverY; }
                     }
                 }
@@ -186,8 +188,9 @@ class Tank {
         let lookAheadX = this.x + Math.cos(this.angle) * sensorDist; let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
         let lookBehindX = this.x - Math.cos(this.angle) * sensorDist; let lookBehindY = this.y - Math.sin(this.angle) * sensorDist;
 
-        if (lookAheadX < 50 || lookAheadX > canvas.width - 50 || lookAheadY < 50 || lookAheadY > canvas.height - 50) obstacleAhead = true;
-        if (lookBehindX < 50 || lookBehindX > canvas.width - 50 || lookBehindY < 50 || lookBehindY > canvas.height - 50) obstacleBehind = true;
+        // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
+        if (lookAheadX < 50 || lookAheadX > mapW - 50 || lookAheadY < 50 || lookAheadY > mapH - 50) obstacleAhead = true;
+        if (lookBehindX < 50 || lookBehindX > mapW - 50 || lookBehindY < 50 || lookBehindY > mapH - 50) obstacleBehind = true;
 
         for (let w of currentMap.walls) {
             if (lookAheadX > w.x - 30 && lookAheadX < w.x + w.w + 30 && lookAheadY > w.y - 30 && lookAheadY < w.y + w.h + 30) obstacleAhead = true;
@@ -415,8 +418,9 @@ class Tank {
             this.x += this.kbX; this.y += this.kbY;
             this.checkWallCollisions(); 
             if (this.kbType === 'wall_slam') {
+                // --- FIXED: Use dynamic map borders instead of canvas ---
                 let movedDist = Math.hypot(this.x - oldX, this.y - oldY); let intendedDist = Math.hypot(this.kbX, this.kbY);
-                let hitEdge = this.x <= this.radius || this.x >= canvas.width - this.radius || this.y <= this.radius || this.y >= canvas.height - this.radius;
+                let hitEdge = this.x <= this.radius || this.x >= mapW - this.radius || this.y <= this.radius || this.y >= mapH - this.radius;
                 if (movedDist < intendedDist - 2 || hitEdge) {
                     this.kbType = null; this.stunTimer = Math.max(this.stunTimer, 120); this.afterStunSlow = 90;
                     floatingTexts.push({x: this.x, y: this.y - 40, text: "CRITICALLY JAMMED!", life: 90, color: '#ff3333'}); createKaboom(this.x, this.y, 1.5);
@@ -606,7 +610,10 @@ class Tank {
             });
             this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
             if (this.dashTimer <= 0) { this.dashState = 0; this.isGhosting = false; }
-            this.checkWallCollisions(); this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x)); this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+            this.checkWallCollisions(); 
+            // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
+            this.x = Math.max(this.radius, Math.min(mapW - this.radius, this.x)); 
+            this.y = Math.max(this.radius, Math.min(mapH - this.radius, this.y));
             return; 
         }
 
@@ -629,7 +636,6 @@ class Tank {
                 let throttle = 0;
                 if (keys[this.controls.up]) throttle += 1;
                 if (keys[this.controls.down]) throttle -= 1;
-                // --- FIXED: Phantom Speed Boost Buffed to 2.0 (100% Boost) ---
                 if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) { currentSpeed *= 2.0; }
                 if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
             }
@@ -640,8 +646,9 @@ class Tank {
         if (this.recoil > 0.1) { this.x -= Math.cos(this.angle) * this.recoil; this.y -= Math.sin(this.angle) * this.recoil; this.recoil *= 0.8; }
 
         this.checkWallCollisions();
-        this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
-        this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+        // --- FIXED: Uses dynamic map bounds instead of hardcoded canvas size ---
+        this.x = Math.max(this.radius, Math.min(mapW - this.radius, this.x));
+        this.y = Math.max(this.radius, Math.min(mapH - this.radius, this.y));
 
         if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
             const now = Date.now();
@@ -716,7 +723,8 @@ class Tank {
             if (this.config.id === 'blackout') {
                 if (keys[this.controls.z] && now > this.cooldowns.z) {
                     this.destroAiming = true;
-                    this.destroAimDist = Math.min(600, this.destroAimDist + 6);
+                    // --- FIXED: Can aim Z-Skill across the expanded map ---
+                    this.destroAimDist = Math.min(1200, this.destroAimDist + 6);
                     this.zHeldLastFrame = true;
                 } else if (!keys[this.controls.z] && this.destroAiming) {
                     this.destroAiming = false;
@@ -749,7 +757,8 @@ class Tank {
 
             if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
                 if (keys[this.controls.x] && now > this.cooldowns.x && !this.destroLocked) {
-                    this.destroAiming = true; this.destroAimDist = Math.min(600, this.destroAimDist + 6); this.xHeld = true;
+                    // --- FIXED: Can aim X-Skill across the expanded map ---
+                    this.destroAiming = true; this.destroAimDist = Math.min(1200, this.destroAimDist + 6); this.xHeld = true;
                 } else if (!keys[this.controls.x] && this.destroAiming) {
                     this.destroAiming = false; this.cooldowns.x = now + this.maxCooldowns.x;
                     
