@@ -15,7 +15,7 @@ class Tank {
         this.controls = controls; this.isDead = false;
         this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
-        this.dashAngle = 0; // Restored just in case UI scans for it
+        this.dashAngle = 0; 
         
         this.kbX = 0; this.kbY = 0; this.kbTimer = 0; this.kbType = null;
         this.electrocutedTimer = 0;
@@ -28,26 +28,30 @@ class Tank {
 
         // Tempest Internal Trackers
         this.tempestStacks = 0; 
-        this.tempestShieldHp = 0; // RESTORED
-        this.tempestShieldTimer = 0; // RESTORED
+        this.tempestShieldHp = 0; 
+        this.tempestShieldTimer = 0; 
 
         this.tempestSpeedStacks = 0; 
         this.tempestSpeedTimer = 0;
         this.tempestOrbitalAngle = 0;
         this.tempestOrbitalCooldowns = [0, 0, 0];
         this.passiveAuraRadius = 200; 
-
-        // New: C-Skill Attack Speed Buff Trackers
         this.tempestCSpdStacks = 0;
         this.tempestCSpdTimer = 0;
+
+        // Blackout Internal Trackers
+        this.blackoutAnchor = null;
+        this.blackoutLasers = [];
+        this.xHoldTimer = 0;
+        this.xHeldLastFrame = false;
 
         // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
 
         this.maxCooldowns = { 
-            c: config.id === 'tempest' ? 1000 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500)))), 
-            x: config.id === 'tempest' ? 300 : (config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : 8000))))), 
-            z: config.id === 'tempest' ? 24000 : (config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : 10000)))))
+            c: config.id === 'blackout' ? 3000 : (config.id === 'tempest' ? 1000 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500))))), 
+            x: config.id === 'blackout' ? 12000 : (config.id === 'tempest' ? 300 : (config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : 8000)))))), 
+            z: config.id === 'blackout' ? 8000 : (config.id === 'tempest' ? 24000 : (config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : 10000))))))
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
@@ -88,7 +92,7 @@ class Tank {
         let target = players[0]; 
         const now = Date.now();
 
-        let isHitAndRunTank = ['phantom', 'pyro', 'scorpion', 'tempest'].includes(this.config.id);
+        let isHitAndRunTank = ['phantom', 'pyro', 'scorpion', 'tempest', 'blackout'].includes(this.config.id);
         let cReady = now >= this.cooldowns.c;
 
         let myOrb = null;
@@ -279,6 +283,31 @@ class Tank {
         if (this.isDead) return;
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
+        // --- NEW: Blackout Passive Laser Interceptor ---
+        if (this.config.id === 'blackout' && !this.isDead && this.zHeight === 0) {
+            for (let i = 0; i < projectiles.length; i++) {
+                let proj = projectiles[i];
+                if (proj.owner !== this.owner && !proj.dead) {
+                    if (proj.type === 'tempest_z') continue; // Don't intercept massive Z skills
+                    if (proj.isTimeDilated) continue; // Skip Chronosphere affected items
+                    
+                    let distToProj = Math.hypot(this.x - proj.x, this.y - proj.y);
+                    if (distToProj <= 250) {
+                        let enemyTank = players.find(p => p.owner === proj.owner);
+                        let enemyDist = enemyTank ? Math.hypot(this.x - enemyTank.x, this.y - enemyTank.y) : Infinity;
+                        
+                        if (enemyDist > 350) {
+                            proj.dead = true;
+                            createParticles(proj.x, proj.y, 5, '#33ff33', 1.5, 0.5);
+                            this.blackoutLasers.push({ startX: this.x, startY: this.y, endX: proj.x, endY: proj.y, life: 10 });
+                        }
+                    }
+                }
+            }
+            this.blackoutLasers.forEach(l => l.life--);
+            this.blackoutLasers = this.blackoutLasers.filter(l => l.life > 0);
+        }
+
         if (this.config.id === 'tempest') {
             if (this.tempestSpeedTimer > 0) {
                 this.tempestSpeedTimer--;
@@ -294,7 +323,6 @@ class Tank {
                 }
             }
             
-            // --- RESTORED: Shield Decay Loop ---
             if (this.tempestShieldTimer > 0) {
                 this.tempestShieldTimer--;
                 if (this.tempestShieldTimer <= 0) { this.tempestShieldHp = 0; }
@@ -413,7 +441,7 @@ class Tank {
         if (this.stunTimer <= 0 && this.afterStunSlow > 0) { this.afterStunSlow--; currentSpeed *= 0.1; }
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
         if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
-        if (this.tempestSlowTimer > 0) { this.tempestSlowTimer--; currentSpeed *= 0.4; } // 60% Z Slow
+        if (this.tempestSlowTimer > 0) { this.tempestSlowTimer--; currentSpeed *= 0.4; } 
 
         if (this.abyssSlowTimer > 0) {
             this.abyssSlowTimer--;
@@ -595,6 +623,29 @@ class Tank {
         if (this.dashState === 0 && this.stunTimer <= 0 && !this.zFiring) {
             const now = Date.now();
             
+            // --- NEW: Blackout X Hold To Clear Anchor ---
+            if (this.config.id === 'blackout') {
+                if (keys[this.controls.x]) {
+                    this.xHoldTimer++;
+                    this.xHeldLastFrame = true;
+                    if (this.xHoldTimer === 30 && this.blackoutAnchor) {
+                        this.blackoutAnchor = null;
+                        floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR CLEARED!", life: 40, color: '#33ff33'});
+                    }
+                } else if (!keys[this.controls.x] && this.xHeldLastFrame) {
+                    if (this.xHoldTimer < 30) {
+                        if (!this.blackoutAnchor) {
+                            this.blackoutAnchor = { x: this.x, y: this.y, angle: this.angle };
+                            floatingTexts.push({x: this.x, y: this.y - 40, text: "ANCHOR SET!", life: 40, color: '#33ff33'});
+                        } else if (now > this.cooldowns.x) {
+                            this.fireX(now);
+                        }
+                    }
+                    this.xHeldLastFrame = false;
+                    this.xHoldTimer = 0;
+                }
+            }
+            
             if (keys[this.controls.c] && now > this.cooldowns.c && this.burstsLeft === 0) {
                 if (this.config.id === 'tempest') {
                     let cdReduction = (this.tempestCSpdStacks || 0) * 50; 
@@ -640,6 +691,41 @@ class Tank {
                 }
             }
             
+            // --- NEW: Blackout Z-Skill Traps Aiming Block ---
+            if (this.config.id === 'blackout') {
+                if (keys[this.controls.z] && now > this.cooldowns.z) {
+                    this.destroAiming = true;
+                    this.destroAimDist = Math.min(600, this.destroAimDist + 6);
+                    this.zHeldLastFrame = true;
+                } else if (!keys[this.controls.z] && this.destroAiming) {
+                    this.destroAiming = false;
+                    this.cooldowns.z = now + this.maxCooldowns.z;
+
+                    let targetX = this.x + Math.cos(this.angle) * this.destroAimDist;
+                    let targetY = this.y + Math.sin(this.angle) * this.destroAimDist;
+
+                    let myTraps = hazards.filter(h => h.owner === this.owner && h.type === 'blackout_trap');
+                    if (myTraps.length >= 3) {
+                        let oldest = myTraps.reduce((prev, curr) => (prev.trapId < curr.trapId ? prev : curr));
+                        oldest.life = 0; // Cull oldest if exceeding 3
+                    }
+
+                    hazards.push({
+                        owner: this.owner, type: 'blackout_trap', x: targetX, y: targetY, radius: 40, life: 999999, maxLife: 999999, trapId: Date.now()
+                    });
+                    
+                    createMuzzleFlash(this.x, this.y, this.angle, 2.0);
+                    let visualProj = new Projectile(this.owner, this.x, this.y, this.angle, 15, 5, 0, '#33ff33', 'blackout_up', 0);
+                    visualProj.life = 15;
+                    projectiles.push(visualProj);
+
+                    this.destroAimDist = 100;
+                }
+
+                let isMoving = keys[this.controls.up] || keys[this.controls.down] || keys[this.controls.left] || keys[this.controls.right];
+                if (isMoving && this.destroAiming) { this.destroAiming = false; this.destroAimDist = 100; }
+            }
+
             if (this.config.id === 'destroyer' || this.config.id === 'abyss') {
                 if (keys[this.controls.x] && now > this.cooldowns.x && !this.destroLocked) {
                     this.destroAiming = true; this.destroAimDist = Math.min(600, this.destroAimDist + 6); this.xHeld = true;
@@ -663,11 +749,13 @@ class Tank {
                 
                 let isMoving = keys[this.controls.up] || keys[this.controls.down] || keys[this.controls.left] || keys[this.controls.right];
                 if (isMoving && this.destroAiming) { this.destroAiming = false; this.destroAimDist = 100; }
-            } else if (this.config.id !== 'dreadnaught') {
+            } else if (this.config.id !== 'dreadnaught' && this.config.id !== 'blackout') {
                 if (keys[this.controls.x]) { if (!this.xHeld) { this.fireX(now); this.xHeld = true; } } else { this.xHeld = false; }
             }
 
-            if (this.config.id !== 'seraph' && this.config.id !== 'orion') { if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now); }
+            if (this.config.id !== 'seraph' && this.config.id !== 'orion' && this.config.id !== 'blackout') { 
+                if (keys[this.controls.z] && now > this.cooldowns.z) this.fireZ(now); 
+            }
         }
     }
 
@@ -718,6 +806,11 @@ class Tank {
         } else if (this.config.id === 'orion') {
             createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
             projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 12, 5, 4, '#ff33cc', 'orion_c', 3));
+        } else if (this.config.id === 'blackout') {
+            // --- NEW: Blackout Fast Snipe (Random 25-45 Damage) ---
+            createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
+            let dmgRoll = Math.floor(Math.random() * (45 - 25 + 1)) + 25;
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 24, 4, dmgRoll, '#33ff33', 'blackout_snipe', 0));
         } else {
             createMuzzleFlash(tip.x, tip.y, this.angle);
             if (this.config.id === 'grizzly' || this.config.id === 'destroyer') {
@@ -754,6 +847,21 @@ class Tank {
                 let spreadAngle = this.angle - 0.7 + (1.4 / 2) * i; 
                 projectiles.push(new Projectile(this.owner, tip.x, tip.y, spreadAngle, 12, 10, 0, '#aaffff', 'tempest_x', 0));
             }
+            return;
+        }
+        
+        // --- NEW: Blackout Teleport Anchor ---
+        if (this.config.id === 'blackout') {
+            createParticles(this.x, this.y, 15, '#33ff33', 2, 0.5);
+            this.x = this.blackoutAnchor.x;
+            this.y = this.blackoutAnchor.y;
+            this.angle = this.blackoutAnchor.angle;
+            
+            createParticles(this.x, this.y, 15, '#33ff33', 2, 0.5);
+            
+            this.cooldowns.x = now + this.maxCooldowns.x;
+            this.cooldowns.c = now; // Instantly reset C cool down
+            floatingTexts.push({x: this.x, y: this.y - 40, text: "RECALLED!", life: 40, color: '#33ff33'});
             return;
         }
 
@@ -852,6 +960,52 @@ class Tank {
         if (this.isDead) return;
         if (this.invulnTimer > 0 && Math.floor(this.invulnTimer / 10) % 2 === 0) return;
         
+        // --- NEW: Blackout Passive Indicator Rings & Interceptor Lasers ---
+        if (this.config.id === 'blackout') {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 350, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 10]);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 250, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(51, 255, 51, 0.3)';
+            ctx.setLineDash([]);
+            ctx.stroke();
+            ctx.restore();
+
+            if (this.blackoutLasers) {
+                ctx.save();
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = '#33ff33';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#33ff33';
+                this.blackoutLasers.forEach(l => {
+                    ctx.globalAlpha = l.life / 10;
+                    ctx.beginPath();
+                    ctx.moveTo(l.startX, l.startY);
+                    ctx.lineTo(l.endX, l.endY);
+                    ctx.stroke();
+                });
+                ctx.restore();
+            }
+
+            if (this.blackoutAnchor) {
+                ctx.save();
+                ctx.translate(this.blackoutAnchor.x, this.blackoutAnchor.y);
+                ctx.rotate(this.blackoutAnchor.angle);
+                ctx.globalAlpha = 0.4;
+                ctx.filter = 'drop-shadow(0 0 10px #33ff33) sepia(1) hue-rotate(80deg) saturate(3)'; 
+                const wAnchor = this.config.img.width * 0.12 * this.scaleMod;
+                const hAnchor = this.config.img.height * 0.12 * this.scaleMod;
+                ctx.drawImage(this.config.img, -wAnchor / 2, -hAnchor / 2, wAnchor, hAnchor);
+                ctx.restore();
+            }
+        }
+
         if (this.config.id === 'tempest') {
             ctx.save();
             ctx.beginPath();
@@ -887,7 +1041,6 @@ class Tank {
             ctx.restore();
         }
 
-        // --- RESTORED: Tempest Shield Render ---
         if (this.config.id === 'tempest' && this.tempestShieldHp > 0) {
             ctx.save();
             let hpRatio = Math.min(1, this.tempestShieldHp / 30); 
@@ -932,8 +1085,9 @@ class Tank {
             ctx.shadowBlur = 15; ctx.shadowColor = '#ff4500'; ctx.setLineDash([10, 10]); ctx.lineDashOffset = -Date.now() / 20; ctx.stroke(); ctx.restore();
         }
 
-        if ((this.config.id === 'destroyer' || this.config.id === 'abyss') && this.destroAiming) {
-            let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : 'rgba(255, 0, 0, 0.1)'; let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : 'rgba(255, 0, 0, 0.6)';
+        if ((this.config.id === 'destroyer' || this.config.id === 'abyss' || this.config.id === 'blackout') && this.destroAiming) {
+            let aimColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.1)' : (this.config.id === 'blackout' ? 'rgba(51, 255, 51, 0.1)' : 'rgba(255, 0, 0, 0.1)');
+            let strokeColor = this.config.id === 'abyss' ? 'rgba(74, 0, 128, 0.6)' : (this.config.id === 'blackout' ? 'rgba(51, 255, 51, 0.6)' : 'rgba(255, 0, 0, 0.6)');
             ctx.beginPath(); ctx.arc(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist, 80, 0, Math.PI*2);
             ctx.fillStyle = aimColor; ctx.fill(); ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke();
             ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x + Math.cos(this.angle) * this.destroAimDist, this.y + Math.sin(this.angle) * this.destroAimDist);
