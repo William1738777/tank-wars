@@ -98,12 +98,12 @@ const tanksData = [
     { id: 'tempest', name: 'TEMPEST', img: images.tempest, color: '#aaffff', desc: 'Normal [C | \']: Wind Shot Dash (Alternates Shoot/Dash)<br>Skill 1 [X | ;]: Typhoon\'s Embrace (Consumes 3 Marks, Shields, Trap)<br>Skill 2 [Z | L]: Windcutter (Slow Converging Crescents)', maxHp: 60, speedMod: 1.45 },
     { id: 'blackout', name: 'BLACKOUT', img: images.blackout, color: '#33ff33', desc: 'Normal [C | \']: Snipe (High speed, random dmg, disrupts aim)<br>Skill 1 [X | ;]: Teleport Anchor (Teleport resets C. Hold to clear)<br>Skill 2 [Z | L]: Mark Trap (Hold to aim, triggers on step)' },
     
-    // --- RAID MODE UNITS ---
-    { id: 'usf_grizzly', name: 'USF GRIZZLY', img: images.usfGrizzly, color: '#33aa33', desc: 'Allied Frontline', maxHp: 100 },
-    { id: 'snow_grizzly', name: 'SNOW GRIZZLY', img: images.snowGrizzly, color: '#aaddff', desc: 'Enemy Support (No Heavy Missile)', maxHp: 100, aiNoZ: true },
-    { id: 'snow_pyro', name: 'SNOW PYRO', img: images.snowPyro, color: '#ff4444', desc: 'Enemy Rusher', maxHp: 100 },
-    { id: 'facility_turret', name: 'HEAVY TURRET', img: images.turret, color: '#aaaaaa', desc: 'Stationary Defense', maxHp: 1000, speedMod: 0 },
-    { id: 'small_turret', name: 'LIGHT TURRET', img: images.smallTurret, color: '#888888', desc: 'Stationary Defense', maxHp: 350, speedMod: 0 }
+    // --- RAID MODE UNITS (Set to npcOnly so they don't appear in select screen) ---
+    { id: 'usf_grizzly', name: 'USF GRIZZLY', img: images.usfGrizzly, color: '#33aa33', desc: 'Allied Frontline', maxHp: 100, npcOnly: true },
+    { id: 'snow_grizzly', name: 'SNOW GRIZZLY', img: images.snowGrizzly, color: '#aaddff', desc: 'Enemy Support (No Heavy Missile)', maxHp: 100, aiNoZ: true, npcOnly: true },
+    { id: 'snow_pyro', name: 'SNOW PYRO', img: images.snowPyro, color: '#ff4444', desc: 'Enemy Rusher', maxHp: 100, npcOnly: true },
+    { id: 'facility_turret', name: 'HEAVY TURRET', img: images.turret, color: '#aaaaaa', desc: 'Stationary Defense', maxHp: 1000, speedMod: 0, npcOnly: true },
+    { id: 'small_turret', name: 'LIGHT TURRET', img: images.smallTurret, color: '#888888', desc: 'Stationary Defense', maxHp: 350, speedMod: 0, npcOnly: true }
 ];
 
 // --- AUDIO ASSETS ---
