@@ -16,13 +16,15 @@ class RaidManager {
 
         // 1. Spawn USF Grizzlies (Allies - Team 0)
         let usfConfig = tanksData.find(t => t.id === 'usf_grizzly');
+        const allyDiffs = ['NORMAL', 'HARD', 'HARD_1']; // Randomize behavior so they scatter differently
         for (let i = 0; i < 12; i++) {
             let row = i % 4;
             let col = Math.floor(i / 4);
             let spawnX = 350 + (col * 100);
             let spawnY = 800 + (row * 120);
             
-            let ally = new Tank(100 + i, usfConfig, spawnX, spawnY, 0, {}, true, 'NORMAL');
+            let randomDiff = allyDiffs[Math.floor(Math.random() * allyDiffs.length)];
+            let ally = new Tank(100 + i, usfConfig, spawnX, spawnY, 0, {}, true, randomDiff);
             ally.team = 0; 
             ally.isHolding = true; // Custom state we will add to Tank.js
             players.push(ally);
