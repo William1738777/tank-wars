@@ -19,8 +19,8 @@ let aiDifficulty = 'NORMAL';
 
 // --- NEW: Camera and Map Dimension Variables ---
 let camera = { x: 0, y: 0 };
-var mapW = canvas.width; // Changed to var to fix the scope crash
-var mapH = canvas.height; // Changed to var to fix the scope crash
+var mapW = canvas.width; 
+var mapH = canvas.height; 
 
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
@@ -104,9 +104,8 @@ function startGame() {
         mapH = 2000;
         
         // Spawn Player 1
-        players = [
-            new Tank(1, tanksData[p1Selection], 200, mapH / 2, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false)
-        ];
+        let p1 = new Tank(1, tanksData[p1Selection], 200, mapH / 2, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
+        players = [p1];
         
         // Trigger the RaidManager to spawn allies and enemies
         if (typeof raidManager !== 'undefined') {
@@ -118,10 +117,14 @@ function startGame() {
         mapH = canvas.height;
         currentMap = mapsData[selectedMapIndex];
         
-        players = [
-            new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false),
-            new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL')
-        ];
+        // Explicitly declare teams to separate Player 1 and Player 2/CPU
+        let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
+        p1.team = 1;
+        
+        let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL');
+        p2.team = 2;
+        
+        players = [p1, p2];
     }
     
     gameState = 'PLAYING'; updateHUD();
@@ -650,7 +653,8 @@ function update() {
 
         players.forEach((tank, tIndex) => {
             let shooter = players.find(p => p.owner === pA.owner);
-            let isEnemy = !shooter || shooter.team !== tank.team;
+            // FAILSAFE ADDED HERE:
+            let isEnemy = !shooter || shooter.team === null || tank.team === null || shooter.team !== tank.team;
 
             if (pA.owner !== tank.owner && isEnemy && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
                 if (tank.config.id === 'phantom' && tank.isGhost) return;
