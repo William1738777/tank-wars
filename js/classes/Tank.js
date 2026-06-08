@@ -5,6 +5,17 @@ class Tank {
         this.isAI = isAI;
         this.difficulty = difficulty; 
         
+        // --- FIXED: ISOLATED AI CONTROLLERS ---
+        // Generates unique mock keys so AI inputs do not overwrite each other globally
+        if (!controls || Object.keys(controls).length === 0) {
+            this.controls = {
+                up: `up_${owner}`, down: `down_${owner}`, left: `left_${owner}`, 
+                right: `right_${owner}`, c: `c_${owner}`, x: `x_${owner}`, z: `z_${owner}`
+            };
+        } else {
+            this.controls = controls;
+        }
+        
         // Raid Mode Tracking
         this.team = null; 
         this.isHolding = false;
@@ -16,7 +27,7 @@ class Tank {
         this.radius = 25 * (config.scaleMod || 1); 
         this.scaleMod = config.scaleMod || 1;
         
-        this.controls = controls; this.isDead = false;
+        this.isDead = false;
         this.invulnTimer = 0; this.stunTimer = 0; this.recoil = 0;
         this.dashState = 0; this.dashTimer = 0;
         this.dashAngle = 0; 
@@ -84,6 +95,8 @@ class Tank {
         this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
         this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
     }
+
+// ... (Keep the rest of your Tank.js methods below this point unmodified)
 
     addPoison(dps, durationFrames) { this.poisons.push({ dps: dps, life: durationFrames }); }
 
