@@ -79,8 +79,16 @@ function startMode(mode) {
 }
 
 function cycleTank(playerNum, dir) {
-    if (playerNum === 1 && !p1Ready) p1Selection = (p1Selection + dir + tanksData.length) % tanksData.length;
-    else if (playerNum === 2 && !p2Ready) p2Selection = (p2Selection + dir + tanksData.length) % tanksData.length;
+    if (playerNum === 1 && !p1Ready) {
+        do {
+            p1Selection = (p1Selection + dir + tanksData.length) % tanksData.length;
+        } while (tanksData[p1Selection].npcOnly);
+    }
+    else if (playerNum === 2 && !p2Ready) {
+        do {
+            p2Selection = (p2Selection + dir + tanksData.length) % tanksData.length;
+        } while (tanksData[p2Selection].npcOnly);
+    }
     updateDisplays();
 }
 
