@@ -96,7 +96,7 @@ class Tank {
     think() {
         if (this.isDead || this.stunTimer > 0 || this.dashState === 2) return;
         
-        // --- RAID MODE: FORMATION HOLD LOGIC ---
+        // --- TOTAL COOLDOWN LOCK FOR FRONT-LINE HOLD ---
         if (this.isHolding) {
             keys[this.controls.up] = true; 
             keys[this.controls.down] = false;
@@ -105,7 +105,15 @@ class Tank {
             keys[this.controls.c] = false;
             keys[this.controls.x] = false;
             keys[this.controls.z] = false;
-            return; // Exit think loop entirely so they don't aim or shoot
+            
+            // Hard lock the weapon cycles by forcing cooldowns into the future
+            const freezeTime = Date.now() + 1000;
+            this.cooldowns.c = freezeTime;
+            this.cooldowns.x = freezeTime;
+            this.cooldowns.z = freezeTime;
+            this.burstsLeft = 0;
+            this.flameTimer = 0;
+            return; 
         }
 
         const now = Date.now();
@@ -118,7 +126,7 @@ class Tank {
             if (myOrb) target = myOrb; 
         }
 
-        // --- Dynamic Team Targeting ---
+        // --- EQUALIZED TARGETING: CHOOSE THE ABSOLUTE CLOSEST ENEMY ---
         if (!target) {
             for (let p of players) {
                 if (p.owner !== this.owner && (this.team === null || p.team === null || p.team !== this.team) && !p.isDead && p.invulnTimer <= 0) {
@@ -131,7 +139,7 @@ class Tank {
             }
         }
 
-        if (!target) return; // No valid enemies found
+        if (!target) return; // No valid targets found
 
         let isHitAndRunTank = ['phantom', 'pyro', 'scorpion', 'tempest', 'blackout', 'snow_pyro'].includes(this.config.id);
         let cReady = now >= this.cooldowns.c;
@@ -276,7 +284,6 @@ class Tank {
                     }
                 } else {
                     let desiredDist = 150;
-                    // --- RAID AI OVERRIDES: Pyro Rush & Grizzly Support ---
                     if (this.config.id === 'snow_pyro') desiredDist = 80;
                     if (this.config.id === 'snow_grizzly') desiredDist = 450;
 
@@ -317,7 +324,6 @@ class Tank {
                 if (distToPlayer < 450 && Math.random() < triggerHappy) keys[this.controls.z] = true;
             }
 
-            // --- RAID AI OVERRIDE: Prevent Z Skill Usage ---
             if (this.config.aiNoZ) keys[this.controls.z] = false;
         }
     }
