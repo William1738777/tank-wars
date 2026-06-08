@@ -184,8 +184,9 @@ class Projectile {
         } else if (this.type === 'destro_rocket' || this.type === 'blackout_strike') {
             createKaboom(this.x, this.y, 1.5);
             players.forEach(tank => {
-                // Ignore teammates
-                if (tank.owner !== this.owner && tank.team !== shooterTeam && !tank.isDead && tank.invulnTimer <= 0) {
+                // Modified condition to prevent zero splash damage in standard 1v1/Arcade configurations
+                let isEnemySplash = shooterTeam === null || tank.team === null || tank.team !== shooterTeam;
+                if (tank.owner !== this.owner && isEnemySplash && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 60) {
                         tank.hp -= this.type === 'blackout_strike' ? 30 : 12;
                         tank.stunTimer = Math.max(tank.stunTimer, 15);
@@ -222,8 +223,8 @@ class Projectile {
             if (this.type === 'phantom_bounce') createKaboom(this.x, this.y, 1.0);
         } else if (this.type === 'abyss_orb_throw') {
             players.forEach(tank => {
-                // Ignore teammates
-                if (tank.owner !== this.owner && tank.team !== shooterTeam && !tank.isDead && tank.invulnTimer <= 0) {
+                let isEnemySplash = shooterTeam === null || tank.team === null || tank.team !== shooterTeam;
+                if (tank.owner !== this.owner && isEnemySplash && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 75) {
                         tank.hp -= 3;
                         tank.isSlowed = true;
@@ -256,8 +257,8 @@ class Projectile {
         }
 
         players.forEach(tank => {
-            // Ignore teammates
-            if (tank.owner !== this.owner && tank.team !== shooterTeam && !tank.isDead && tank.invulnTimer <= 0) {
+            let isEnemySplash = shooterTeam === null || tank.team === null || tank.team !== shooterTeam;
+            if (tank.owner !== this.owner && isEnemySplash && !tank.isDead && tank.invulnTimer <= 0) {
                 if (Math.hypot(this.x - tank.x, this.y - tank.y) < tank.radius + this.radius) {
                     if (shooter && shooter.config.id === 'destroyer' && this.type === 'bullet') {
                         shooter.cooldowns.z -= 1000;
