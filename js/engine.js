@@ -105,6 +105,7 @@ function startGame() {
         
         // Spawn Player 1
         let p1 = new Tank(1, tanksData[p1Selection], 200, mapH / 2, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
+        p1.team = 0; // CRITICAL: Assign player to the USF Allied Team!
         players = [p1];
         
         // Trigger the RaidManager to spawn allies and enemies
@@ -239,6 +240,22 @@ function update() {
     // Allow RaidManager to process respawns and ally release logic
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
         raidManager.update();
+        
+        // --- NEW: Global Vanguard Wake-Up on Damage ---
+        // If an enemy lands a shot on a holding ally before the player moves, break formation!
+        if (!raidManager.alliesReleased) {
+            let vanguardHit = players.some(p => p.team === 0 && p.hp < p.maxHp);
+            if (vanguardHit) {
+                raidManager.alliesReleased = true;
+                players.forEach(p => { if (p.team === 0) p.isHolding = false; });
+                
+                // Add a cool dramatic text when they scatter
+                let p1 = players.find(p => p.owner === 1);
+                let cx = p1 ? p1.x : camera.x + canvas.width/2;
+                let cy = p1 ? p1.y - 100 : camera.y + 100;
+                floatingTexts.push({x: cx, y: cy, text: "AMBUSH! VANGUARD ENGAGING!", life: 120, color: '#00ff66', fontSize: '24px'});
+            }
+        }
     }
 
     for (let i = 0; i < players.length; i++) {
@@ -1095,3 +1112,5 @@ function draw() {
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
+
+}
