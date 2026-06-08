@@ -109,7 +109,7 @@ class Tank {
         // --- NEW: Dynamic Team Targeting ---
         if (!target) {
             for (let p of players) {
-                if (p.owner !== this.owner && p.team !== this.team && !p.isDead && p.invulnTimer <= 0) {
+                if (p.owner !== this.owner && (this.team === null || p.team === null || p.team !== this.team) && !p.isDead && p.invulnTimer <= 0) {
                     let d = Math.hypot(p.x - this.x, p.y - this.y);
                     if (d < closestDist) {
                         closestDist = d;
@@ -322,7 +322,7 @@ class Tank {
             this.redZoneActive = false;
             players.forEach(p => {
                 // --- NEW: Team Check to avoid locking onto allies ---
-                if (p.owner !== this.owner && p.team !== this.team && !p.isDead) {
+                if (p.owner !== this.owner && (this.team === null || p.team === null || p.team !== this.team) && !p.isDead) {
                     let d = Math.hypot(this.x - p.x, this.y - p.y);
                     if (d <= 350) {
                         this.redZoneActive = true;
@@ -340,7 +340,7 @@ class Tank {
                     if (distToProj <= 250) {
                         let enemyTank = players.find(p => p.owner === proj.owner);
                         // --- NEW: Discard friendly projectiles from interception ---
-                        if (enemyTank && enemyTank.team === this.team) continue;
+                        if (enemyTank && enemyTank.team !== null && this.team !== null && enemyTank.team === this.team) continue;
 
                         let enemyDist = enemyTank ? Math.hypot(this.x - enemyTank.x, this.y - enemyTank.y) : Infinity;
                         
@@ -395,7 +395,7 @@ class Tank {
             
             players.forEach(enemy => {
                 // --- NEW: Team Check for friendly fire ---
-                if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && enemy.invulnTimer <= 0) {
+                if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && enemy.invulnTimer <= 0) {
                     hitboxes.forEach((hb, index) => {
                         if (Math.hypot(enemy.x - hb.x, enemy.y - hb.y) < enemy.radius + 20) {
                             if (now > this.tempestOrbitalCooldowns[index]) {
@@ -475,7 +475,7 @@ class Tank {
             if (h.owner !== this.owner && Math.hypot(this.x - h.x, this.y - h.y) < this.radius + h.radius) {
                 // Determine hazard owner team to prevent friendly hazard damage
                 let hOwner = players.find(p => p.owner === h.owner);
-                if (hOwner && hOwner.team === this.team) return;
+                if (hOwner && hOwner.team !== null && this.team !== null && hOwner.team === this.team) return;
 
                 if (h.type === 'poison_pool') { this.hp -= 0.5 / 60; this.isSlowed = true; } 
                 else if (h.type === 'seraph_aoe') {
@@ -522,7 +522,7 @@ class Tank {
                 
                 players.forEach(enemy => {
                     // --- NEW: Team friendly fire check ---
-                    if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && enemy.invulnTimer <= 0) {
+                    if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius + 45) {
                             let shieldDmg = 3 / 60; enemy.hp -= shieldDmg; 
                             if (typeof recordDamage === 'function') recordDamage(this.owner, shieldDmg); 
@@ -544,7 +544,7 @@ class Tank {
             }
             players.forEach(enemy => {
                 // --- NEW: Team friendly fire check ---
-                if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && enemy.invulnTimer <= 0) {
+                if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && enemy.invulnTimer <= 0) {
                     let dx = enemy.x - tip.x; let dy = enemy.y - tip.y;
                     if (Math.hypot(dx, dy) < 100) { 
                         let angleToEnemy = Math.atan2(dy, dx);
@@ -586,7 +586,7 @@ class Tank {
                 }
                 players.forEach(enemy => {
                     // --- NEW: Team friendly fire check ---
-                    if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && enemy.invulnTimer <= 0) {
+                    if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (distToSegment({x: enemy.x, y: enemy.y}, tip, {x: endX, y: endY}) < enemy.radius + 15) { 
                             if (frameCount % 30 === 0) { 
                                 enemy.hp -= 2.0; 
@@ -632,7 +632,7 @@ class Tank {
             if (frameCount % 3 === 0) { hazards.push({ owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, radius: 30, life: 300, maxLife: 300 }); }
             players.forEach(enemy => {
                 // --- NEW: Team friendly fire check ---
-                if (enemy.owner !== this.owner && enemy.team !== this.team && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
+                if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
                     if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
                         enemy.hp -= 15; this.ghostHitTanks.push(enemy.owner);
                         if (typeof recordDamage === 'function') recordDamage(this.owner, 15, false, true); 
