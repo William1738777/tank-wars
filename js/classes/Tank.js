@@ -3,14 +3,12 @@ class Tank {
         this.owner = owner; this.config = config; 
         this.x = x; this.y = y; this.angle = angle; 
         
-        // --- FIXED: Hard anchor for immovable turrets ---
         this.startX = x;
         this.startY = y;
 
         this.isAI = isAI;
         this.difficulty = difficulty; 
         
-        // Generates unique mock keys so AI inputs do not overwrite each other globally
         if (!controls || Object.keys(controls).length === 0) {
             this.controls = {
                 up: `up_${owner}`, down: `down_${owner}`, left: `left_${owner}`, 
@@ -20,7 +18,6 @@ class Tank {
             this.controls = controls;
         }
         
-        // Raid Mode Tracking
         this.team = null; 
         this.isHolding = false;
 
@@ -45,7 +42,6 @@ class Tank {
         this.zHeight = 0;
         this.zRotation = 0;
 
-        // Tempest Internal Trackers
         this.tempestStacks = 0; 
         this.tempestShieldHp = 0; 
         this.tempestShieldTimer = 0; 
@@ -57,7 +53,6 @@ class Tank {
         this.tempestCSpdStacks = 0;
         this.tempestCSpdTimer = 0;
 
-        // Blackout Internal Trackers
         this.blackoutAnchor = null;
         this.blackoutLasers = [];
         this.xHoldTimer = 0;
@@ -67,7 +62,6 @@ class Tank {
         this.greenFlareTimer = 0;
         this.decloakTimer = 0;
 
-        // Match Statistics Tracker
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
 
         this.maxCooldowns = { 
@@ -78,7 +72,6 @@ class Tank {
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
         
-        // Turret Attack Tracking
         this.turretBurstCount = 0;
         this.turretBurstTimer = 0;
 
@@ -116,6 +109,7 @@ class Tank {
     think() {
         if (this.isDead || this.stunTimer > 0 || this.dashState === 2) return;
         
+        // --- FIXED: VANGUARD AVOIDANCE SYSTEM ---
         if (this.isHolding) {
             keys[this.controls.up] = true; 
             keys[this.controls.down] = false;
@@ -131,6 +125,31 @@ class Tank {
             this.cooldowns.z = freezeTime;
             this.burstsLeft = 0;
             this.flameTimer = 0;
+
+            // Radar feeler to steer around boulders while holding formation
+            let sensorDist = 100;
+            let lookAheadX = this.x + Math.cos(this.angle) * sensorDist; 
+            let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
+            let obstacleAhead = false;
+
+            for (let w of currentMap.walls) {
+                if (lookAheadX > w.x - 30 && lookAheadX < w.x + w.w + 30 && lookAheadY > w.y - 30 && lookAheadY < w.y + w.h + 30) obstacleAhead = true;
+            }
+            for (let r of currentMap.rocks) {
+                if (Math.hypot(lookAheadX - r.x, lookAheadY - r.y) < r.r + 30) obstacleAhead = true;
+            }
+
+            if (obstacleAhead) {
+                // Steer left to slide around the rock
+                keys[this.controls.left] = true;
+            } else {
+                // Auto-correct back to facing East (Angle 0)
+                let angleDiff = 0 - this.angle;
+                angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+                if (angleDiff > 0.1) keys[this.controls.right] = true;
+                else if (angleDiff < -0.1) keys[this.controls.left] = true;
+            }
+
             return; 
         }
 
@@ -354,7 +373,6 @@ class Tank {
         
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
-        // --- FIXED: Hard anchor system to ensure Turrets never move ---
         if (this.config.speedMod === 0) {
             this.x = this.startX;
             this.y = this.startY;
@@ -363,7 +381,6 @@ class Tank {
             this.kbTimer = 0;
         }
 
-        // Custom Turret Fire Handling
         if (this.config.id === 'facility_turret' && this.turretBurstCount > 0) {
             this.turretBurstTimer--;
             if (this.turretBurstTimer <= 0) {
@@ -735,7 +752,6 @@ class Tank {
         } else if (this.dashState === 2) {
             this.x += Math.cos(this.angle) * currentSpeed; this.y += Math.sin(this.angle) * currentSpeed;
         } else if (this.config.speedMod === 0 && !this.isDead && this.stunTimer <= 0) {
-            // Turrets can still aim left and right without moving
             if (keys[this.controls.left]) this.angle -= this.rotSpeed;
             if (keys[this.controls.right]) this.angle += this.rotSpeed;
         }
@@ -1331,6 +1347,12 @@ class Tank {
             ctx.filter = `contrast(${100 + glitchProgress * 200}%) brightness(${100 + glitchProgress * 100}%) blur(${glitchProgress * 2}px) hue-rotate(${Math.random() * 90}deg)`;
         } else if (this.zHeight > 0) {
             ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
+        }
+
+        // --- FIXED: Turret image visual correction ---
+        if (this.config.id === 'small_turret') {
+            // The TurretSmall.png points left, so we flip it 180 degrees visually
+            ctx.rotate(Math.PI);
         }
 
         ctx.drawImage(imgToDraw, -w / 2, -h / 2, w, h); 
