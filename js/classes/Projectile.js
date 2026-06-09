@@ -13,7 +13,7 @@ class Projectile {
         
         this.life = type === 'tempest_z' ? 480 : (type === 'missile' ? 70 : (type === 'arrow' ? 45 : 999)); 
         this.dead = false; this.isFifth = false; 
-        this.projectileHp = type === 'mg' ? 1 : 3;
+        this.projectileHp = (type === 'mg' || type === 'light_turret_shot') ? 1 : 3;
         this.castId = castId; 
         this.hasBounced = false; 
     }
@@ -94,7 +94,7 @@ class Projectile {
                 let interpY = this.lastY + (this.y - this.lastY) * (i / steps);
                 particles.push({ x: interpX, y: interpY, vx: 0, vy: 0, life: 0.8, size: 2, color: 'rgba(150, 150, 150, 0.6)' });
             }
-        } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && Math.random() > 0.2) {
+        } else if (this.type !== 'bullet' && this.type !== 'arrow' && this.type !== 'mg' && this.type !== 'light_turret_shot' && Math.random() > 0.2) {
             createParticles(this.x, this.y, 1, 'rgba(150, 150, 150, 0.7)', 4, 0.4);
         }
 
@@ -106,7 +106,8 @@ class Projectile {
             if (this.y - this.radius < 0) { this.y = this.radius; this.vy *= -1; collided = true; } 
             else if (this.y + this.radius > mapH) { this.y = mapH - this.radius; this.vy *= -1; collided = true; }
 
-            if (!collided) {
+            // Ghost through walls for turrets
+            if (!collided && this.type !== 'heavy_turret_shot' && this.type !== 'light_turret_shot') {
                 for (let w of currentMap.walls) {
                     if (this.x + this.radius > w.x && this.x - this.radius < w.x + w.w &&
                         this.y + this.radius > w.y && this.y - this.radius < w.y + w.h) {
@@ -120,7 +121,8 @@ class Projectile {
                 }
             }
             
-            if (!collided) {
+            // Ghost through rocks for turrets
+            if (!collided && this.type !== 'heavy_turret_shot' && this.type !== 'light_turret_shot') {
                 for (let r of currentMap.rocks) {
                     let dx = this.x - r.x; let dy = this.y - r.y;
                     let dist = Math.hypot(dx, dy);
@@ -158,7 +160,6 @@ class Projectile {
     triggerExplosion() {
         this.dead = true;
         
-        // --- NEW: Identify the shooter and their team to prevent friendly-fire AoE ---
         let shooter = players.find(p => p.owner === this.owner);
         let shooterTeam = shooter ? shooter.team : null;
 
@@ -169,7 +170,7 @@ class Projectile {
             }
         }
 
-        if (this.type === 'mg' || this.type === 'bullet') {
+        if (this.type === 'mg' || this.type === 'bullet' || this.type === 'light_turret_shot') {
             createParticles(this.x, this.y, 4, '#fff', 1, 0.3);
         } else if (this.type === 'toxic_bullet' || this.type === 'arrow') {
             createParticles(this.x, this.y, 8, '#00ff66', 1.5, 0.5); 
@@ -184,7 +185,6 @@ class Projectile {
         } else if (this.type === 'destro_rocket' || this.type === 'blackout_strike') {
             createKaboom(this.x, this.y, 1.5);
             players.forEach(tank => {
-                // Modified condition to prevent zero splash damage in standard 1v1/Arcade configurations
                 let isEnemySplash = shooterTeam === null || tank.team === null || tank.team !== shooterTeam;
                 if (tank.owner !== this.owner && isEnemySplash && !tank.isDead && tank.invulnTimer <= 0) {
                     if (Math.hypot(tank.x - this.x, tank.y - this.y) < tank.radius + 60) {
@@ -246,7 +246,7 @@ class Projectile {
         } else if (this.type.startsWith('tempest_')) {
             createParticles(this.x, this.y, 8, '#aaffff', 1.5, 0.5);
         } else {
-            createKaboom(this.x, this.y, this.type === 'missile' ? 1.5 : 1.0);
+            createKaboom(this.x, this.y, this.type === 'missile' || this.type === 'heavy_turret_shot' ? 1.5 : 1.0);
         }
         
         if (this.type === 'missile') {
@@ -274,7 +274,7 @@ class Projectile {
         if (this.type === 'missile') {
             const w = images.missile.width * 0.15; const h = images.missile.height * 0.15;
             ctx.shadowBlur = 15; ctx.shadowColor = this.color; ctx.drawImage(images.missile, -w/2, -h/2, w, h);
-        } else if (this.type === 'swarm' || this.type === 'rocket') {
+        } else if (this.type === 'swarm' || this.type === 'rocket' || this.type === 'heavy_turret_shot') {
             const scale = 0.07; const w = images.cluster.width * scale; const h = images.cluster.height * scale;
             ctx.shadowBlur = 10; ctx.shadowColor = this.color; ctx.drawImage(images.cluster, -w/2, -h/2, w, h);
         } else if (this.type === 'arrow') {
@@ -284,7 +284,7 @@ class Projectile {
             ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
             ctx.fillStyle = '#ff6600'; ctx.shadowBlur = 15; ctx.shadowColor = '#ff3300'; ctx.fill();
             ctx.beginPath(); ctx.arc(0, 0, this.radius * 0.6, 0, Math.PI*2); ctx.fillStyle = '#ffeeaa'; ctx.fill();
-        } else if (this.type === 'mg') {
+        } else if (this.type === 'mg' || this.type === 'light_turret_shot') {
             ctx.beginPath(); ctx.rect(-3, -1, 6, 2); 
             ctx.fillStyle = this.color; ctx.shadowBlur = 5; ctx.shadowColor = this.color; ctx.fill();
         } else if (this.type === 'seraph_c' && images.lightning.complete) {
