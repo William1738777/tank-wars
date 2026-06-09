@@ -5,7 +5,6 @@ class Tank {
         this.isAI = isAI;
         this.difficulty = difficulty; 
         
-        // --- FIXED: ISOLATED AI CONTROLLERS ---
         // Generates unique mock keys so AI inputs do not overwrite each other globally
         if (!controls || Object.keys(controls).length === 0) {
             this.controls = {
@@ -67,12 +66,17 @@ class Tank {
         this.matchStats = { totalDamage: 0, bouncedDamage: 0, xSkillDamage: 0, shieldGenerated: 0 };
 
         this.maxCooldowns = { 
-            c: config.id === 'blackout' ? 3000 : (config.id === 'tempest' ? 1000 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500))))), 
+            c: config.id === 'facility_turret' ? 4000 : (config.id === 'small_turret' ? 500 : (config.id === 'blackout' ? 3000 : (config.id === 'tempest' ? 1000 : (config.id === 'abyss' ? 150 : (config.id === 'phantom' ? 2500 : (config.id === 'dreadnaught' ? 2000 : (config.id === 'seraph' ? 1750 : 1500))))))), 
             x: config.id === 'blackout' ? 12000 : (config.id === 'tempest' ? 300 : (config.id === 'abyss' ? 12000 : (config.id === 'phantom' ? 9000 : (config.id === 'seraph' ? 14000 : (config.id === 'scorpion' || config.id === 'destroyer' ? 9000 : (config.id === 'orion' ? 16000 : 8000)))))), 
             z: config.id === 'blackout' ? 8000 : (config.id === 'tempest' ? 24000 : (config.id === 'abyss' ? 10000 : (config.id === 'phantom' ? 14000 : (config.id === 'destroyer' ? 16000 : (config.id === 'pyro' ? 12000 : (config.id === 'orion' ? 18000 : 10000))))))
         };
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
+        
+        // --- NEW: Turret Attack Tracking ---
+        this.turretBurstCount = 0;
+        this.turretBurstTimer = 0;
+
         this.hookState = 'ready'; this.hookTarget = null; this.hookTimer = 0; this.activeArrow = null; 
         this.mgMaxAmmo = config.id === 'dreadnaught' ? 150 : 100; this.mgAmmo = this.mgMaxAmmo; this.mgReloading = false;
 
@@ -95,8 +99,6 @@ class Tank {
         this.energy = 0; this.zReady = false; this.zFiring = false; this.zChargeTimer = 0; this.cShots = 0;
         this.destroAiming = false; this.destroAimDist = 100; this.destroLocked = false;
     }
-
-// ... (Keep the rest of your Tank.js methods below this point unmodified)
 
     addPoison(dps, durationFrames) { this.poisons.push({ dps: dps, life: durationFrames }); }
 
@@ -350,6 +352,22 @@ class Tank {
         }
         
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
+
+        // --- NEW: Custom Turret Fire Handling ---
+        if (this.config.id === 'facility_turret' && this.turretBurstCount > 0) {
+            this.turretBurstTimer--;
+            if (this.turretBurstTimer <= 0) {
+                const tip = this.getTip();
+                playSound(sfx.cluster); 
+                createMuzzleFlash(tip.x, tip.y, this.angle, 3);
+                projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 8, 25, '#ff6600', 'heavy_turret_shot', 0));
+                this.turretBurstCount--;
+                
+                if (this.turretBurstCount > 0) {
+                    this.turretBurstTimer = 10; // Wait 10 frames before the next shot
+                }
+            }
+        }
 
         if (this.config.id === 'blackout' && !this.isDead && this.zHeight === 0) {
             if (this.blackoutLaserTimer > 0) this.blackoutLaserTimer--;
@@ -888,6 +906,20 @@ class Tank {
         this.cooldowns.c = now + this.maxCooldowns.c; 
         this.recoil = 4; const tip = this.getTip();
         
+        // --- NEW: Custom Turret Attack Logic ---
+        if (this.config.id === 'facility_turret') {
+            this.turretBurstCount = 2; // Sets up 2 MORE shots to follow the first one
+            this.turretBurstTimer = 10;
+            playSound(sfx.cluster); 
+            createMuzzleFlash(tip.x, tip.y, this.angle, 3);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 14, 8, 25, '#ff6600', 'heavy_turret_shot', 0));
+            return;
+        } else if (this.config.id === 'small_turret') {
+            createMuzzleFlash(tip.x, tip.y, this.angle, 1.5);
+            projectiles.push(new Projectile(this.owner, tip.x, tip.y, this.angle, 16, 2, 2, '#ffcc00', 'light_turret_shot', 0));
+            return;
+        }
+
         if (this.config.id === 'scorpion') { this.burstsLeft = 3; this.burstTimer = 0; } 
         else if (this.config.id === 'dreadnaught') {
             createMuzzleFlash(tip.x, tip.y, this.angle, 2.0);
