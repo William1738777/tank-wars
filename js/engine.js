@@ -137,7 +137,7 @@ function startGame() {
 function handleDeath(loserOwnerId) {
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
         if (loserOwnerId === 1) {
-            // --- NEW: Player Revive Logic ---
+            // --- Player Revive Logic ---
             if (playerLives > 0) {
                 playerLives--;
                 let p1 = players.find(p => p.owner === 1);
@@ -267,15 +267,13 @@ function update() {
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
         raidManager.update();
         
-        // --- NEW: Global Vanguard Wake-Up on Damage ---
-        // If an enemy lands a shot on a holding ally before the player moves, break formation!
+        // Global Vanguard Wake-Up on Damage
         if (!raidManager.alliesReleased) {
             let vanguardHit = players.some(p => p.team === 0 && p.hp < p.maxHp);
             if (vanguardHit) {
                 raidManager.alliesReleased = true;
                 players.forEach(p => { if (p.team === 0) p.isHolding = false; });
                 
-                // Add a cool dramatic text when they scatter
                 let p1 = players.find(p => p.owner === 1);
                 let cx = p1 ? p1.x : camera.x + canvas.width/2;
                 let cy = p1 ? p1.y - 100 : camera.y + 100;
@@ -284,6 +282,7 @@ function update() {
         }
     }
 
+    // --- FIXED: Immovable collision logic for Turrets ---
     for (let i = 0; i < players.length; i++) {
         for (let j = i + 1; j < players.length; j++) {
             let p1 = players[i]; let p2 = players[j];
@@ -292,8 +291,17 @@ function update() {
                 let dist = Math.hypot(dx, dy); let minDist = p1.radius + p2.radius;
                 if (dist < minDist) {
                     let overlap = minDist - dist; let nx = dx / dist; let ny = dy / dist;
-                    p1.x -= nx * (overlap / 2); p1.y -= ny * (overlap / 2);
-                    p2.x += nx * (overlap / 2); p2.y += ny * (overlap / 2);
+                    let p1Movable = p1.config.speedMod !== 0;
+                    let p2Movable = p2.config.speedMod !== 0;
+
+                    if (p1Movable && p2Movable) {
+                        p1.x -= nx * (overlap / 2); p1.y -= ny * (overlap / 2);
+                        p2.x += nx * (overlap / 2); p2.y += ny * (overlap / 2);
+                    } else if (p1Movable && !p2Movable) {
+                        p1.x -= nx * overlap; p1.y -= ny * overlap;
+                    } else if (!p1Movable && p2Movable) {
+                        p2.x += nx * overlap; p2.y += ny * overlap;
+                    }
                 }
             }
         }
@@ -316,39 +324,50 @@ function update() {
         
         if (h.type === 'whirlwind_trap') {
             if (h.targetTank && !h.targetTank.isDead) {
-                if (h.startX === undefined) { 
-                    h.startX = h.targetTank.x; 
-                    h.startY = h.targetTank.y; 
-                }
-                h.x = h.startX;
-                h.y = h.startY;
+                // --- FIXED: Do not lift immovable turrets ---
+                if (h.targetTank.config.speedMod === 0) {
+                    if (h.life % 30 === 0) {
+                        let progress = 1 - (h.life / h.maxLife); 
+                        let dmg = 0.5 + (1.3 * progress); 
+                        h.targetTank.hp -= dmg;
+                        if (typeof recordDamage === 'function') recordDamage(h.owner, dmg);
+                        floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
+                    }
+                } else {
+                    if (h.startX === undefined) { 
+                        h.startX = h.targetTank.x; 
+                        h.startY = h.targetTank.y; 
+                    }
+                    h.x = h.startX;
+                    h.y = h.startY;
 
-                let age = h.maxLife - h.life;
-                
-                h.targetTank.inTornado = true;
-                h.targetTank.zHeightActive = true;
-                h.targetTank.knockupSource = 'tempest';
-                
-                h.targetTank.x = h.startX + Math.cos(age * 0.25) * 35;
-                h.targetTank.y = h.startY + Math.sin(age * 0.25) * 35;
-                h.targetTank.zHeight = 50 + Math.sin(age * 0.2) * 40; 
-                
-                h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); 
-                h.targetTank.kbTimer = 0; 
-                h.targetTank.zRotation += 0.3; 
-                
-                if (h.life % 30 === 0) {
-                    let progress = 1 - (h.life / h.maxLife); 
-                    let dmg = 0.5 + (1.3 * progress); 
-                    h.targetTank.hp -= dmg;
-                    if (typeof recordDamage === 'function') recordDamage(h.owner, dmg);
-                    floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
-                }
-                
-                if (h.life <= 1) {
-                    h.targetTank.inTornado = false;
-                    h.targetTank.zHeightActive = false;
-                    h.targetTank.zHeight = 0;
+                    let age = h.maxLife - h.life;
+                    
+                    h.targetTank.inTornado = true;
+                    h.targetTank.zHeightActive = true;
+                    h.targetTank.knockupSource = 'tempest';
+                    
+                    h.targetTank.x = h.startX + Math.cos(age * 0.25) * 35;
+                    h.targetTank.y = h.startY + Math.sin(age * 0.25) * 35;
+                    h.targetTank.zHeight = 50 + Math.sin(age * 0.2) * 40; 
+                    
+                    h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); 
+                    h.targetTank.kbTimer = 0; 
+                    h.targetTank.zRotation += 0.3; 
+                    
+                    if (h.life % 30 === 0) {
+                        let progress = 1 - (h.life / h.maxLife); 
+                        let dmg = 0.5 + (1.3 * progress); 
+                        h.targetTank.hp -= dmg;
+                        if (typeof recordDamage === 'function') recordDamage(h.owner, dmg);
+                        floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
+                    }
+                    
+                    if (h.life <= 1) {
+                        h.targetTank.inTornado = false;
+                        h.targetTank.zHeightActive = false;
+                        h.targetTank.zHeight = 0;
+                    }
                 }
                 
                 createParticles(h.x + (Math.random()-0.5)*100, h.y + (Math.random()-0.5)*100, 2, '#ffffff', 2, 0.5);
@@ -403,7 +422,10 @@ function update() {
                 if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     let dx = h.x - tank.x; let dy = h.y - tank.y; let dist = Math.hypot(dx, dy);
                     if (dist < h.radius && dist > 0.1) { 
-                        tank.x += (dx / dist) * 2; tank.y += (dy / dist) * 2; 
+                        // --- FIXED: Immovable turrets cannot be sucked by black holes ---
+                        if (tank.config.speedMod !== 0) {
+                            tank.x += (dx / dist) * 2; tank.y += (dy / dist) * 2; 
+                        }
                         let startHp = tank.hp;
                         tank.hp -= 1 / 60; 
                         let damageTaken = startHp - tank.hp;
@@ -466,8 +488,12 @@ function update() {
                         if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                             if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius + 30) {
                                 let startHp = tank.hp;
-                                tank.hp -= 20; let angle = Math.atan2(tank.y - h.y, tank.x - h.x);
-                                tank.kbX = Math.cos(angle) * 15; tank.kbY = Math.sin(angle) * 15; tank.kbTimer = 15; 
+                                tank.hp -= 20; 
+                                // --- FIXED: Turrets ignore explosion knockbacks ---
+                                if (tank.config.speedMod !== 0) {
+                                    let angle = Math.atan2(tank.y - h.y, tank.x - h.x);
+                                    tank.kbX = Math.cos(angle) * 15; tank.kbY = Math.sin(angle) * 15; tank.kbTimer = 15; 
+                                }
                                 tank.stunTimer = 75; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLASTED!", life: 60, color: '#ff3333'});
                                 
                                 let damageTaken = startHp - tank.hp;
@@ -714,27 +740,47 @@ function update() {
                         if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
 
                         if (pA.type === 'firebolt') {
-                            tank.hp -= pA.damage; let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
-                            tank.kbX = Math.cos(angle) * 12; tank.kbY = Math.sin(angle) * 12; tank.kbTimer = 15; tank.fireSlowTimer = 90; 
+                            tank.hp -= pA.damage; 
+                            // --- FIXED: Immovable turrets cannot be knocked back ---
+                            if (tank.config.speedMod !== 0) {
+                                let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
+                                tank.kbX = Math.cos(angle) * 12; tank.kbY = Math.sin(angle) * 12; tank.kbTimer = 15; 
+                            }
+                            tank.fireSlowTimer = 90; 
                         } else if (pA.type === 'toxic_bullet') { tank.hp -= pA.damage; tank.addPoison(0.5, 300); 
                         } else if (pA.type === 'arrow') {
                             tank.hp -= pA.damage; tank.addPoison(1.0, 300); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "HOOKED!", life: 50, color: '#00ff66'});
                             let ownerTank = players.find(p => p.owner === pA.owner);
-                            if (ownerTank) { ownerTank.hookState = 'pulling'; ownerTank.hookTarget = tank; ownerTank.hookTimer = 60; }
+                            // --- FIXED: Scorpion arrows cannot pull immovable turrets ---
+                            if (ownerTank && tank.config.speedMod !== 0) { ownerTank.hookState = 'pulling'; ownerTank.hookTarget = tank; ownerTank.hookTimer = 60; }
                         } else if (pA.type === 'seraph_spark') {
                             tank.hp -= pA.damage; if (Math.random() < 0.10) { tank.stunTimer = Math.max(tank.stunTimer, 30); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ZAPPED!", life: 40, color: '#00ffff'}); }
                         } else if (pA.type === 'destro_missile') {
-                            tank.hp -= pA.damage; tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
+                            tank.hp -= pA.damage; 
+                            // --- FIXED: Immovable turrets cannot be knocked back ---
+                            if (tank.config.speedMod !== 0) {
+                                tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
+                            }
                         } else if (pA.type === 'orion_z_lift') {
-                            tank.hp -= pA.damage; tank.zHeightActive = true; tank.zFrameCounter = 0; tank.zMaxDuration = 150; 
-                            tank.zHeightBaseMax = 160; tank.chronoIntercepted = false; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ANTI-GRAV LIFT!", life: 50, color: '#ff33cc'});
+                            tank.hp -= pA.damage; 
+                            // --- FIXED: Immovable turrets cannot be lifted into the air ---
+                            if (tank.config.speedMod !== 0) {
+                                tank.zHeightActive = true; tank.zFrameCounter = 0; tank.zMaxDuration = 150; 
+                                tank.zHeightBaseMax = 160; tank.chronoIntercepted = false; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ANTI-GRAV LIFT!", life: 50, color: '#ff33cc'});
+                            } else {
+                                floatingTexts.push({x: tank.x, y: tank.y - 40, text: "IMMUNE!", life: 50, color: '#777'});
+                            }
                         } else if (pA.type === 'abyss_z') {
                             tank.hp -= pA.damage;
                             if (pA.hasBounced) { hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 }); playSound(sfx.abyssBlackHole); } 
                             else { tank.isSlowed = true; tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 180); }
                         } else if (pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') {
-                            tank.hp -= pA.damage; let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
-                            tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
+                            tank.hp -= pA.damage; 
+                            // --- FIXED: Immovable turrets cannot be slightly knocked back ---
+                            if (tank.config.speedMod !== 0) {
+                                let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
+                                tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
+                            }
                             if (pA.type === 'abyss_rapid_empowered') { tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1); tank.abyssSlowTimer = 180; }
                         } else if (pA.type === 'tempest_c') {
                             tank.hp -= pA.damage;
@@ -753,7 +799,8 @@ function update() {
                                 shooter.matchStats.shieldGenerated += 10;
                             }
                             
-                            if (!tank.zHeightActive) {
+                            // --- FIXED: Tempest cannot lift immovable turrets ---
+                            if (!tank.zHeightActive && tank.config.speedMod !== 0) {
                                 tank.zHeightActive = true;
                                 tank.zFrameCounter = 0;
                                 tank.zMaxDuration = 30; 
@@ -779,12 +826,14 @@ function update() {
                             tank.hp -= pA.damage;
                             triggerScreenShake(10, 4);
                             
-                            let kbAngle = pA.angle;
-                            tank.kbX = Math.cos(kbAngle) * 14; 
-                            tank.kbY = Math.sin(kbAngle) * 14; 
-                            tank.kbTimer = 15;
-                            
-                            tank.angle = Math.random() * Math.PI * 2;
+                            // --- FIXED: Turrets ignore snipe knockback ---
+                            if (tank.config.speedMod !== 0) {
+                                let kbAngle = pA.angle;
+                                tank.kbX = Math.cos(kbAngle) * 14; 
+                                tank.kbY = Math.sin(kbAngle) * 14; 
+                                tank.kbTimer = 15;
+                                tank.angle = Math.random() * Math.PI * 2;
+                            }
                             floatingTexts.push({ x: tank.x, y: tank.y - 40, text: `SNIPED! (-${Math.round(pA.damage)})`, life: 50, color: '#000000' });
                         } else { 
                             tank.hp -= pA.damage; 
