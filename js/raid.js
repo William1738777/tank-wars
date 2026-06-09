@@ -16,15 +16,13 @@ class RaidManager {
 
         // 1. Spawn USF Grizzlies (Allies - Team 0)
         let usfConfig = tanksData.find(t => t.id === 'usf_grizzly');
-        const allyDiffs = ['NORMAL', 'HARD', 'HARD_1']; // Randomize behavior so they scatter differently
         for (let i = 0; i < 12; i++) {
             let row = i % 4;
             let col = Math.floor(i / 4);
             let spawnX = 350 + (col * 100);
             let spawnY = 800 + (row * 120);
             
-            let randomDiff = allyDiffs[Math.floor(Math.random() * allyDiffs.length)];
-            let ally = new Tank(100 + i, usfConfig, spawnX, spawnY, 0, {}, true, randomDiff);
+            let ally = new Tank(100 + i, usfConfig, spawnX, spawnY, 0, {}, true, 'NORMAL');
             ally.team = 0; 
             ally.isHolding = true; // Custom state we will add to Tank.js
             players.push(ally);
@@ -113,8 +111,8 @@ class RaidManager {
     }
 
     queueRespawn(tank) {
-        // Do not respawn turrets or the main player
-        if (tank.config.speedMod === 0 || tank.owner === 1) return; 
+        // --- FIXED: Do not respawn turrets, the main player, or ANY SNOW TANKS ---
+        if (tank.config.speedMod === 0 || tank.owner === 1 || tank.config.id === 'snow_pyro' || tank.config.id === 'snow_grizzly') return; 
         
         // 5 seconds = 300 frames (assuming 60fps)
         this.respawnQueue.push({
