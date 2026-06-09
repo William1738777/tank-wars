@@ -10,6 +10,9 @@ let selectedMapIndex = 0; let currentMap = mapsData[selectedMapIndex];
 let players = []; let p1Score = 0; let p2Score = 0;
 let projectiles = []; let particles = []; let flashes = []; let hazards = []; let floatingTexts = []; 
 
+// --- NEW: Player Lives Tracker ---
+let playerLives = 3;
+
 // Global visual modifiers
 let screenShakeTimer = 0;
 let screenShakeIntensity = 0;
@@ -96,7 +99,7 @@ function startGame() {
     document.getElementById('hud').style.display = 'flex';
     document.getElementById('p1-skills').style.display = 'flex'; document.getElementById('p2-skills').style.display = 'flex';
     
-    p1Score = 0; p2Score = 0; frameCount = 0;
+    p1Score = 0; p2Score = 0; frameCount = 0; playerLives = 3; 
     projectiles = []; particles = []; flashes = []; hazards = []; floatingTexts = [];
     
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
@@ -134,11 +137,34 @@ function startGame() {
 function handleDeath(loserOwnerId) {
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
         if (loserOwnerId === 1) {
-            // Player Died -> Raid Failed
-            gameState = 'OVER';
-            document.getElementById('victory-title').innerText = `RAID FAILED`;
-            document.getElementById('victory-title').style.color = '#ff3333';
-            setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
+            // --- NEW: Player Revive Logic ---
+            if (playerLives > 0) {
+                playerLives--;
+                let p1 = players.find(p => p.owner === 1);
+                if (p1) {
+                    p1.isDead = false;
+                    p1.hp = p1.maxHp;
+                    p1.x = 200; // Reset to original Raid spawn X
+                    p1.y = mapH / 2; // Reset to original Raid spawn Y
+                    p1.invulnTimer = 180; // 3 seconds of invulnerability
+                    
+                    // Clear all debuffs and active abilities
+                    p1.poisons = []; p1.stunTimer = 0; p1.kbTimer = 0; p1.kbX = 0; p1.kbY = 0;
+                    p1.hookState = 'ready'; p1.dashState = 0; p1.burstsLeft = 0; p1.flameTimer = 0;
+                    p1.mgAmmo = p1.mgMaxAmmo; p1.mgReloading = false; 
+                    p1.energy = 0; p1.zReady = false; p1.zFiring = false; p1.zChargeTimer = 0;
+                    p1.zHeight = 0; p1.zRotation = 0; p1.electrocutedTimer = 0;
+                    
+                    floatingTexts.push({x: p1.x, y: p1.y - 40, text: `SYSTEM REBOOT! (${playerLives} REVIVES LEFT)`, life: 90, color: '#00ff66', fontSize: '20px'});
+                }
+                updateHUD();
+            } else {
+                // Out of lives -> Raid Failed
+                gameState = 'OVER';
+                document.getElementById('victory-title').innerText = `RAID FAILED`;
+                document.getElementById('victory-title').style.color = '#ff3333';
+                setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
+            }
         } else {
             // An AI Died -> Send them to the respawn queue (Turrets ignore this internally)
             let deadTank = players.find(p => p.owner === loserOwnerId);
@@ -1108,6 +1134,17 @@ function draw() {
     ctx.globalAlpha = 1.0;
 
     ctx.restore(); 
+
+    // --- NEW: HUD overlay for Player Lives ---
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && gameState === 'PLAYING') {
+        ctx.fillStyle = '#00ff66';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = '#000000';
+        ctx.fillText(`REVIVES: ${playerLives}`, 20, 90);
+        ctx.shadowBlur = 0;
+    }
 }
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
