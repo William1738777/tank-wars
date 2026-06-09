@@ -2,6 +2,11 @@ class Tank {
     constructor(owner, config, x, y, angle, controls, isAI = false, difficulty = 'NORMAL') {
         this.owner = owner; this.config = config; 
         this.x = x; this.y = y; this.angle = angle; 
+        
+        // --- FIXED: Hard anchor for immovable turrets ---
+        this.startX = x;
+        this.startY = y;
+
         this.isAI = isAI;
         this.difficulty = difficulty; 
         
@@ -73,7 +78,7 @@ class Tank {
         this.cooldowns = { c: 0, x: 0, z: 0 };
         this.flameTimer = 0; this.burstsLeft = 0; this.burstTimer = 0;
         
-        // --- NEW: Turret Attack Tracking ---
+        // Turret Attack Tracking
         this.turretBurstCount = 0;
         this.turretBurstTimer = 0;
 
@@ -111,7 +116,6 @@ class Tank {
     think() {
         if (this.isDead || this.stunTimer > 0 || this.dashState === 2) return;
         
-        // --- TOTAL COOLDOWN LOCK FOR FRONT-LINE HOLD ---
         if (this.isHolding) {
             keys[this.controls.up] = true; 
             keys[this.controls.down] = false;
@@ -121,7 +125,6 @@ class Tank {
             keys[this.controls.x] = false;
             keys[this.controls.z] = false;
             
-            // Hard lock the weapon cycles by forcing cooldowns into the future
             const freezeTime = Date.now() + 1000;
             this.cooldowns.c = freezeTime;
             this.cooldowns.x = freezeTime;
@@ -141,7 +144,6 @@ class Tank {
             if (myOrb) target = myOrb; 
         }
 
-        // --- EQUALIZED TARGETING: CHOOSE THE ABSOLUTE CLOSEST ENEMY ---
         if (!target) {
             for (let p of players) {
                 if (p.owner !== this.owner && (this.team === null || p.team === null || p.team !== this.team) && !p.isDead && p.invulnTimer <= 0) {
@@ -154,7 +156,7 @@ class Tank {
             }
         }
 
-        if (!target) return; // No valid targets found
+        if (!target) return;
 
         let isHitAndRunTank = ['phantom', 'pyro', 'scorpion', 'tempest', 'blackout', 'snow_pyro'].includes(this.config.id);
         let cReady = now >= this.cooldowns.c;
@@ -346,14 +348,22 @@ class Tank {
     update() {
         if (this.isDead) return;
         
-        // --- RAID MODE: BREAK FORMATION ON DAMAGE ---
         if (this.isHolding && this.hp < this.maxHp) {
             this.isHolding = false;
         }
         
         if (this.isAI && players[0] && !players[0].isDead) { this.think(); }
 
-        // --- NEW: Custom Turret Fire Handling ---
+        // --- FIXED: Hard anchor system to ensure Turrets never move ---
+        if (this.config.speedMod === 0) {
+            this.x = this.startX;
+            this.y = this.startY;
+            this.kbX = 0;
+            this.kbY = 0;
+            this.kbTimer = 0;
+        }
+
+        // Custom Turret Fire Handling
         if (this.config.id === 'facility_turret' && this.turretBurstCount > 0) {
             this.turretBurstTimer--;
             if (this.turretBurstTimer <= 0) {
@@ -364,7 +374,7 @@ class Tank {
                 this.turretBurstCount--;
                 
                 if (this.turretBurstCount > 0) {
-                    this.turretBurstTimer = 10; // Wait 10 frames before the next shot
+                    this.turretBurstTimer = 10; 
                 }
             }
         }
@@ -376,7 +386,6 @@ class Tank {
             
             this.redZoneActive = false;
             players.forEach(p => {
-                // Team Check to avoid locking onto allies
                 if (p.owner !== this.owner && (this.team === null || p.team === null || p.team !== this.team) && !p.isDead) {
                     let d = Math.hypot(this.x - p.x, this.y - p.y);
                     if (d <= 350) {
@@ -394,7 +403,6 @@ class Tank {
                     let distToProj = Math.hypot(this.x - proj.x, this.y - proj.y);
                     if (distToProj <= 250) {
                         let enemyTank = players.find(p => p.owner === proj.owner);
-                        // Discard friendly projectiles from interception
                         if (enemyTank && enemyTank.team !== null && this.team !== null && enemyTank.team === this.team) continue;
 
                         let enemyDist = enemyTank ? Math.hypot(this.x - enemyTank.x, this.y - enemyTank.y) : Infinity;
@@ -449,7 +457,6 @@ class Tank {
             }
             
             players.forEach(enemy => {
-                // Team Check for friendly fire
                 if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && enemy.invulnTimer <= 0) {
                     hitboxes.forEach((hb, index) => {
                         if (Math.hypot(enemy.x - hb.x, enemy.y - hb.y) < enemy.radius + 20) {
@@ -528,7 +535,6 @@ class Tank {
         
         hazards.forEach(h => {
             if (h.owner !== this.owner && Math.hypot(this.x - h.x, this.y - h.y) < this.radius + h.radius) {
-                // Determine hazard owner team to prevent friendly hazard damage
                 let hOwner = players.find(p => p.owner === h.owner);
                 if (hOwner && hOwner.team !== null && this.team !== null && hOwner.team === this.team) return;
 
@@ -576,7 +582,6 @@ class Tank {
                 if (this.hookState === 'pulled') this.hookState = 'ready';
                 
                 players.forEach(enemy => {
-                    // Team friendly fire check
                     if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius + 45) {
                             let shieldDmg = 3 / 60; enemy.hp -= shieldDmg; 
@@ -598,7 +603,6 @@ class Tank {
                 }
             }
             players.forEach(enemy => {
-                // Team friendly fire check
                 if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && enemy.invulnTimer <= 0) {
                     let dx = enemy.x - tip.x; let dy = enemy.y - tip.y;
                     if (Math.hypot(dx, dy) < 100) { 
@@ -640,7 +644,6 @@ class Tank {
                     if (hitRock) break; endX = testX; endY = testY;
                 }
                 players.forEach(enemy => {
-                    // Team friendly fire check
                     if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && enemy.invulnTimer <= 0) {
                         if (distToSegment({x: enemy.x, y: enemy.y}, tip, {x: endX, y: endY}) < enemy.radius + 15) { 
                             if (frameCount % 30 === 0) { 
@@ -686,7 +689,6 @@ class Tank {
             currentSpeed = 16; this.dashTimer--;
             if (frameCount % 3 === 0) { hazards.push({ owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, radius: 30, life: 300, maxLife: 300 }); }
             players.forEach(enemy => {
-                // Team friendly fire check
                 if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
                     if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
                         enemy.hp -= 15; this.ghostHitTanks.push(enemy.owner);
@@ -716,7 +718,6 @@ class Tank {
             if (this.dashTimer <= 0) { this.dashState = 0; if (this.config.id === 'pyro') this.flameTimer = 300; }
         }
 
-        // --- Block manual override checks while allowing holding crawl ---
         if (this.dashState !== 2 && this.dashState !== 3 && this.hookState !== 'pulling' && this.stunTimer <= 0 && this.config.speedMod !== 0) { 
             if (keys[this.controls.left]) this.angle -= this.rotSpeed;
             if (keys[this.controls.right]) this.angle += this.rotSpeed;
@@ -727,7 +728,6 @@ class Tank {
                 if (keys[this.controls.down]) throttle -= 1;
                 if (this.config.id === 'phantom' && this.phantomEvasiveTimer > 0) { currentSpeed *= 2.0; }
                 
-                // Slow crawl while maintaining formation
                 if (this.isHolding) currentSpeed *= 0.35; 
                 
                 if (throttle !== 0) { this.x += Math.cos(this.angle) * throttle * currentSpeed; this.y += Math.sin(this.angle) * throttle * currentSpeed; }
@@ -906,9 +906,8 @@ class Tank {
         this.cooldowns.c = now + this.maxCooldowns.c; 
         this.recoil = 4; const tip = this.getTip();
         
-        // --- NEW: Custom Turret Attack Logic ---
         if (this.config.id === 'facility_turret') {
-            this.turretBurstCount = 2; // Sets up 2 MORE shots to follow the first one
+            this.turretBurstCount = 2; 
             this.turretBurstTimer = 10;
             playSound(sfx.cluster); 
             createMuzzleFlash(tip.x, tip.y, this.angle, 3);
