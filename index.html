@@ -21,27 +21,37 @@
             background: #000; z-index: 10; 
         }
         
-        /* Utility class to hide screens */
-        .hidden { display: none !important; }
+        .hidden { display: none; }
         
         button { 
             padding: 15px 30px; margin: 10px; font-size: 20px; font-weight: bold; 
             cursor: pointer; border: 2px solid #00ff66; background: #111; color: #00ff66; 
             border-radius: 5px; text-transform: uppercase; transition: 0.2s; 
         }
-        button:hover { background: #00ff66; color: #000; }
+        button:hover:not(:disabled) { background: #00ff66; color: #000; }
         button:disabled { border-color: #555; color: #555; cursor: not-allowed; }
 
-        /* Custom UI containers */
+        /* HUD AND SCOREBOARD */
         #hud { 
             position: absolute; top: 0; left: 0; width: 100%; padding: 10px 20px; 
             box-sizing: border-box; display: flex; justify-content: space-between; 
             z-index: 5; pointer-events: none; 
         }
-        
         #score-board { display: flex; gap: 20px; font-size: 30px; font-weight: bold; }
+
+        /* HEALTH BARS & TRAIL EFFECT */
+        .hp-box { background: rgba(0,0,0,0.7); border: 2px solid #555; padding: 10px 20px; border-radius: 5px; }
+        .hp-bar-bg { width: 250px; height: 15px; background: #333; border-radius: 10px; overflow: hidden; margin-top: 5px; position: relative; }
+        .hp-bar-fill { height: 100%; width: 100%; background: #00ff00; position: absolute; top: 0; left: 0; z-index: 2; transition: width 0.1s linear, background-color 0.2s; }
+        .hp-bar-trail { height: 100%; width: 100%; background: #fff; position: absolute; top: 0; left: 0; z-index: 1; transition: width 0.6s ease-out 0.15s; }
         
-        /* Spinning Loader for Waiting Screen */
+        /* SKILL ICONS */
+        .skill-icon { width: 50px; height: 50px; border: 2px solid #555; background: #222; position: relative; overflow: hidden; border-radius: 5px; transition: border-color 0.2s, box-shadow 0.2s; }
+        .skill-fill { position: absolute; bottom: 0; left: 0; width: 100%; height: 0%; background: rgba(255,255,255,0.2); }
+        .skill-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; font-size: 1.2rem; text-shadow: 1px 1px 2px #000; z-index: 2; }
+        .ammo-text { position: absolute; top: 2px; right: 4px; color: gold; font-size: 0.9rem; font-weight: bold; z-index: 3; text-shadow: 1px 1px 1px #000; }
+
+        /* Spinning Loader */
         .loader { 
             border: 6px solid #111; border-top: 6px solid #00ff66; border-radius: 50%; 
             width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 20px auto; 
@@ -55,7 +65,7 @@
 
     <div id="main-menu" class="screen">
         <h1 style="font-size: 60px; color: #00ff66; text-shadow: 0 0 20px #00ff66; margin-bottom: 50px;">WARZONE TANKS</h1>
-        <button id="btn-start" disabled>Loading Assets...</button>
+        <button id="btn-start" onclick="startMode('ARCADE')" disabled>Loading Assets...</button>
         <button id="btn-online" style="display: none;">Online Multiplayer</button>
     </div>
 
@@ -76,24 +86,32 @@
 
     <div id="select-screen" class="screen hidden" style="flex-direction: row; position: relative; background: #111;">
         
-        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 2px solid #333; height: 100%;">
+        <div id="p1-panel" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 2px solid #333; height: 100%;">
             <h2 style="color: #00aaff;">PLAYER 1</h2>
             <div id="p1-preview" style="width: 200px; height: 200px; background: #000; margin: 20px; border: 2px solid #00aaff; border-radius: 10px;"></div>
             <h3 id="p1-name" style="margin: 0; padding-bottom: 10px;">GRIZZLY</h3>
-            <button id="btn-p1-next">Next Tank</button>
+            <div style="display: flex; gap: 10px;">
+                <button id="btn-p1-next">Next Tank</button>
+                <button id="btn-p1-ready" style="background: #00aaff; color: #000; border-color: #00aaff;">READY</button>
+            </div>
+            <h2 id="p1-ready-text" style="color: #00ff00; display: none; margin-top: 20px; font-size: 30px; text-shadow: 0 0 10px #00ff00;">READY!</h2>
         </div>
         
-        <div style="width: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10;">
-            <button id="btn-launch-game" style="background: #ff4500; border-color: #ff4500; color: #fff; padding: 20px 40px; font-size: 24px;">LAUNCH</button>
+        <div id="map-selector-ui" style="width: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10;">
+            <button id="btn-launch-game" disabled style="background: #555; border-color: #555; color: #aaa; padding: 20px 40px; font-size: 24px; cursor: not-allowed;">START</button>
             <h4 id="map-name" style="margin-top: 30px; margin-bottom: 5px; color: #aaa;">MAP: DUSK</h4>
             <button id="btn-map-select" style="font-size: 14px; padding: 10px 20px;">Change Map</button>
         </div>
 
-        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
-            <h2 style="color: #ff3333;">PLAYER 2 / CPU</h2>
+        <div id="p2-panel" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+            <h2 id="p2-title" style="color: #ff3333;">PLAYER 2 / CPU</h2>
             <div id="p2-preview" style="width: 200px; height: 200px; background: #000; margin: 20px; border: 2px solid #ff3333; border-radius: 10px;"></div>
             <h3 id="p2-name" style="margin: 0; padding-bottom: 10px;">DESTROYER</h3>
-            <button id="btn-p2-next">Next Tank</button>
+            <div style="display: flex; gap: 10px;">
+                <button id="btn-p2-next">Next Tank</button>
+                <button id="btn-p2-ready" style="background: #ff3333; color: #000; border-color: #ff3333;">READY</button>
+            </div>
+            <h2 id="p2-ready-text" style="color: #00ff00; display: none; margin-top: 20px; font-size: 30px; text-shadow: 0 0 10px #00ff00;">READY!</h2>
             <button id="btn-toggle-ai" style="margin-top: 20px; font-size: 14px; padding: 10px 20px; border-color: #fff; color: #fff;">Toggle AI: OFF</button>
         </div>
 
@@ -108,13 +126,37 @@
         <canvas id="gameCanvas" width="1200" height="800"></canvas>
         
         <div id="hud" class="hidden">
-            <div id="p1-skills" style="display: flex; flex-direction: column; gap: 5px; color: #00aaff; font-weight: bold; text-shadow: 1px 1px 2px #000;"></div>
+            <div class="hp-box">
+                <h3 id="hud-p1-name" style="margin:0; color:#00aaff;">PLAYER 1</h3>
+                <div class="hp-bar-bg">
+                    <div id="p1-hp-trail" class="hp-bar-trail"></div>
+                    <div id="p1-hp" class="hp-bar-fill"></div>
+                </div>
+                <div id="p1-skills" style="display: flex; gap: 10px; margin-top: 10px;">
+                    <div class="skill-icon" id="p1-cd-c"><div id="p1-fill-c" class="skill-fill"></div><span class="skill-text">C</span><span id="p1-ammo-c" class="ammo-text"></span></div>
+                    <div class="skill-icon" id="p1-cd-x"><div id="p1-fill-x" class="skill-fill"></div><span class="skill-text">X</span><span id="p1-ammo-x" class="ammo-text"></span></div>
+                    <div class="skill-icon" id="p1-cd-z"><div id="p1-fill-z" class="skill-fill"></div><span class="skill-text">Z</span></div>
+                </div>
+            </div>
+            
             <div id="score-board">
                 <span id="score-p1" style="color: #00aaff;">0</span>
                 <span style="color: #fff;">-</span>
                 <span id="score-p2" style="color: #ff3333;">0</span>
             </div>
-            <div id="p2-skills" style="display: flex; flex-direction: column; gap: 5px; color: #ff3333; font-weight: bold; text-align: right; text-shadow: 1px 1px 2px #000;"></div>
+            
+            <div class="hp-box" id="hud-p2-box" style="text-align: right;">
+                <h3 id="hud-p2-name" style="margin:0; color:#ff3333;">PLAYER 2</h3>
+                <div class="hp-bar-bg" style="margin-left: auto;">
+                    <div id="p2-hp-trail" class="hp-bar-trail"></div>
+                    <div id="p2-hp" class="hp-bar-fill"></div>
+                </div>
+                <div id="p2-skills" style="display: flex; gap: 10px; margin-top: 10px; justify-content: flex-end;">
+                    <div class="skill-icon" id="p2-cd-c"><div id="p2-fill-c" class="skill-fill"></div><span class="skill-text">'</span><span id="p2-ammo-c" class="ammo-text"></span></div>
+                    <div class="skill-icon" id="p2-cd-x"><div id="p2-fill-x" class="skill-fill"></div><span class="skill-text">;</span><span id="p2-ammo-x" class="ammo-text"></span></div>
+                    <div class="skill-icon" id="p2-cd-z"><div id="p2-fill-z" class="skill-fill"></div><span class="skill-text">L</span></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -138,6 +180,7 @@
     <script src="Tank.js"></script>
     <script src="raid.js"></script>
     <script src="network.js"></script>
+    <script src="ui.js"></script>
     <script src="engine.js"></script>
 
 </body>
