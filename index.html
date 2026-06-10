@@ -3,123 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tank Wars</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>Warzone Tanks Online</title>
+    <style>
+        body, html { 
+            margin: 0; padding: 0; background: #000; color: #fff; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            overflow: hidden; width: 100vw; height: 100vh; 
+        }
+        
+        canvas { 
+            display: block; margin: 0 auto; background: #111; border: 2px solid #333; 
+        }
+        
+        .screen { 
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center; 
+            background: #000; z-index: 10; 
+        }
+        
+        /* Utility class to hide screens */
+        .hidden { display: none !important; }
+        
+        button { 
+            padding: 15px 30px; margin: 10px; font-size: 20px; font-weight: bold; 
+            cursor: pointer; border: 2px solid #00ff66; background: #111; color: #00ff66; 
+            border-radius: 5px; text-transform: uppercase; transition: 0.2s; 
+        }
+        button:hover { background: #00ff66; color: #000; }
+        button:disabled { border-color: #555; color: #555; cursor: not-allowed; }
+
+        /* Custom UI containers */
+        #hud { 
+            position: absolute; top: 0; left: 0; width: 100%; padding: 10px 20px; 
+            box-sizing: border-box; display: flex; justify-content: space-between; 
+            z-index: 5; pointer-events: none; 
+        }
+        
+        #score-board { display: flex; gap: 20px; font-size: 30px; font-weight: bold; }
+        
+        /* Spinning Loader for Waiting Screen */
+        .loader { 
+            border: 6px solid #111; border-top: 6px solid #00ff66; border-radius: 50%; 
+            width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 20px auto; 
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+    
+    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
-    <div id="game-container">
-        <div id="main-menu" class="overlay">
-            <h1>Tank Wars</h1>
-            <p class="subtitle">TACTICAL ARMORED COMBAT</p>
-            <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
-                <button id="btn-start" onclick="showMenu('sp-menu')" disabled>Loading Assets...</button>
-                <button id="btn-mp" onclick="startMode('2P')" style="display: none;">2 Players (Local)</button>
-                <button id="btn-online" disabled title="Server offline" style="display: none; background: #333; color: #777; border-color: #555;">Online Multiplayer (WIP)</button>
-            </div>
-        </div>
-
-        <div id="sp-menu" class="overlay" style="display: none;">
-            <h1>Single Player</h1>
-            <p class="subtitle">SELECT CAMPAIGN</p>
-            <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
-                <button disabled style="background: #333; color: #777; border-color: #555;">Story Mode (Locked)</button>
-                <button onclick="startMode('ARCADE')">Arcade Mode</button>
-                <button onclick="startMode('RAID')">Raid Mode</button>
-                <button onclick="showMenu('main-menu')">Back</button>
-            </div>
-        </div>
-
-        <div id="select-screen" class="overlay">
-            <div id="minimap-container">
-                <h4>MINIMAP</h4>
-                <canvas id="minimapCanvas" width="200" height="140" style="border: 1px solid #333; background-color: #0f0f0f; box-shadow: none;"></canvas>
-            </div>
-
-            <div class="map-selector" id="map-selector-ui">
-                <button class="arrow-btn" onclick="cycleMap(-1)">&#9664;</button>
-                <h2 id="map-name-display">DUSK</h2>
-                <button class="arrow-btn" onclick="cycleMap(1)">&#9654;</button>
-            </div>
-            
-            <div class="split-container">
-                <div class="player-panel p1" id="p1-panel">
-                    <h3 style="color: #00aaff;">PLAYER 1 (WASD + Z, X, C)</h3>
-                    <div class="selector-box">
-                        <button class="arrow-btn" onclick="cycleTank(1, -1)">&#9664;</button>
-                        <div class="tank-display" id="p1-display"></div>
-                        <button class="arrow-btn" onclick="cycleTank(1, 1)">&#9654;</button>
-                    </div>
-                    <button id="btn-p1-ready" onclick="toggleReady(1)">Ready</button>
-                    <div id="p1-ready-text" class="ready-text">READY!</div>
-                </div>
-                
-                <div class="player-panel" id="p2-panel">
-                    <h3 id="p2-title" style="color: #ff3333;">PLAYER 2 (ARROWS + L, ;, ')</h3>
-                    <div class="selector-box">
-                        <button class="arrow-btn" id="p2-arrow-left" onclick="cycleTank(2, -1)">&#9664;</button>
-                        <div class="tank-display" id="p2-display"></div>
-                        <button class="arrow-btn" id="p2-arrow-right" onclick="cycleTank(2, 1)">&#9654;</button>
-                    </div>
-                    <button id="btn-p2-ready" onclick="toggleReady(2)">Ready</button>
-                    <div id="p2-ready-text" class="ready-text">READY!</div>
-                </div>
-            </div>
-        </div>
-
-        <div id="victory-screen" class="overlay">
-            <h1 id="victory-title">PLAYER WINS!</h1>
-            <p class="subtitle">MATCH COMPLETE</p>
-            
-            <div id="victory-stats" style="display: flex; gap: 40px; margin: 20px 0; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 1px solid #555;">
-                <div style="text-align: left; color: #00aaff;" id="p1-stats-container">
-                    <h3>PLAYER 1 STATS</h3>
-                    <div id="stats-p1" style="font-size: 1.1rem; line-height: 1.5; color: #ccc;"></div>
-                </div>
-                <div style="text-align: left; color: #ff3333;" id="p2-stats-container">
-                    <h3>PLAYER 2 STATS</h3>
-                    <div id="stats-p2" style="font-size: 1.1rem; line-height: 1.5; color: #ccc;"></div>
-                </div>
-            </div>
-
-            <button onclick="location.reload()">Play Again</button>
-        </div>
-
-        <div id="hud">
-            <div class="hp-box" style="border-color: #00aaff;" id="hud-p1-box">
-                <b style="color: #00aaff;">PLAYER 1</b>
-                <div class="hp-bar-bg"><div id="p1-hp" class="hp-bar-fill"></div></div>
-            </div>
-            
-            <div class="score-board" id="hud-score">
-                <span class="score-p1" id="score-p1">0</span> &nbsp;-&nbsp; <span class="score-p2" id="score-p2">0</span>
-                <div style="font-size:0.8rem; color:#aaa; text-align:center; margin-top:5px;" id="best-of-text">BEST OF 5</div>
-            </div>
-
-            <div class="hp-box" style="border-color: #ff3333;" id="hud-p2-box">
-                <b id="hud-p2-name" style="color: #ff3333;">PLAYER 2</b>
-                <div class="hp-bar-bg"><div id="p2-hp" class="hp-bar-fill"></div></div>
-            </div>
-        </div>
-
-        <div id="p1-skills" class="skills-ui">
-            <div class="skill-icon" id="p1-cd-z"><div class="skill-fill" id="p1-fill-z"></div><div class="skill-text">Z</div></div>
-            <div class="skill-icon" id="p1-cd-x"><div class="skill-fill" id="p1-fill-x"></div><div class="skill-text">X</div><div class="ammo-text" id="p1-ammo-x"></div></div>
-            <div class="skill-icon" id="p1-cd-c"><div class="skill-fill" id="p1-fill-c"></div><div class="skill-text">C</div><div class="ammo-text" id="p1-ammo-c"></div></div>
-        </div>
-        <div id="p2-skills" class="skills-ui">
-            <div class="skill-icon" id="p2-cd-z"><div class="skill-fill" id="p2-fill-z"></div><div class="skill-text">L</div></div>
-            <div class="skill-icon" id="p2-cd-x"><div class="skill-fill" id="p2-fill-x"></div><div class="skill-text">;</div><div class="ammo-text" id="p2-ammo-x"></div></div>
-            <div class="skill-icon" id="p2-cd-c"><div class="skill-fill" id="p2-fill-c"></div><div class="skill-text">'</div><div class="ammo-text" id="p2-ammo-c"></div></div>
-        </div>
-
-        <canvas id="gameCanvas" width="1000" height="700"></canvas>
+    <div id="main-menu" class="screen">
+        <h1 style="font-size: 60px; color: #00ff66; text-shadow: 0 0 20px #00ff66; margin-bottom: 50px;">WARZONE TANKS</h1>
+        <button id="btn-start" disabled>Loading Assets...</button>
+        <button id="btn-online" style="display: none;">Online Multiplayer</button>
     </div>
 
-    <script src="js/config.js"></script>
-    <script src="js/classes/Projectile.js"></script>
-    <script src="js/classes/Tank.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/raid.js"></script> <script src="js/engine.js"></script>
+    <div id="lobby-screen" class="screen hidden" style="background:#111; padding: 40px; box-sizing: border-box;">
+        <h1 style="text-align: center; text-shadow: 0 0 10px #00ff66; font-size: 40px;">ONLINE LOBBY</h1>
+        
+        <div id="games-list-container" style="flex-grow: 1; width: 80%; max-width: 800px; border: 2px solid #00ff66; background: #000; margin: 20px 0; overflow-y: auto; border-radius: 5px;">
+            <ul id="games-list" style="list-style: none; padding: 0; margin: 0; font-size: 24px;">
+                <li style="padding: 20px; color: #777; text-align: center;">Connecting to server...</li>
+            </ul>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; width: 80%; max-width: 800px;">
+            <button id="btn-lobby-back" style="background: #333; color: #fff; border-color: #fff;">BACK TO MENU</button>
+            <button id="btn-lobby-create" style="background: #00ff66; color: #000;">CREATE GAME</button>
+        </div>
+    </div>
+
+    <div id="select-screen" class="screen hidden" style="flex-direction: row; position: relative; background: #111;">
+        
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 2px solid #333; height: 100%;">
+            <h2 style="color: #00aaff;">PLAYER 1</h2>
+            <div id="p1-preview" style="width: 200px; height: 200px; background: #000; margin: 20px; border: 2px solid #00aaff; border-radius: 10px;"></div>
+            <h3 id="p1-name" style="margin: 0; padding-bottom: 10px;">GRIZZLY</h3>
+            <button id="btn-p1-next">Next Tank</button>
+        </div>
+        
+        <div style="width: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10;">
+            <button id="btn-launch-game" style="background: #ff4500; border-color: #ff4500; color: #fff; padding: 20px 40px; font-size: 24px;">LAUNCH</button>
+            <h4 id="map-name" style="margin-top: 30px; margin-bottom: 5px; color: #aaa;">MAP: DUSK</h4>
+            <button id="btn-map-select" style="font-size: 14px; padding: 10px 20px;">Change Map</button>
+        </div>
+
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+            <h2 style="color: #ff3333;">PLAYER 2 / CPU</h2>
+            <div id="p2-preview" style="width: 200px; height: 200px; background: #000; margin: 20px; border: 2px solid #ff3333; border-radius: 10px;"></div>
+            <h3 id="p2-name" style="margin: 0; padding-bottom: 10px;">DESTROYER</h3>
+            <button id="btn-p2-next">Next Tank</button>
+            <button id="btn-toggle-ai" style="margin-top: 20px; font-size: 14px; padding: 10px 20px; border-color: #fff; color: #fff;">Toggle AI: OFF</button>
+        </div>
+
+        <div id="waiting-overlay" style="display: none; position: absolute; top: 0; right: 0; width: 50%; height: 100%; background: rgba(0,0,0,0.9); color: #00ff66; z-index: 100; justify-content: center; align-items: center; text-align: center; flex-direction: column;">
+            <h2 id="room-code-display" style="font-size: 40px; margin-bottom: 10px; background: #111; padding: 10px 30px; border-radius: 10px; border: 2px dashed #00ff66;">ROOM: ----</h2>
+            <h1 style="margin-bottom: 30px;">WAITING FOR PLAYER...</h1>
+            <div class="loader"></div>
+        </div>
+    </div>
+
+    <div id="game-container" style="position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center;">
+        <canvas id="gameCanvas" width="1200" height="800"></canvas>
+        
+        <div id="hud" class="hidden">
+            <div id="p1-skills" style="display: flex; flex-direction: column; gap: 5px; color: #00aaff; font-weight: bold; text-shadow: 1px 1px 2px #000;"></div>
+            <div id="score-board">
+                <span id="score-p1" style="color: #00aaff;">0</span>
+                <span style="color: #fff;">-</span>
+                <span id="score-p2" style="color: #ff3333;">0</span>
+            </div>
+            <div id="p2-skills" style="display: flex; flex-direction: column; gap: 5px; color: #ff3333; font-weight: bold; text-align: right; text-shadow: 1px 1px 2px #000;"></div>
+        </div>
+    </div>
+
+    <div id="victory-screen" class="screen hidden" style="background: rgba(0,0,0,0.9);">
+        <h1 id="victory-title" style="font-size: 60px; margin-bottom: 20px;">GAME OVER</h1>
+        <div style="display: flex; gap: 50px; margin-bottom: 40px;">
+            <div style="background: #111; padding: 20px; border: 2px solid #00aaff; border-radius: 10px; min-width: 250px;">
+                <h3 style="color: #00aaff; margin-top:0;">PLAYER 1 STATS</h3>
+                <div id="stats-p1" style="font-size: 18px; line-height: 1.5;"></div>
+            </div>
+            <div style="background: #111; padding: 20px; border: 2px solid #ff3333; border-radius: 10px; min-width: 250px;">
+                <h3 style="color: #ff3333; margin-top:0;">PLAYER 2 STATS</h3>
+                <div id="stats-p2" style="font-size: 18px; line-height: 1.5;"></div>
+            </div>
+        </div>
+        <button id="btn-restart" onclick="location.reload()">RETURN TO MENU</button>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="Projectile.js"></script>
+    <script src="Tank.js"></script>
+    <script src="raid.js"></script>
+    <script src="network.js"></script>
+    <script src="engine.js"></script>
+
 </body>
 </html>
