@@ -576,6 +576,8 @@ class Tank {
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
         if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
         if (this.tempestSlowTimer > 0) { this.tempestSlowTimer--; currentSpeed *= 0.4; } 
+        // --- RELOAD SPEED NERF ---
+        if (this.mgReloading) { currentSpeed *= 0.5; }
 
         if (this.abyssSlowTimer > 0) {
             this.abyssSlowTimer--;
@@ -1349,9 +1351,7 @@ class Tank {
             ctx.filter = 'drop-shadow(0px 20px 10px rgba(0,0,0,0.5))';
         }
 
-        // --- FIXED: Turret image visual correction ---
         if (this.config.id === 'small_turret') {
-            // The TurretSmall.png points left, so we flip it 180 degrees visually
             ctx.rotate(Math.PI);
         }
 
