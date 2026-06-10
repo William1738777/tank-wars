@@ -1,0 +1,1259 @@
+// --- GLOBAL VARIABLES & STATE ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let frameCount = 0; 
+
+let gameState = 'MENU'; 
+let p1Selection = 0, p2Selection = 5; 
+let p1Ready = false, p2Ready = false;
+let selectedMapIndex = 0; let currentMap = mapsData[selectedMapIndex];
+let players = []; let p1Score = 0; let p2Score = 0;
+let projectiles = []; let particles = []; let flashes = []; let hazards = []; let floatingTexts = []; 
+
+// --- NEW: Player Lives Tracker ---
+let playerLives = 3;
+
+// Global visual modifiers
+let screenShakeTimer = 0;
+let screenShakeIntensity = 0;
+
+// Global Tracker for AI Difficulty
+let aiDifficulty = 'NORMAL';
+
+// --- NEW: Camera and Map Dimension Variables ---
+let camera = { x: 0, y: 0 };
+var mapW = canvas.width; 
+var mapH = canvas.height; 
+
+const keys = {};
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+if (typeof images !== 'undefined' && !images.auraThing) {
+    images.auraThing = new Image();
+    images.auraThing.src = 'aurathing.png';
+}
+
+function distToSegment(p, v, w) {
+    let l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
+    if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
+    let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2; t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+}
+
+function triggerScreenShake(duration, intensity) {
+    screenShakeTimer = duration;
+    screenShakeIntensity = intensity;
+}
+
+function recordDamage(attackerOwner, amount, isBounce = false, isXSkill = false) {
+    let attacker = players.find(p => p.owner === attackerOwner);
+    if (attacker) {
+        attacker.matchStats.totalDamage += amount;
+        if (isBounce) attacker.matchStats.bouncedDamage += amount;
+        if (isXSkill) attacker.matchStats.xSkillDamage += amount;
+    }
+}
+
+// --- VISUAL EFFECTS HELPERS ---
+function createMuzzleFlash(x, y, angle, scale = 1.0) {
+    flashes.push({ x: x, y: y, radius: 8 * scale, life: 1.0, color: '#ffddaa' });
+    for (let i = 0; i < 3; i++) {
+        let speed = (Math.random() * 4 + 2) * scale;
+        let pAngle = angle + (Math.random() - 0.5) * 0.6;
+        particles.push({
+            x: x, y: y,
+            vx: Math.cos(pAngle) * speed,
+            vy: Math.sin(pAngle) * speed,
+            life: Math.random() * 0.5 + 0.5,
+            size: (Math.random() * 3 + 1) * scale,
+            color: '#ffaa00'
+        });
+    }
+}
+
+function createParticles(x, y, count, color, speedMultiplier = 1, sizeMultiplier = 1) {
+    for (let i = 0; i < count; i++) {
+        let angle = Math.random() * Math.PI * 2;
+        let speed = Math.random() * 4 * speedMultiplier;
+        particles.push({
+            x: x, y: y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: Math.random() * 0.6 + 0.4,
+            size: (Math.random() * 3 + 1) * sizeMultiplier,
+            color: color
+        });
+    }
+}
+
+function createKaboom(x, y, scale = 1.0) {
+    flashes.push({ x: x, y: y, radius: 15 * scale, life: 1.0, color: '#ff4500' });
+    createParticles(x, y, Math.floor(20 * scale), '#ff3300', 1.5 * scale, 1.5 * scale);
+    createParticles(x, y, Math.floor(10 * scale), '#ffffff', 2.5 * scale, 1.0 * scale);
+}
+
+// --- ENGINE LOGIC ---
+function startGame() {
+    document.getElementById('select-screen').style.display = 'none';
+    document.getElementById('hud').style.display = 'flex';
+    document.getElementById('p1-skills').style.display = 'flex'; document.getElementById('p2-skills').style.display = 'flex';
+    
+    p1Score = 0; p2Score = 0; frameCount = 0; playerLives = 3; 
+    projectiles = []; particles = []; flashes = []; hazards = []; floatingTexts = [];
+    
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
+        mapW = 3000;
+        mapH = 2000;
+        
+        // Spawn Player 1
+        let p1 = new Tank(1, tanksData[p1Selection], 200, mapH / 2, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
+        p1.team = 0; // CRITICAL: Assign player to the USF Allied Team!
+        players = [p1];
+        
+        // Trigger the RaidManager to spawn allies and enemies
+        if (typeof raidManager !== 'undefined') {
+            raidManager.init();
+        }
+    } else {
+        // Standard 1v1 Screen Mode
+        mapW = canvas.width;
+        mapH = canvas.height;
+        currentMap = mapsData[selectedMapIndex];
+        
+        // --- MULTIPLAYER MODE CONFIGURATION ---
+        if (typeof isOnlineGame !== 'undefined' && isOnlineGame) {
+            if (isHost) {
+                // Host handles Tank 1 with standard WASD keys
+                let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
+                p1.team = 1;
+                // Tank 2 belongs to the remote caller, intercept keys so they don't map locally
+                let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'net_up', down:'net_down', left:'net_left', right:'net_right', c:'net_c', x:'net_x', z:'net_z'}, false);
+                p2.team = 2;
+                players = [p1, p2];
+            } else {
+                // Guest handles Tank 1 remotely
+                let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'net_up', down:'net_down', left:'net_left', right:'net_right', c:'net_c', x:'net_x', z:'net_z'}, false);
+                p1.team = 1;
+                // Guest handles Tank 2 locally using WASD keys
+                let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
+                p2.team = 2;
+                players = [p1, p2];
+            }
+        } else {
+            // Explicitly declare teams to separate Player 1 and Player 2/CPU
+            let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
+            p1.team = 1;
+            
+            let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL');
+            p2.team = 2;
+            
+            players = [p1, p2];
+        }
+    }
+    
+    // Intercept tactical items pushed to arrays to sync environmental drops
+    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !hazards._isPatched) {
+        const originalPush = hazards.push;
+        hazards.push = function(...items) {
+            items.forEach(item => {
+                if (!item.fromNetwork && typeof socket !== 'undefined') {
+                    let myOwnerId = isHost ? 1 : 2;
+                    if (item.owner === myOwnerId) {
+                        socket.emit('playerHazard', { roomId: myRoomCode, hazard: item });
+                    }
+                }
+            });
+            return originalPush.apply(this, items);
+        };
+        hazards._isPatched = true;
+    }
+
+    gameState = 'PLAYING'; updateHUD();
+}
+
+function handleDeath(loserOwnerId) {
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
+        if (loserOwnerId === 1) {
+            // --- Player Revive Logic ---
+            if (playerLives > 0) {
+                playerLives--;
+                let p1 = players.find(p => p.owner === 1);
+                if (p1) {
+                    p1.isDead = false;
+                    p1.hp = p1.maxHp;
+                    p1.x = 200; // Reset to original Raid spawn X
+                    p1.y = mapH / 2; // Reset to original Raid spawn Y
+                    p1.invulnTimer = 180; // 3 seconds of invulnerability
+                    
+                    // Clear all debuffs and active abilities
+                    p1.poisons = []; p1.stunTimer = 0; p1.kbTimer = 0; p1.kbX = 0; p1.kbY = 0;
+                    p1.hookState = 'ready'; p1.dashState = 0; p1.burstsLeft = 0; p1.flameTimer = 0;
+                    p1.mgAmmo = p1.mgMaxAmmo; p1.mgReloading = false; 
+                    p1.energy = 0; p1.zReady = false; p1.zFiring = false; p1.zChargeTimer = 0;
+                    p1.zHeight = 0; p1.zRotation = 0; p1.electrocutedTimer = 0;
+                    
+                    floatingTexts.push({x: p1.x, y: p1.y - 40, text: `SYSTEM REBOOT! (${playerLives} REVIVES LEFT)`, life: 90, color: '#00ff66', fontSize: '20px'});
+                }
+                updateHUD();
+            } else {
+                // Out of lives -> Raid Failed
+                gameState = 'OVER';
+                document.getElementById('victory-title').innerText = `RAID FAILED`;
+                document.getElementById('victory-title').style.color = '#ff3333';
+                setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
+            }
+        } else {
+            // An AI Died -> Send them to the respawn queue (Turrets ignore this internally)
+            let deadTank = players.find(p => p.owner === loserOwnerId);
+            if (typeof raidManager !== 'undefined' && deadTank) {
+                raidManager.queueRespawn(deadTank);
+            }
+
+            // Win Condition: All Heavy Turrets destroyed
+            let turretsAlive = players.filter(p => p.config.id === 'facility_turret' && !p.isDead).length;
+            if (turretsAlive === 0) {
+                gameState = 'OVER';
+                document.getElementById('victory-title').innerText = `FACILITY BREACHED!`;
+                document.getElementById('victory-title').style.color = '#00ff66';
+                setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
+            }
+        }
+        return;
+    }
+
+    // --- STANDARD 1v1 Logic ---
+    let winnerOwnerId = loserOwnerId === 1 ? 2 : 1;
+    if (winnerOwnerId === 1) p1Score++; else p2Score++;
+    
+    document.getElementById('score-p1').innerText = p1Score; document.getElementById('score-p2').innerText = p2Score;
+    
+    // --- NEW: Broadcast victory calculations if hosted online ---
+    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && isHost && typeof socket !== 'undefined') {
+        socket.emit('matchDeath', { roomId: myRoomCode, loserOwnerId, p1Score, p2Score });
+    }
+
+    if (p1Score >= 3 || p2Score >= 3) {
+        gameState = 'OVER'; const winnerText = p1Score >= 3 ? "PLAYER 1" : "PLAYER 2";
+        document.getElementById('victory-title').innerText = `${winnerText} WINS!`;
+        document.getElementById('victory-title').style.color = p1Score >= 3 ? '#00aaff' : '#ff3333';
+        
+        let p1Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
+        let p2Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
+        let p1Obj = players.find(p => p.owner === 1);
+        let p2Obj = players.find(p => p.owner === 2);
+        if(p1Obj) p1Stats = p1Obj.matchStats;
+        if(p2Obj) p2Stats = p2Obj.matchStats;
+        
+        document.getElementById('stats-p1').innerHTML = `
+            Damage Dealt: <b>${Math.round(p1Stats.totalDamage)}</b><br>
+            Bounced Dmg: <b>${Math.round(p1Stats.bouncedDamage)}</b><br>
+            X-Skill Dmg: <b>${Math.round(p1Stats.xSkillDamage)}</b><br>
+            Shield Gen: <b>${Math.round(p1Stats.shieldGenerated)}</b>
+        `;
+        document.getElementById('stats-p2').innerHTML = `
+            Damage Dealt: <b>${Math.round(p2Stats.totalDamage)}</b><br>
+            Bounced Dmg: <b>${Math.round(p2Stats.bouncedDamage)}</b><br>
+            X-Skill Dmg: <b>${Math.round(p2Stats.xSkillDamage)}</b><br>
+            Shield Gen: <b>${Math.round(p2Stats.shieldGenerated)}</b>
+        `;
+
+        setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
+    } else {
+        setTimeout(() => {
+            let loser = players.find(p => p.owner === loserOwnerId);
+            let winner = players.find(p => p.owner === winnerOwnerId);
+            
+            if(!loser || !winner) return;
+
+            let bestSpawn = spawnPoints[0]; let maxDist = -1;
+            for(let sp of spawnPoints) { let dist = Math.hypot(sp.x - winner.x, sp.y - winner.y); if (dist > maxDist) { maxDist = dist; bestSpawn = sp; } }
+            
+            loser.x = bestSpawn.x; loser.y = bestSpawn.y;
+            loser.hp = loser.maxHp; loser.isDead = false; loser.poisons = []; loser.stunTimer = 0;
+            loser.hookState = 'ready'; loser.dashState = 0; loser.burstsLeft = 0; loser.flameTimer = 0;
+            loser.mgAmmo = loser.mgMaxAmmo; loser.mgReloading = false; loser.invulnTimer = 90; 
+            loser.kbX = 0; loser.kbY = 0; loser.kbTimer = 0; loser.electrocutedTimer = 0;
+            loser.energy = 0; loser.zReady = false; loser.zFiring = false; loser.zChargeTimer = 0; loser.cShots = 0;
+            
+            loser.destroAiming = false; loser.destroLocked = false; loser.destroAimDist = 100;
+            loser.afterStunSlow = 0; loser.destroSlowTimer = 0; loser.kbType = null;
+            loser.fireShieldActive = false; loser.isGhosting = false; loser.fireTrailTicks = 0;
+            loser.phantomEvasiveTimer = 0; loser.isGhost = false; loser.ghostToggleTimer = 0;
+            loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
+            loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
+            
+            loser.tempestStacks = 0; loser.tempestSpeedStacks = 0; loser.tempestSpeedTimer = 0;
+            loser.tempestCSpdStacks = 0; loser.tempestCSpdTimer = 0; loser.tempestSlowTimer = 0;
+            loser.tempestShieldHp = 0; loser.tempestShieldTimer = 0;
+            loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
+            loser.typhoonMarks = 0; loser.inTornado = false; 
+            
+            loser.zHeight = 0; loser.zRotation = 0;
+            loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
+
+            loser.blackoutAnchor = null; loser.blackoutLasers = [];
+            loser.xHoldTimer = 0; loser.xHeldLastFrame = false; loser.blackoutLaserTimer = 0;
+            
+            updateHUD();
+        }, 1500); 
+    }
+}
+
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    frameCount++; players.forEach(p => p.update());
+    players.forEach(p => p.inFireTrail = false); 
+    
+    // --- NEW: FRAME-BY-FRAME POSITION SYNC BROADCAST ---
+    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && typeof socket !== 'undefined') {
+        let myTank = isHost ? players[0] : players[1];
+        if (myTank && !myTank.isDead) {
+            socket.emit('playerUpdate', {
+                roomId: myRoomCode,
+                isHost: isHost,
+                x: myTank.x,
+                y: myTank.y,
+                angle: myTank.angle,
+                hp: myTank.hp
+            });
+        }
+    }
+    // ----------------------------------------------------
+
+    // Allow RaidManager to process respawns and ally release logic
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
+        raidManager.update();
+        
+        // Global Vanguard Wake-Up on Damage
+        if (!raidManager.alliesReleased) {
+            let vanguardHit = players.some(p => p.team === 0 && p.hp < p.maxHp);
+            if (vanguardHit) {
+                raidManager.alliesReleased = true;
+                players.forEach(p => { if (p.team === 0) p.isHolding = false; });
+                
+                let p1 = players.find(p => p.owner === 1);
+                let cx = p1 ? p1.x : camera.x + canvas.width/2;
+                let cy = p1 ? p1.y - 100 : camera.y + 100;
+                floatingTexts.push({x: cx, y: cy, text: "AMBUSH! VANGUARD ENGAGING!", life: 120, color: '#00ff66', fontSize: '24px'});
+            }
+        }
+    }
+
+    // --- FIXED: Immovable collision logic for Turrets ---
+    for (let i = 0; i < players.length; i++) {
+        for (let j = i + 1; j < players.length; j++) {
+            let p1 = players[i]; let p2 = players[j];
+            if (!p1.isDead && !p2.isDead && !p1.isGhosting && !p2.isGhosting) {
+                let dx = p2.x - p1.x; let dy = p2.y - p1.y;
+                let dist = Math.hypot(dx, dy); let minDist = p1.radius + p2.radius;
+                if (dist < minDist) {
+                    let overlap = minDist - dist; let nx = dx / dist; let ny = dy / dist;
+                    let p1Movable = p1.config.speedMod !== 0;
+                    let p2Movable = p2.config.speedMod !== 0;
+
+                    if (p1Movable && p2Movable) {
+                        p1.x -= nx * (overlap / 2); p1.y -= ny * (overlap / 2);
+                        p2.x += nx * (overlap / 2); p2.y += ny * (overlap / 2);
+                    } else if (p1Movable && !p2Movable) {
+                        p1.x -= nx * overlap; p1.y -= ny * overlap;
+                    } else if (!p1Movable && p2Movable) {
+                        p2.x += nx * overlap; p2.y += ny * overlap;
+                    }
+                }
+            }
+        }
+    }
+
+    if (players[0] && !players[0].isDead) {
+        camera.x = players[0].x - canvas.width / 2;
+        camera.y = players[0].y - canvas.height / 2;
+    }
+    
+    camera.x = Math.max(0, Math.min(camera.x, mapW - canvas.width));
+    camera.y = Math.max(0, Math.min(camera.y, mapH - canvas.height));
+
+    updateHUD(); updateCooldownUI();
+
+    if (screenShakeTimer > 0) screenShakeTimer--;
+
+    for (let i = hazards.length - 1; i >= 0; i--) {
+        let h = hazards[i];
+        
+        if (h.type === 'whirlwind_trap') {
+            if (h.targetTank && !h.targetTank.isDead) {
+                // --- FIXED: Do not lift immovable turrets ---
+                if (h.targetTank.config.speedMod === 0) {
+                    if (h.life % 30 === 0) {
+                        let progress = 1 - (h.life / h.maxLife); 
+                        let dmg = 0.5 + (1.3 * progress); 
+                        h.targetTank.hp -= dmg;
+                        if (typeof recordDamage === 'function') recordDamage(h.owner, dmg);
+                        floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
+                    }
+                } else {
+                    if (h.startX === undefined) { 
+                        h.startX = h.targetTank.x; 
+                        h.startY = h.targetTank.y; 
+                    }
+                    h.x = h.startX;
+                    h.y = h.startY;
+
+                    let age = h.maxLife - h.life;
+                    
+                    h.targetTank.inTornado = true;
+                    h.targetTank.zHeightActive = true;
+                    h.targetTank.knockupSource = 'tempest';
+                    
+                    h.targetTank.x = h.startX + Math.cos(age * 0.25) * 35;
+                    h.targetTank.y = h.startY + Math.sin(age * 0.25) * 35;
+                    h.targetTank.zHeight = 50 + Math.sin(age * 0.2) * 40; 
+                    
+                    h.targetTank.stunTimer = Math.max(h.targetTank.stunTimer, 2); 
+                    h.targetTank.kbTimer = 0; 
+                    h.targetTank.zRotation += 0.3; 
+                    
+                    if (h.life % 30 === 0) {
+                        let progress = 1 - (h.life / h.maxLife); 
+                        let dmg = 0.5 + (1.3 * progress); 
+                        h.targetTank.hp -= dmg;
+                        if (typeof recordDamage === 'function') recordDamage(h.owner, dmg);
+                        floatingTexts.push({x: h.x, y: h.y - 40, text: `-${dmg.toFixed(1)}`, life: 30, color: '#aaffff'});
+                    }
+                    
+                    if (h.life <= 1) {
+                        h.targetTank.inTornado = false;
+                        h.targetTank.zHeightActive = false;
+                        h.targetTank.zHeight = 0;
+                    }
+                }
+                
+                createParticles(h.x + (Math.random()-0.5)*100, h.y + (Math.random()-0.5)*100, 2, '#ffffff', 2, 0.5);
+                createParticles(h.x, h.y, 1, '#aaffff', 3, 0.4);
+            }
+        }
+        else if (h.type === 'dark_boom') {
+            if (!h.initialized) {
+                h.particles = [];
+                for (let j = 0; j < 35; j++) {
+                    const isSmoke = Math.random() > 0.5;
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = (Math.random() * 9) + 4;
+                    let pColor = isSmoke ? (Math.random() > 0.5 ? '#000000' : '#1a1a1a') : (Math.random() > 0.5 ? '#ff0000' : '#8b0000');
+                    h.particles.push({ vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, x: 0, y: 0, size: Math.random() * 7 + 3, color: pColor });
+                }
+                h.initialized = true;
+            } else {
+                h.particles.forEach(part => { part.x += part.vx; part.y += part.vy; part.vx *= 0.92; part.vy *= 0.92; });
+            }
+        } else if (h.type === 'abyss_domain') {
+            if (!h.initialized) {
+                h.particles = [];
+                for (let j = 0; j < 45; j++) {
+                    h.particles.push({ angle: Math.random() * Math.PI * 2, radius: 120 + Math.random() * 100, speed: (Math.random() * 0.03) + 0.01, size: Math.random() * 6 + 2, isBlack: Math.random() > 0.4 });
+                }
+                h.initialized = true;
+            } else {
+                h.particles.forEach(p => { p.angle -= p.speed; p.radius -= 0.5; if (p.radius < 30) p.radius = h.radius * 0.9 + Math.random() * 50; });
+            }
+            
+            h.tickTimer--;
+            players.forEach(tank => {
+                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                    if (Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
+                        let startHp = tank.hp;
+                        tank.hp -= h.dps / 60;
+                        if (h.tickTimer <= 0) {
+                            tank.hp -= 2; 
+                            floatingTexts.push({x: tank.x, y: tank.y - 40, text: "DOMAIN BURST!", life: 40, color: '#ff3333'});
+                        }
+                        let damageTaken = startHp - tank.hp;
+                        if (damageTaken > 0) recordDamage(h.owner, damageTaken);
+                    }
+                }
+            });
+
+            if (h.tickTimer <= 0) { h.dps *= 2; h.tickTimer = 120; h.shockwaves = h.shockwaves || []; h.shockwaves.push({ life: 60, maxLife: 60 }); }
+            if (h.shockwaves) { h.shockwaves.forEach(s => s.life--); h.shockwaves = h.shockwaves.filter(s => s.life > 0); }
+        } else if (h.type === 'black_hole') {
+            players.forEach(tank => {
+                if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                    let dx = h.x - tank.x; let dy = h.y - tank.y; let dist = Math.hypot(dx, dy);
+                    if (dist < h.radius && dist > 0.1) { 
+                        // --- FIXED: Immovable turrets cannot be sucked by black holes ---
+                        if (tank.config.speedMod !== 0) {
+                            tank.x += (dx / dist) * 2; tank.y += (dy / dist) * 2; 
+                        }
+                        let startHp = tank.hp;
+                        tank.hp -= 1 / 60; 
+                        let damageTaken = startHp - tank.hp;
+                        if (damageTaken > 0) recordDamage(h.owner, damageTaken);
+                    }
+                }
+            });
+            if (h.life <= 1) { 
+                hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 60, maxLife: 60 });
+                players.forEach(tank => {
+                    if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0 && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius) {
+                        let startHp = tank.hp;
+                        tank.hp -= 5; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "EVENT HORIZON!", life: 50, color: '#ff0000'});
+                        let damageTaken = startHp - tank.hp;
+                        if (damageTaken > 0) recordDamage(h.owner, damageTaken);
+                    }
+                });
+            }
+        }
+        else if (h.type === 'orion_chrono') {
+            let age = h.maxLife - h.life;
+            h.isFullyCharged = age >= 90; 
+            
+            projectiles.forEach(proj => {
+                let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
+                if (dist < h.radius) {
+                    if (h.isFullyCharged) {
+                        proj.isTimeDilated = true;
+                        proj.vx *= 0.92;
+                        proj.vy *= 0.92;
+                    }
+                }
+            });
+
+            if (h.life === 1) {
+                createParticles(h.x, h.y, 40, '#ff33cc', 2.5, 0.6);
+                triggerScreenShake(15, 6);
+                
+                projectiles.forEach(proj => {
+                    let dist = Math.hypot(proj.x - h.x, proj.y - h.y);
+                    if (dist < h.radius && proj.isTimeDilated) {
+                        if (proj.type === 'orion_c') { proj.damage += 5; proj.speed *= 1.5; }
+                        proj.vx = -Math.cos(proj.angle) * proj.speed; proj.vy = -Math.sin(proj.angle) * proj.speed;
+                        proj.angle = Math.atan2(proj.vy, proj.vx); proj.owner = h.owner; proj.isTimeDilated = false;
+                        createParticles(proj.x, proj.y, 4, '#ff33cc', 1, 0.3);
+                    }
+                });
+            }
+        }
+        else if (h.type === 'fire_trail') {
+            players.forEach(tank => { if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) { if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) tank.inFireTrail = true; } });
+        } else if (h.type === 'mine') {
+            h.age++; if (h.age > 120 && !h.triggering) h.visible = false;
+            
+            if (h.triggering) {
+                h.triggerTimer--;
+                if (h.triggerTimer % 5 === 0) createParticles(h.x, h.y, 2, '#ff0000', 1.5, 0.2);
+                if (h.triggerTimer <= 0) {
+                    players.forEach((tank, tIndex) => {
+                        if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                            if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius + 30) {
+                                let startHp = tank.hp;
+                                tank.hp -= 20; 
+                                // --- FIXED: Turrets ignore explosion knockbacks ---
+                                if (tank.config.speedMod !== 0) {
+                                    let angle = Math.atan2(tank.y - h.y, tank.x - h.x);
+                                    tank.kbX = Math.cos(angle) * 15; tank.kbY = Math.sin(angle) * 15; tank.kbTimer = 15; 
+                                }
+                                tank.stunTimer = 75; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLASTED!", life: 60, color: '#ff3333'});
+                                
+                                let damageTaken = startHp - tank.hp;
+                                if (damageTaken > 0) recordDamage(h.owner, damageTaken);
+                            }
+                        }
+                    });
+                    createKaboom(h.x, h.y, 2.0); h.life = 0; 
+                }
+            } else {
+                players.forEach(tank => { if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) { if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) { h.triggering = true; h.visible = true; h.triggerTimer = 15; } } });
+            }
+        } else if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
+            for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) projectiles.push(new Projectile(h.owner, h.x, h.y, angle, 6, 3, 1.5, '#00ffff', 'seraph_spark', 1));
+            createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
+        } else if (h.type === 'destro_strike_manager') {
+            if (h.state === 'launching') {
+                h.timer--; let moving = false;
+                if (h.tank && !h.tank.isDead) moving = keys[h.tank.controls.up] || keys[h.tank.controls.down] || keys[h.tank.controls.left] || keys[h.tank.controls.right]; else moving = true; 
+                if (moving) { h.state = 'falling_delay'; h.timer = 48; } 
+                else if (h.timer <= 0) {
+                    h.timer = 5; 
+                    if (h.targets.length > 0) {
+                        let t = h.targets.pop(); h.launched.push(t);
+                        projectiles.push(new Projectile(h.owner, h.tank.x, h.tank.y - 10, -Math.PI/2, 18, 2, 0, '#fff', 'destro_up', 0));
+                        createMuzzleFlash(h.tank.x, h.tank.y - 10, -Math.PI/2, 1.5);
+                    }
+                    if (h.targets.length === 0) { h.state = 'falling_delay'; h.timer = 48; }
+                }
+            } else if (h.state === 'falling_delay') {
+                h.timer--; if (h.timer <= 0) { h.state = 'falling'; h.timer = 0; }
+            } else if (h.state === 'falling') {
+                h.timer--;
+                if (h.timer <= 0) {
+                    if (h.launched.length > 0) {
+                        let t = h.launched.shift(); 
+                        let p = new Projectile(h.owner, t.x, t.y - 800, Math.PI/2, 20, 8, 12, '#ff4500', 'destro_rocket', 0);
+                        p.targetY = t.y; projectiles.push(p); h.timer = Math.floor(Math.random() * 6 + 12); 
+                    } else { h.life = 0; }
+                }
+            }
+        } else if (h.type === 'blackout_trap') {
+            if (h.armingTimer > 0) {
+                h.armingTimer--;
+            } else {
+                players.forEach(tank => {
+                    if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
+                        if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius) {
+                            h.life = 0; 
+                            let strikeProj = new Projectile(h.owner, h.x, h.y - 800, Math.PI / 2, 25, 8, 30, '#33ff33', 'blackout_strike', 0);
+                            strikeProj.targetY = h.y;
+                            projectiles.push(strikeProj);
+                        }
+                    }
+                });
+            }
+        }
+        h.life--; if (h.life <= 0) hazards.splice(i, 1);
+    }
+
+    players.forEach((tank, tIndex) => {
+        if (tank.zHeightActive) {
+            tank.zFrameCounter++;
+            
+            let insideChronosphere = hazards.some(h => h.type === 'orion_chrono' && h.isFullyCharged && Math.hypot(tank.x - h.x, tank.y - h.y) < h.radius);
+            
+            if (insideChronosphere && !tank.chronoIntercepted && tank.zFrameCounter < tank.zMaxDuration) {
+                tank.chronoIntercepted = true;
+                tank.zMaxDuration += 120; 
+                tank.zHeight += 150; 
+                floatingTexts.push({x: tank.x, y: tank.y - 80, text: "TIME-DILATED SUSPENSION!", life: 60, color: '#ff33cc', fontSize: '15px'});
+            }
+
+            let progress = tank.zFrameCounter / tank.zMaxDuration;
+            
+            if (progress <= 1.0) {
+                if (tank.chronoIntercepted) {
+                    if (progress > 0.2 && progress < 0.8) {
+                        tank.zHeight = tank.zHeightBaseMax + 150 + Math.sin(frameCount * 0.4) * 8;
+                    } else if (progress >= 0.8) {
+                        let fallProgress = (progress - 0.8) / 0.2;
+                        tank.zHeight = (tank.zHeightBaseMax + 150) * (1 - fallProgress * fallProgress);
+                    }
+                } else if (!tank.inTornado) {
+                    tank.zHeight = Math.sin(progress * Math.PI) * tank.zHeightBaseMax;
+                }
+            }
+
+            if (progress >= 1.0 || tank.zHeight <= 0) {
+                tank.zHeight = 0;
+                tank.zHeightActive = false;
+                tank.stunTimer = 0; 
+                
+                let startHp = tank.hp;
+                
+                if (tank.knockupSource === 'tempest') {
+                    tank.knockupSource = null; 
+                } else if (tank.chronoIntercepted) {
+                    tank.hp -= 40;
+                    tank.afterStunSlow = 180; 
+                    tank.fireSlowTimer = 180; 
+                    triggerScreenShake(24, 12); 
+                    createParticles(tank.x, tank.y, 35, '#ff33cc', 2.5, 0.8);
+                    createParticles(tank.x, tank.y, 25, '#222222', 4, 1);
+                    floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ORBITAL ANNIHILATION!", life: 80, color: '#ff33cc', fontSize: '24px'});
+                    tank.zRotation = 12.5; 
+                } else {
+                    tank.hp -= 25;
+                    triggerScreenShake(12, 5);
+                    createParticles(tank.x, tank.y, 15, '#ff33cc', 1.5, 0.5);
+                    floatingTexts.push({x: tank.x, y: tank.y - 40, text: "CRASH LANDING!", life: 60, color: '#ff33cc'});
+                }
+                
+                let damageTaken = startHp - tank.hp;
+                if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken); 
+
+                if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tank.owner); }
+            }
+        }
+
+        if (!tank.zHeightActive && tank.zRotation > 0.01) {
+            tank.zRotation *= 0.88;
+        }
+
+        if (tank.inFireTrail && tank.invulnTimer <= 0) {
+            tank.fireTrailTicks++; let multiplier = Math.pow(1.2, Math.floor(tank.fireTrailTicks / 30)); 
+            
+            let startHp = tank.hp;
+            tank.hp -= (1 / 60) * multiplier;
+            let damageTaken = startHp - tank.hp;
+            
+            if (damageTaken > 0) recordDamage(tank.owner === 1 ? 2 : 1, damageTaken, false, true); 
+
+            if (Math.random() < 0.1) createParticles(tank.x, tank.y, 1, '#ff3300', 1.5, 0.3);
+            if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tank.owner); }
+        } else { tank.fireTrailTicks = 0; }
+    });
+
+    players.forEach(orionTank => {
+        if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
+            if (!orionTank.isDead && orionTank.zHeight === 0) {
+                let distTankToA = Math.hypot(orionTank.x - orionTank.portalA.x, orionTank.y - orionTank.portalA.y);
+                let distTankToB = Math.hypot(orionTank.x - orionTank.portalB.x, orionTank.y - orionTank.portalB.y);
+                
+                if (distTankToA < orionTank.radius && !orionTank.justWarped) {
+                    orionTank.x = orionTank.portalB.x; orionTank.y = orionTank.portalB.y;
+                    orionTank.justWarped = true;
+                    createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
+                } else if (distTankToB < orionTank.radius && !orionTank.justWarped) {
+                    orionTank.x = orionTank.portalA.x; orionTank.y = orionTank.portalA.y;
+                    orionTank.justWarped = true;
+                    createParticles(orionTank.x, orionTank.y, 15, '#ff33cc', 2, 0.4);
+                }
+                if (distTankToA > orionTank.radius + 15 && distTankToB > orionTank.radius + 15) orionTank.justWarped = false;
+            }
+        }
+    });
+
+    let processedShotgunCasts = [];
+
+    for (let i = 0; i < projectiles.length; i++) {
+        let pA = projectiles[i]; if (pA.dead) continue;
+
+        pA.update();
+
+        if (pA.type === 'abyss_rapid_empowered' && frameCount % 2 === 0) {
+            createParticles(pA.x, pA.y, 1, '#ff0000', 1.5, 0.3);
+        }
+
+        players.forEach(orionTank => {
+            if (orionTank.config.id === 'orion' && orionTank.portalA && orionTank.portalB) {
+                if (pA.type === 'orion_c' && !pA.dead) {
+                    let distToA = Math.hypot(pA.x - orionTank.portalA.x, pA.y - orionTank.portalA.y);
+                    let distToB = Math.hypot(pA.x - orionTank.portalB.x, pA.y - orionTank.portalB.y);
+                    
+                    if (distToA < 25 && !pA.justWarped) {
+                        pA.x = orionTank.portalB.x; pA.y = orionTank.portalB.y;
+                        pA.damage += 5; pA.speed *= 1.25; 
+                        pA.vx = Math.cos(pA.angle) * pA.speed; pA.vy = Math.sin(pA.angle) * pA.speed; pA.justWarped = true; 
+                        createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
+                    } else if (distToB < 25 && !pA.justWarped) {
+                        pA.x = orionTank.portalA.x; pA.y = orionTank.portalA.y;
+                        pA.damage += 5; pA.speed *= 1.25; 
+                        pA.vx = Math.cos(pA.angle) * pA.speed; pA.vy = Math.sin(pA.angle) * pA.speed; pA.justWarped = true;
+                        createParticles(pA.x, pA.y, 8, '#ff33cc', 1.5, 0.3);
+                    }
+                    if (distToA > 40 && distToB > 40) pA.justWarped = false; 
+                }
+            }
+        });
+
+        if (pA.type === 'destro_rocket' || pA.type === 'destro_up' || pA.type === 'blackout_strike' || pA.type === 'blackout_up') continue;
+        if (pA.isTimeDilated) continue;
+
+        hazards.forEach(h => {
+            if (h.type === 'void_orb' && !pA.dead) {
+                if (Math.hypot(pA.x - h.x, pA.y - h.y) < h.radius + pA.radius) {
+                    if (pA.type === 'abyss_z') {
+                        hazards.push({ owner: pA.owner, type: 'black_hole', x: h.x, y: h.y, radius: 150, life: 240 });
+                        playSound(sfx.abyssBlackHole); pA.triggerExplosion(); h.life = 0;
+                    } else if ((pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') && pA.owner === h.owner) {
+                        h.orbHp -= 1; pA.triggerExplosion(); createParticles(h.x, h.y, 3, '#ff0000', 1.5, 0.3);
+                        if (h.orbHp <= 0) {
+                            h.life = 0;
+                            hazards.push({ owner: h.owner, type: 'abyss_domain', x: h.x, y: h.y, radius: 170, life: 720, dps: 0.5, tickTimer: 120 });
+                            playSound(sfx.abyssDom); 
+                            floatingTexts.push({x: h.x, y: h.y - 40, text: "DOMAIN EXPANSION!", life: 80, color: '#ff0000'});
+                            
+                            let domainOwner = players.find(p => p.owner === h.owner);
+                            if (domainOwner) {
+                                let cdReduction = domainOwner.maxCooldowns.x * 0.5;
+                                domainOwner.cooldowns.x = Math.max(Date.now(), domainOwner.cooldowns.x - cdReduction);
+                                floatingTexts.push({x: domainOwner.x, y: domainOwner.y - 60, text: "VOID ORB RESET!", life: 60, color: '#ff0000'});
+                            }
+                        }
+                    } else if (pA.owner !== h.owner) {
+                        h.orbHp -= pA.damage; pA.triggerExplosion();
+                        if (h.orbHp <= 0) {
+                            h.life = 0; hazards.push({ owner: h.owner, type: 'dark_boom', x: h.x, y: h.y, radius: 0, life: 60, maxLife: 60 });
+                            floatingTexts.push({x: h.x, y: h.y - 40, text: "ORB DESTROYED!", life: 50, color: '#777'});
+                        }
+                    }
+                }
+            }
+        });
+
+        players.forEach((tank, tIndex) => {
+            let shooter = players.find(p => p.owner === pA.owner);
+            // FAILSAFE ADDED HERE:
+            let isEnemy = !shooter || shooter.team === null || tank.team === null || shooter.team !== tank.team;
+
+            if (pA.owner !== tank.owner && isEnemy && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
+                if (tank.config.id === 'phantom' && tank.isGhost) return;
+                if (tank.zHeight > 0) return;
+
+                if (Math.hypot(pA.x - tank.x, pA.y - tank.y) < tank.radius + pA.radius) {
+                    if (shooter && shooter.config.id === 'grizzly') playSound(sfx.tankHit);
+
+                    let startHp = tank.hp;
+
+                    if ((tank.config.id === 'pyro' || tank.config.id === 'snow_pyro') && tank.fireShieldActive) {
+                        tank.fireShieldHp -= pA.damage; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "BLOCKED!", life: 20, color: '#ffaa00'});
+                    } else {
+                        if (pA.type.startsWith('seraph_')) tank.electrocutedTimer = 30;
+
+                        if (pA.type === 'firebolt') {
+                            tank.hp -= pA.damage; 
+                            // --- FIXED: Immovable turrets cannot be knocked back ---
+                            if (tank.config.speedMod !== 0) {
+                                let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
+                                tank.kbX = Math.cos(angle) * 12; tank.kbY = Math.sin(angle) * 12; tank.kbTimer = 15; 
+                            }
+                            tank.fireSlowTimer = 90; 
+                        } else if (pA.type === 'toxic_bullet') { tank.hp -= pA.damage; tank.addPoison(0.5, 300); 
+                        } else if (pA.type === 'arrow') {
+                            tank.hp -= pA.damage; tank.addPoison(1.0, 300); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "HOOKED!", life: 50, color: '#00ff66'});
+                            let ownerTank = players.find(p => p.owner === pA.owner);
+                            // --- FIXED: Scorpion arrows cannot pull immovable turrets ---
+                            if (ownerTank && tank.config.speedMod !== 0) { ownerTank.hookState = 'pulling'; ownerTank.hookTarget = tank; ownerTank.hookTimer = 60; }
+                        } else if (pA.type === 'seraph_spark') {
+                            tank.hp -= pA.damage; if (Math.random() < 0.10) { tank.stunTimer = Math.max(tank.stunTimer, 30); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ZAPPED!", life: 40, color: '#00ffff'}); }
+                        } else if (pA.type === 'destro_missile') {
+                            tank.hp -= pA.damage; 
+                            // --- FIXED: Immovable turrets cannot be knocked back ---
+                            if (tank.config.speedMod !== 0) {
+                                tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
+                            }
+                        } else if (pA.type === 'orion_z_lift') {
+                            tank.hp -= pA.damage; 
+                            // --- FIXED: Immovable turrets cannot be lifted into the air ---
+                            if (tank.config.speedMod !== 0) {
+                                tank.zHeightActive = true; tank.zFrameCounter = 0; tank.zMaxDuration = 150; 
+                                tank.zHeightBaseMax = 160; tank.chronoIntercepted = false; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ANTI-GRAV LIFT!", life: 50, color: '#ff33cc'});
+                            } else {
+                                floatingTexts.push({x: tank.x, y: tank.y - 40, text: "IMMUNE!", life: 50, color: '#777'});
+                            }
+                        } else if (pA.type === 'abyss_z') {
+                            tank.hp -= pA.damage;
+                            if (pA.hasBounced) { hazards.push({ owner: pA.owner, type: 'black_hole', x: tank.x, y: tank.y, radius: 150, life: 240 }); playSound(sfx.abyssBlackHole); } 
+                            else { tank.isSlowed = true; tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 180); }
+                        } else if (pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') {
+                            tank.hp -= pA.damage; 
+                            // --- FIXED: Immovable turrets cannot be slightly knocked back ---
+                            if (tank.config.speedMod !== 0) {
+                                let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
+                                tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
+                            }
+                            if (pA.type === 'abyss_rapid_empowered') { tank.abyssSlowStacks = Math.min(10, (tank.abyssSlowStacks || 0) + 1); tank.abyssSlowTimer = 180; }
+                        } else if (pA.type === 'tempest_c') {
+                            tank.hp -= pA.damage;
+                            if (shooter && shooter.config.id === 'tempest') {
+                                shooter.tempestStacks = Math.min(9, (shooter.tempestStacks || 0) + 1);
+                                shooter.tempestSpeedStacks = Math.min(10, (shooter.tempestSpeedStacks || 0) + 1);
+                                shooter.tempestSpeedTimer = 180; 
+                                floatingTexts.push({x: shooter.x, y: shooter.y - 60, text: "ACCEL + AMMO!", life: 30, color: '#aaffff', fontSize: '14px'});
+                            }
+                        } else if (pA.type === 'tempest_x') {
+                            tank.hp -= pA.damage;
+                            
+                            if (shooter && shooter.config.id === 'tempest') {
+                                shooter.tempestShieldHp = Math.min(30, (shooter.tempestShieldHp || 0) + 10);
+                                shooter.tempestShieldTimer = 960; 
+                                shooter.matchStats.shieldGenerated += 10;
+                            }
+                            
+                            // --- FIXED: Tempest cannot lift immovable turrets ---
+                            if (!tank.zHeightActive && tank.config.speedMod !== 0) {
+                                tank.zHeightActive = true;
+                                tank.zFrameCounter = 0;
+                                tank.zMaxDuration = 30; 
+                                tank.zHeightBaseMax = 50; 
+                                tank.chronoIntercepted = false;
+                                tank.knockupSource = 'tempest'; 
+                            }
+                            
+                            tank.typhoonMarks = (tank.typhoonMarks || 0) + 1;
+                            
+                            if (tank.typhoonMarks >= 3) {
+                                tank.typhoonMarks = 0;
+                                hazards.push({ owner: pA.owner, type: 'whirlwind_trap', x: tank.x, y: tank.y, radius: 80, life: 360, maxLife: 360, targetTank: tank });
+                                floatingTexts.push({x: tank.x, y: tank.y - 60, text: "WHIRLWIND TRAP!", life: 60, color: '#aaffff'});
+                            }
+                        } else if (pA.type === 'tempest_z') {
+                            if (frameCount % 10 === 0) { 
+                                tank.hp -= pA.damage;
+                                if (typeof recordDamage === 'function') recordDamage(pA.owner, pA.damage);
+                            }
+                            tank.tempestSlowTimer = 90; 
+                        } else if (pA.type === 'blackout_snipe') {
+                            tank.hp -= pA.damage;
+                            triggerScreenShake(10, 4);
+                            
+                            // --- FIXED: Turrets ignore snipe knockback ---
+                            if (tank.config.speedMod !== 0) {
+                                let kbAngle = pA.angle;
+                                tank.kbX = Math.cos(kbAngle) * 14; 
+                                tank.kbY = Math.sin(kbAngle) * 14; 
+                                tank.kbTimer = 15;
+                                tank.angle = Math.random() * Math.PI * 2;
+                            }
+                            floatingTexts.push({ x: tank.x, y: tank.y - 40, text: `SNIPED! (-${Math.round(pA.damage)})`, life: 50, color: '#000000' });
+                        } else { 
+                            tank.hp -= pA.damage; 
+                        }
+
+                        if (shooter && shooter.config.id === 'phantom') {
+                            if (pA.type === 'phantom_bounce') shooter.cooldowns.c -= (shooter.maxCooldowns.c * 0.6); 
+                            if (pA.type === 'phantom_sg') shooter.cooldowns.c -= 500; 
+                            shooter.cooldowns.x -= 1000;
+                            let applyMark = false;
+                            if (pA.type === 'phantom_bounce') { applyMark = true; } 
+                            else if (pA.type === 'phantom_sg') { if (!processedShotgunCasts.includes(pA.castId)) { applyMark = true; processedShotgunCasts.push(pA.castId); } }
+
+                            if (applyMark) {
+                                tank.phantomMarkTimer = 300; tank.phantomMarks++;
+                                if (tank.phantomMarks % 3 === 0) {
+                                    let procDamage = tank.phantomMarks <= 6 ? 3 : 5; 
+                                    tank.hp -= procDamage; tank.phantomShockTimer = 30;
+                                    floatingTexts.push({ x: tank.x, y: tank.y - 55, text: `PLASMA ELECTROCUTION! (-${procDamage})`, life: 60, color: '#9d00ff', fontSize: '14px' });
+                                    createParticles(tank.x, tank.y, 10, '#9d00ff', 2, 0.5);
+                                }
+                            }
+                        }
+                    }
+                    
+                    let damageTaken = startHp - tank.hp;
+                    if (damageTaken > 0) {
+                        let isXSkill = ['phantom_sg', 'arrow', 'rocket', 'seraph_x', 'mg', 'toxic_bullet', 'tempest_x'].includes(pA.type);
+                        recordDamage(pA.owner, damageTaken, pA.hasBounced, isXSkill);
+                    }
+
+                    if (tank.hp < startHp) { let ownerTank = players.find(p => p.owner === pA.owner); if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5); }
+                    
+                    if (pA.type !== 'tempest_z') {
+                        pA.triggerExplosion();
+                    }
+                }
+            }
+        });
+
+        for (let j = i + 1; j < projectiles.length; j++) {
+            let pB = projectiles[j]; if (pA.dead || pB.dead) continue;
+            
+            if (pA.type === 'tempest_z' || pB.type === 'tempest_z') continue;
+
+            if (pA.owner !== pB.owner) {
+                if (Math.hypot(pA.x - pB.x, pA.y - pB.y) < pA.radius + pB.radius + 5) { 
+                    if (pA.type === 'mg' && pB.type !== 'mg') { pA.triggerExplosion(); pB.projectileHp--; if (pB.projectileHp <= 0) pB.triggerExplosion(); } 
+                    else if (pB.type === 'mg' && pA.type !== 'mg') { pB.triggerExplosion(); pA.projectileHp--; if (pA.projectileHp <= 0) pA.triggerExplosion(); } 
+                    else if (pA.type !== 'mg' && pB.type !== 'mg') { pA.triggerExplosion(); pB.triggerExplosion(); }
+                }
+            }
+        }
+    }
+    
+    projectiles = projectiles.filter(p => !p.dead);
+    particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.04; }); particles = particles.filter(p => p.life > 0);
+    flashes.forEach(f => { f.radius += 2; f.life -= 0.1; }); flashes = flashes.filter(f => f.life > 0);
+    floatingTexts.forEach(t => { t.y -= 0.5; t.life--; }); floatingTexts = floatingTexts.filter(t => t.life > 0);
+}
+
+function draw() {
+    if (gameState === 'MENU' || gameState === 'SELECT') return;
+
+    ctx.save();
+    if (screenShakeTimer > 0) {
+        let dx = (Math.random() - 0.5) * screenShakeIntensity; let dy = (Math.random() - 0.5) * screenShakeIntensity; ctx.translate(dx, dy);
+    }
+
+    // --- NEW: Apply Camera Translation ---
+    ctx.translate(-camera.x, -camera.y);
+
+    // --- NEW: Draw Background Over the Expanded Map Size ---
+    if (images[currentMap.bgImg] && images[currentMap.bgImg].complete) {
+        ctx.drawImage(images[currentMap.bgImg], 0, 0, mapW, mapH);
+    } else {
+        ctx.clearRect(camera.x, camera.y, canvas.width, canvas.height);
+    }
+
+    // Call the Raid Manager to render the structural bunkers under the tanks
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
+        raidManager.drawBunkers(ctx);
+    }
+
+    hazards.forEach(h => {
+        if (h.type === 'whirlwind_trap') {
+            if (images.tempestTyphoon && images.tempestTyphoon.complete) {
+                let age = h.maxLife - h.life;
+                ctx.save();
+                ctx.translate(h.x, h.y);
+                
+                ctx.scale(Math.floor(frameCount / 6) % 2 === 0 ? -1 : 1, 1);
+                
+                let scale = 0.6 + Math.sin(frameCount * 0.1) * 0.02; 
+                const w = images.tempestTyphoon.width * scale;
+                const h_img = images.tempestTyphoon.height * scale;
+                
+                ctx.shadowBlur = 30; ctx.shadowColor = '#aaffff';
+                ctx.drawImage(images.tempestTyphoon, -w/2, -h_img/2, w, h_img);
+                ctx.restore();
+            }
+        }
+        else if (h.type === 'fire_trail') {
+            let lifeRatio = h.life / h.maxLife; let p = 1 - lifeRatio; 
+            ctx.save(); ctx.translate(h.x, h.y); ctx.globalCompositeOperation = 'screen';
+            let scale = 1.0; let alpha = 1.0; let c1, c2, c3;
+            if (p < 0.3) { scale = 1.2 - (0.2 * (p / 0.3)); alpha = 1.0 - (0.1 * (p / 0.3)); c1 = '#ffffff'; c2 = '#ffeb3b'; c3 = '#f44336'; } 
+            else if (p < 0.7) { scale = 1.0 - (0.4 * ((p - 0.3) / 0.4)); alpha = 0.9 - (0.4 * ((p - 0.3) / 0.4)); c1 = '#ffeb3b'; c2 = '#ff9800'; c3 = '#8b0000'; } 
+            else { scale = 0.6 - (0.4 * ((p - 0.7) / 0.3)); alpha = 0.5 - (0.5 * ((p - 0.7) / 0.3)); c1 = '#f44336'; c2 = '#8b0000'; c3 = 'transparent'; }
+            ctx.globalAlpha = Math.max(0, alpha); let drawRad = h.radius * scale * 1.5; 
+            let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(1, drawRad));
+            grad.addColorStop(0, c1); grad.addColorStop(0.5, c2); grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, Math.max(1, drawRad), 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        } else if (h.type === 'poison_pool' && images.goo.complete) {
+            ctx.save(); ctx.translate(h.x, h.y); ctx.globalAlpha = Math.min(h.life / 60, 0.8);
+            let drawRadius = h.radius * (1 + Math.sin(h.life * 0.05) * 0.05); ctx.drawImage(images.goo, -drawRadius, -drawRadius, drawRadius * 2, drawRadius * 2); ctx.restore();
+        } else if (h.type === 'mine' && h.visible !== false) {
+            ctx.beginPath(); ctx.arc(h.x, h.y, h.radius, 0, Math.PI*2); ctx.fillStyle = '#654321'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#222'; ctx.stroke();
+            ctx.beginPath(); ctx.arc(h.x, h.y, h.radius * 0.35, 0, Math.PI*2);
+            ctx.fillStyle = h.triggering ? (Math.floor(Date.now() / 50) % 2 === 0 ? '#fff' : '#ff0000') : (Math.floor(Date.now() / 200) % 2 === 0 ? '#ff0000' : '#550000'); ctx.fill();
+        } else if (h.type === 'seraph_aoe') {
+            ctx.save(); ctx.translate(h.x, h.y); ctx.globalAlpha = Math.min(h.life / 60, 0.6);
+            ctx.beginPath(); ctx.arc(0, 0, h.radius, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0, 255, 255, 0.1)'; ctx.fill(); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.stroke();
+            if (Math.random() > 0.5) { ctx.beginPath(); ctx.moveTo((Math.random()-0.5)*h.radius, (Math.random()-0.5)*h.radius); ctx.lineTo((Math.random()-0.5)*h.radius, (Math.random()-0.5)*h.radius); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+            ctx.restore();
+        } else if (h.type === 'seraph_emitter' && h.life % 60 === 0) {
+            for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) projectiles.push(new Projectile(h.owner, h.x, h.y, angle, 6, 3, 1.5, '#00ffff', 'seraph_spark', 1));
+            createParticles(h.x, h.y, 8, '#00ffff', 1.5, 0.3);
+        } else if (h.type === 'destro_strike_manager' && images.target.complete) {
+            h.launched.forEach(t => { 
+                let size = 30 + Math.sin(Date.now() / 100) * 5; 
+                ctx.save();
+                ctx.drawImage(images.target, t.x - size/2, t.y - size/2, size, size);
+                ctx.restore();
+            });
+        } else if (h.type === 'blackout_trap') {
+            ctx.save();
+            ctx.translate(h.x, h.y);
+            ctx.rotate(frameCount * 0.02);
+            let indicatorAlpha = h.armingTimer > 0 ? 0.2 : 0.6; 
+            
+            ctx.strokeStyle = `rgba(0, 0, 0, ${indicatorAlpha})`; 
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            ctx.fillStyle = `rgba(0, 0, 0, ${indicatorAlpha / 2})`; 
+            ctx.fillRect(-8, -2, 16, 4);
+            ctx.fillRect(-2, -8, 4, 16);
+            ctx.restore();
+        } 
+        else if (h.type === 'black_hole') {
+            let age = 240 - h.life; ctx.save(); ctx.translate(h.x, h.y);
+            let grad = ctx.createRadialGradient(0, 0, 10, 0, 0, 150);
+            grad.addColorStop(0, '#000000'); grad.addColorStop(0.4, 'rgba(15, 0, 0, 0.95)'); grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, 200, 0, Math.PI*2); ctx.fill();
+            let vibrateX = (Math.random() - 0.5) * 3; let vibrateY = (Math.random() - 0.5) * 3;
+            ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000';
+            ctx.beginPath(); ctx.arc(vibrateX, vibrateY, 25, 0, Math.PI * 2); ctx.fillStyle = '#000000'; ctx.fill();
+            ctx.beginPath(); ctx.arc(vibrateX, vibrateY, 40, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255, 0, 0, 0.4)'; ctx.fill();
+
+            ctx.lineWidth = 3; ctx.lineCap = 'round';
+            for (let i = 0; i < 24; i++) {
+                let pAge = (age + i * 5) % 40; let pRatio = pAge / 40; let dist = (1 - pRatio) * 200; 
+                let angle = (i * (Math.PI * 2) / 24) + (age * 0.01); 
+                let startX = Math.cos(angle) * dist; let startY = Math.sin(angle) * dist;
+                let streakLength = 15 + (1 - pRatio) * 30; 
+                let endX = Math.cos(angle) * (dist + streakLength); let endY = Math.sin(angle) * (dist + streakLength);
+                ctx.strokeStyle = pRatio < 0.2 ? '#ff3333' : '#ff0000'; ctx.globalAlpha = Math.sin(pRatio * Math.PI); 
+                ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
+            }
+            
+            ctx.globalAlpha = 1; ctx.lineWidth = 2;
+            for (let i = 0; i < 3; i++) {
+                let rAge = (age + i * 20) % 60; let radius = (1 - (rAge / 60)) * 180;
+                ctx.strokeStyle = `rgba(255, 0, 0, ${rAge / 60})`; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
+            }
+            ctx.restore();
+        } 
+        else if (h.type === 'dark_boom') {
+            let age = h.maxLife - h.life; let p = age / 60; ctx.save(); ctx.translate(h.x, h.y);
+            if (p <= 1) {
+                if (age < 10) { ctx.fillStyle = `rgba(255, 0, 0, ${1 - age/10})`; ctx.beginPath(); ctx.arc(0, 0, 80 * (1 - age/10), 0, Math.PI*2); ctx.fill(); }
+                ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000';
+                if (p < 0.6) { let r1 = p * 400; ctx.strokeStyle = `rgba(255, 0, 0, ${1 - (p / 0.6)})`; ctx.lineWidth = 12 * (1 - (p / 0.6)); ctx.beginPath(); ctx.arc(0, 0, r1, 0, Math.PI*2); ctx.stroke(); }
+                if (p > 0.1 && p < 0.8) { let r2 = (p - 0.1) * 350; ctx.strokeStyle = `rgba(139, 0, 0, ${1 - ((p - 0.1) / 0.7)})`; ctx.lineWidth = 8 * (1 - ((p - 0.1) / 0.7)); ctx.beginPath(); ctx.arc(0, 0, r2, 0, Math.PI*2); ctx.stroke(); }
+            }
+            if (h.particles) {
+                ctx.shadowBlur = 10;
+                h.particles.forEach(part => {
+                    ctx.globalAlpha = Math.max(0, 1 - (age / 100)); ctx.fillStyle = part.color;
+                    ctx.shadowColor = (part.color === '#000000' || part.color === '#1a1a1a') ? '#000' : '#ff0000';
+                    ctx.beginPath(); ctx.arc(part.x, part.y, part.size, 0, Math.PI*2); ctx.fill();
+                });
+            }
+            ctx.restore();
+        } 
+        else if (h.type === 'abyss_domain') {
+            let age = 720 - h.life; ctx.save(); ctx.translate(h.x, h.y);
+            let alpha = Math.min(1, age / 30); ctx.globalAlpha = alpha;
+            let grad = ctx.createRadialGradient(0, 0, 50, 0, 0, h.radius);
+            grad.addColorStop(0, '#000000'); grad.addColorStop(0.7, 'rgba(15, 0, 0, 0.95)'); grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, h.radius + 20, 0, Math.PI*2); ctx.fill();
+
+            if (images.auraThing && images.auraThing.complete) {
+                ctx.save(); ctx.rotate(age * 0.005); ctx.filter = 'brightness(150%) contrast(150%) saturate(200%)'; 
+                ctx.shadowBlur = 30 + Math.sin(age * 0.1) * 15; ctx.shadowColor = '#ff0000';
+                const drawSize = h.radius * 2; ctx.drawImage(images.auraThing, -drawSize/2, -drawSize/2, drawSize, drawSize);
+                ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.5 * alpha; ctx.drawImage(images.auraThing, -drawSize/2, -drawSize/2, drawSize, drawSize);
+                ctx.restore();
+            } else {
+                ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000';
+                ctx.save(); ctx.rotate(-age * 0.01); ctx.strokeStyle = '#8b0000'; ctx.lineWidth = 4; ctx.setLineDash([25, 15, 5, 15]); ctx.beginPath(); ctx.arc(0, 0, h.radius * 0.8, 0, Math.PI*2); ctx.stroke(); ctx.restore();
+            }
+
+            ctx.shadowBlur = 40; ctx.shadowColor = '#ff0000'; ctx.fillStyle = '#000000'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill();
+
+            if (h.particles) {
+                ctx.shadowBlur = 10;
+                h.particles.forEach(p => {
+                    let wobbleDist = p.radius + Math.sin(age * 0.1 + p.angle) * 15; let px = Math.cos(p.angle) * wobbleDist; let py = Math.sin(p.angle) * wobbleDist;
+                    ctx.fillStyle = p.isBlack ? '#000000' : '#8b0000'; ctx.shadowColor = p.isBlack ? 'transparent' : '#ff0000';
+                    ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI * 2); ctx.fill();
+                    if (p.isBlack) { ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(Math.cos(p.angle + 0.1) * (wobbleDist + 5), Math.sin(p.angle + 0.1) * (wobbleDist + 5)); ctx.stroke(); }
+                });
+            }
+            ctx.restore();
+        } 
+        else if (h.type === 'void_orb') {
+            if (images.abyssOrb && images.abyssOrb.complete) {
+                ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(Date.now() / 500); ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000'; ctx.drawImage(images.abyssOrb, -20, -20, 40, 40); ctx.restore();
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.fillText(Math.ceil(h.orbHp), h.x, h.y - 30);
+            }
+        }
+        else if (h.type === 'orion_chrono') {
+            let age = h.maxLife - h.life;
+            ctx.save(); ctx.translate(h.x, h.y);
+            
+            if (age < 90) {
+                let chargeRatio = age / 90;
+                ctx.beginPath(); ctx.arc(0, 0, h.radius * chargeRatio, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 51, 204, 0.12)'; ctx.fill();
+                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 1.5; ctx.stroke();
+            } else {
+                ctx.beginPath(); ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+                let pulseGlow = 15 + Math.sin(frameCount * 0.08) * 6;
+                ctx.shadowBlur = pulseGlow; ctx.shadowColor = '#ff33cc';
+                
+                let chronoGrad = ctx.createRadialGradient(0, 0, h.radius * 0.2, 0, 0, h.radius);
+                chronoGrad.addColorStop(0, 'rgba(10, 5, 20, 0.4)');
+                chronoGrad.addColorStop(0.75, 'rgba(255, 51, 204, 0.08)');
+                chronoGrad.addColorStop(1.0, 'rgba(255, 51, 204, 0.4)');
+                
+                ctx.fillStyle = chronoGrad; ctx.fill();
+                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 2.5; ctx.stroke();
+                
+                ctx.rotate(age * 0.02);
+                ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0, -h.radius + 15);
+                ctx.strokeStyle = 'rgba(255, 51, 204, 0.3)'; ctx.lineWidth = 2; ctx.stroke();
+            }
+            ctx.restore();
+        }
+    });
+
+    players.forEach(p => {
+        if (p.config.id === 'orion' && p.portalA) {
+            ctx.save(); ctx.translate(p.portalA.x, p.portalA.y);
+            ctx.rotate(frameCount * 0.03);
+            ctx.shadowBlur = 15 + Math.sin(frameCount * 0.1) * 5; ctx.shadowColor = '#ff33cc';
+            ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.ellipse(0, 0, 24, 12, 0, 0, Math.PI * 2); ctx.stroke();
+            ctx.fillStyle = '#000000'; ctx.fill();
+            ctx.restore();
+            
+            if (p.portalB) {
+                ctx.save(); ctx.translate(p.portalB.x, p.portalB.y);
+                ctx.rotate(-frameCount * 0.03);
+                ctx.shadowBlur = 15 + Math.sin(frameCount * 0.1) * 5; ctx.shadowColor = '#ff33cc';
+                ctx.strokeStyle = '#ff33cc'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.ellipse(0, 0, 24, 12, 0, 0, Math.PI * 2); ctx.stroke();
+                ctx.fillStyle = '#000000'; ctx.fill();
+                ctx.restore();
+                
+                if (frameCount % 4 === 0) {
+                    let randRatio = Math.random();
+                    let px = p.portalA.x + (p.portalB.x - p.portalA.x) * randRatio;
+                    let py = p.portalA.y + (p.portalB.y - p.portalA.y) * randRatio;
+                    createParticles(px, py, 1, '#ff33cc', 0.8, 0.2);
+                }
+            }
+        }
+    });
+
+    players.forEach(p => {
+        if (p.config.id === 'scorpion' && !p.isDead) {
+            ctx.strokeStyle = '#00ff66'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
+            if (p.hookState === 'fired' && p.activeArrow && !p.activeArrow.dead) { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.activeArrow.x, p.activeArrow.y); ctx.stroke(); } 
+            else if (p.hookState === 'pulling' && p.hookTarget && !p.hookTarget.isDead) { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.hookTarget.x, p.hookTarget.y); ctx.stroke(); }
+            ctx.setLineDash([]); 
+        }
+    });
+
+    ctx.fillStyle = '#222'; ctx.strokeStyle = '#5c3a92'; ctx.lineWidth = 2;
+    currentMap.walls.forEach(w => { ctx.fillRect(w.x, w.y, w.w, w.h); ctx.strokeRect(w.x, w.y, w.w, w.h); });
+    
+    currentMap.rocks.forEach(r => {
+        ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI*2); ctx.fillStyle = '#4a3c31'; ctx.fill(); ctx.strokeStyle = '#2a1c11'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.beginPath(); ctx.arc(r.x - r.r*0.2, r.y - r.r*0.2, r.r*0.4, 0, Math.PI*2); ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
+    });
+
+    particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); });
+    flashes.forEach(f => { ctx.globalAlpha = Math.max(0, f.life); ctx.fillStyle = f.color || '#fff'; ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI*2); ctx.fill(); });
+    ctx.globalAlpha = 1.0;
+
+    projectiles.forEach(p => p.draw()); players.forEach(p => p.draw());
+
+    players.forEach(tank => {
+        if (tank.typhoonMarks > 0 && !tank.isDead) {
+            ctx.save();
+            ctx.translate(tank.x + tank.radius + 15, tank.y - tank.radius - 15);
+            ctx.shadowBlur = 10; ctx.shadowColor = '#aaffff';
+            
+            if (images.tempestProj && images.tempestProj.complete) {
+                let w = 20, h_img = 20;
+                ctx.save();
+                ctx.drawImage(images.tempestProj, -w/2, -h_img/2, w, h_img);
+                ctx.restore();
+            }
+            
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left';
+            ctx.fillText(Math.floor(tank.typhoonMarks), 15, 6);
+            ctx.restore();
+        }
+        
+        if (tank.config.id === 'seraph' && tank.zFiring && tank.beamEndX !== undefined && !tank.isDead) {
+            ctx.beginPath(); ctx.moveTo(tank.beamStartX, tank.beamStartY); ctx.lineTo(tank.beamEndX, tank.beamEndY); ctx.strokeStyle = '#fff'; ctx.lineWidth = 10 + Math.random() * 5; ctx.shadowBlur = 20; ctx.shadowColor = '#00ffff'; ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(tank.beamStartX, tank.beamStartY); ctx.lineTo(tank.beamEndX, tank.beamEndY); ctx.strokeStyle = '#e0ffff'; ctx.lineWidth = 4; ctx.shadowBlur = 0; ctx.stroke();
+        }
+    });
+
+    ctx.textAlign = 'center';
+    floatingTexts.forEach(t => { 
+        ctx.font = t.fontSize ? `bold ${t.fontSize} sans-serif` : 'bold 20px sans-serif'; 
+        ctx.fillStyle = t.color || '#fff'; ctx.globalAlpha = Math.max(0, t.life / 60); ctx.fillText(t.text, t.x, t.y); 
+    });
+    ctx.globalAlpha = 1.0;
+
+    ctx.restore(); 
+
+    // --- NEW: HUD overlay for Player Lives ---
+    if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && gameState === 'PLAYING') {
+        ctx.fillStyle = '#00ff66';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = '#000000';
+        ctx.fillText(`REVIVES: ${playerLives}`, 20, 90);
+        ctx.shadowBlur = 0;
+    }
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
