@@ -96,7 +96,7 @@ const tanksData = [
     { id: 'abyss', name: 'ABYSS', img: images.abyss, color: '#1a0033', desc: 'Normal [C | \']: Shadow Bolt (Hold for Rapid Fire)<br>Skill 1 [X | ;]: Void Orb (Deploy trap, shoot 15x for Domain)<br>Skill 2 [Z | L]: Event Horizon (Bouncing Black Hole)' },
     { id: 'orion', name: 'ORION', img: images.orion, color: '#ff33cc', desc: 'Normal [C | \']: Shockwave Missile (Bounces/Portals)<br>Skill 1 [X | ;]: Chronosphere (Slow & Reflect)<br>Skill 2 [Z | L]: Quantum Portals (Tap) / Anti-Grav Lift (Hold)' },
     { id: 'tempest', name: 'TEMPEST', img: images.tempest, color: '#aaffff', desc: 'Normal [C | \']: Wind Shot Dash (Alternates Shoot/Dash)<br>Skill 1 [X | ;]: Typhoon\'s Embrace (Consumes 3 Marks, Shields, Trap)<br>Skill 2 [Z | L]: Windcutter (Slow Converging Crescents)', maxHp: 60, speedMod: 1.45 },
-    { id: 'blackout', name: 'BLACKOUT', img: images.blackout, color: '#33ff33', desc: 'Normal [C | \']: Snipe (High speed, random dmg, disrupts aim)<br>Skill 1 [X | ;]: Teleport Anchor (Teleport resets C. Hold to clear)<br>Skill 2 [Z | L]: Mark Trap (Hold to aim, triggers on step)' },
+    { id: 'blackout', name: 'BLACKOUT', img: images.blackout, color: '#33ff33', desc: 'Normal [C | \']: Snipe (High speed, random dmg, disrupts aim)<br>Skill 1 [X | ;]: Teleport Anchor (Teleport resets C. Hold to clear)<br>Skill 2 [Z | L]: Mark Trap (Hold to aim, triggers on step)', maxHp: 60 },
     
     // --- RAID MODE UNITS (Set to npcOnly so they don't appear in select screen) ---
     { id: 'usf_grizzly', name: 'USF GRIZZLY', img: images.usfGrizzly, color: '#33aa33', desc: 'Allied Frontline', maxHp: 100, npcOnly: true },
