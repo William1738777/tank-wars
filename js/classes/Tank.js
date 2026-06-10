@@ -109,7 +109,6 @@ class Tank {
     think() {
         if (this.isDead || this.stunTimer > 0 || this.dashState === 2) return;
         
-        // --- FIXED: VANGUARD AVOIDANCE SYSTEM ---
         if (this.isHolding) {
             keys[this.controls.up] = true; 
             keys[this.controls.down] = false;
@@ -126,7 +125,6 @@ class Tank {
             this.burstsLeft = 0;
             this.flameTimer = 0;
 
-            // Radar feeler to steer around boulders while holding formation
             let sensorDist = 100;
             let lookAheadX = this.x + Math.cos(this.angle) * sensorDist; 
             let lookAheadY = this.y + Math.sin(this.angle) * sensorDist;
@@ -140,10 +138,8 @@ class Tank {
             }
 
             if (obstacleAhead) {
-                // Steer left to slide around the rock
                 keys[this.controls.left] = true;
             } else {
-                // Auto-correct back to facing East (Angle 0)
                 let angleDiff = 0 - this.angle;
                 angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
                 if (angleDiff > 0.1) keys[this.controls.right] = true;
@@ -576,8 +572,11 @@ class Tank {
         if (this.stunTimer <= 0 && this.destroSlowTimer > 0) { this.destroSlowTimer--; currentSpeed *= 0.2; }
         if (this.fireSlowTimer > 0) { this.fireSlowTimer--; currentSpeed *= 0.3; }
         if (this.tempestSlowTimer > 0) { this.tempestSlowTimer--; currentSpeed *= 0.4; } 
-        // --- RELOAD SPEED NERF ---
-        if (this.mgReloading) { currentSpeed *= 0.5; }
+        
+        // --- RELOAD SPEED NERF (Dreadnaught & Blackout) ---
+        if (this.mgReloading || (this.config.id === 'blackout' && Date.now() < this.cooldowns.c)) { 
+            currentSpeed *= 0.5; 
+        }
 
         if (this.abyssSlowTimer > 0) {
             this.abyssSlowTimer--;
