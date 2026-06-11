@@ -1,5 +1,10 @@
 class Projectile {
     constructor(owner, x, y, angle, speed, radius, damage, color, type, bounces, castId = null) {
+        // --- NEW: GENERATE A UNIQUE BARCODE IF ONE DOESN'T EXIST ---
+        if (!castId) {
+            castId = owner + '-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+        }
+        
         this.owner = owner; this.x = x; this.y = y; this.angle = angle;
         this.vx = Math.cos(angle)*speed; this.vy = Math.sin(angle)*speed;
         
@@ -106,7 +111,6 @@ class Projectile {
             if (this.y - this.radius < 0) { this.y = this.radius; this.vy *= -1; collided = true; } 
             else if (this.y + this.radius > mapH) { this.y = mapH - this.radius; this.vy *= -1; collided = true; }
 
-            // Ghost through walls for turrets
             if (!collided && this.type !== 'heavy_turret_shot' && this.type !== 'light_turret_shot') {
                 for (let w of currentMap.walls) {
                     if (this.x + this.radius > w.x && this.x - this.radius < w.x + w.w &&
@@ -121,7 +125,6 @@ class Projectile {
                 }
             }
             
-            // Ghost through rocks for turrets
             if (!collided && this.type !== 'heavy_turret_shot' && this.type !== 'light_turret_shot') {
                 for (let r of currentMap.rocks) {
                     let dx = this.x - r.x; let dy = this.y - r.y;
