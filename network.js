@@ -44,7 +44,7 @@ socket.on('updateGamesList', (games) => {
         li.innerHTML = `
             <span>ROOM: <b>${game.id}</b></span>
             <span style="color: ${statusColor}; font-size: 18px;">${game.status}</span>
-            <button class="join-btn" data-id="${game.id}" style="background: #111; color: #00ff66; border: 2px solid #00ff66; padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer; ${game.status === 'IN PROGRESS' ? 'display:none;' : ''}">JOIN</button>
+            <button class="join-btn" data-id="${game.id}" style="padding: 10px 20px; background: #00ff66; cursor: pointer; border: none; font-weight: bold; ${game.status === 'IN PROGRESS' ? 'display:none;' : ''}">JOIN</button>
         `;
         gamesList.appendChild(li);
     }
@@ -92,7 +92,6 @@ socket.on('gameJoined', (gameId) => {
     if(mapSelect) mapSelect.style.display = 'none';
     if(toggleAi) toggleAi.style.display = 'none';
     
-    // Force Player 2's UI to display the room code
     const roomDisplay = document.getElementById('room-code-display');
     if (roomDisplay) roomDisplay.innerText = gameId;
     
@@ -138,6 +137,7 @@ socket.on('startGame', () => { if (typeof startGame === 'function') startGame();
 
 // --- IN-GAME REAL-TIME SOCKET LISTENERS ---
 
+// --- FIXED: HOST-AUTHORITATIVE HP RECEPTION ---
 socket.on('playerUpdate', (data) => {
     if (typeof gameState === 'undefined' || gameState !== 'PLAYING' || !players || players.length < 2) return;
     
@@ -162,7 +162,6 @@ socket.on('playerUpdate', (data) => {
 socket.on('playerShoot', (data) => {
     if (typeof gameState === 'undefined' || gameState !== 'PLAYING') return;
     if (typeof Projectile !== 'undefined' && typeof projectiles !== 'undefined') {
-        // Pass true as the final argument so this incoming bullet doesn't echo back out
         projectiles.push(new Projectile(data.owner, data.x, data.y, data.angle, data.speed, data.radius, data.damage, data.color, data.type, data.bounces, data.castId, true));
     }
 });
@@ -174,29 +173,84 @@ socket.on('playerHazard', (data) => {
     hazards.push(h);
 });
 
+// --- FIXED: SCOREBOARD & UNIVERSAL GUEST RESET ---
 socket.on('matchDeath', (data) => {
     if (typeof gameState === 'undefined' || gameState !== 'PLAYING') return;
+    
+    // Ensure the Guest receives the exact score the Host tallied
     p1Score = data.p1Score; p2Score = data.p2Score;
     if (document.getElementById('score-p1')) document.getElementById('score-p1').innerText = p1Score;
     if (document.getElementById('score-p2')) document.getElementById('score-p2').innerText = p2Score;
     
-    if (!isHost) { // Only Guest runs local score force-updates since Host computes authorization
+    if (!isHost) { 
         let loser = players.find(p => p.owner === data.loserOwnerId);
         if (loser && !loser.isDead) {
             loser.isDead = true;
             if (typeof createKaboom === 'function') createKaboom(loser.x, loser.y, 2.0 * (loser.scaleMod || 1));
         }
+        
         if (p1Score >= 3 || p2Score >= 3) {
             gameState = 'OVER';
             const winnerText = p1Score >= 3 ? "PLAYER 1" : "PLAYER 2";
             document.getElementById('victory-title').innerText = `${winnerText} WINS!`;
             document.getElementById('victory-title').style.color = p1Score >= 3 ? '#00aaff' : '#ff3333';
+            
+            // Build the Guest's stat screen explicitly
+            let p1Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
+            let p2Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
+            let p1Obj = players.find(p => p.owner === 1);
+            let p2Obj = players.find(p => p.owner === 2);
+            if(p1Obj) p1Stats = p1Obj.matchStats;
+            if(p2Obj) p2Stats = p2Obj.matchStats;
+            
+            document.getElementById('stats-p1').innerHTML = `
+                Damage Dealt: <b>${Math.round(p1Stats.totalDamage)}</b><br>
+                Bounced Dmg: <b>${Math.round(p1Stats.bouncedDamage)}</b><br>
+                X-Skill Dmg: <b>${Math.round(p1Stats.xSkillDamage)}</b><br>
+                Shield Gen: <b>${Math.round(p1Stats.shieldGenerated)}</b>
+            `;
+            document.getElementById('stats-p2').innerHTML = `
+                Damage Dealt: <b>${Math.round(p2Stats.totalDamage)}</b><br>
+                Bounced Dmg: <b>${Math.round(p2Stats.bouncedDamage)}</b><br>
+                X-Skill Dmg: <b>${Math.round(p2Stats.xSkillDamage)}</b><br>
+                Shield Gen: <b>${Math.round(p2Stats.shieldGenerated)}</b>
+            `;
+
             setTimeout(() => { document.getElementById('victory-screen').style.display = 'flex'; }, 1500);
         } else {
+            // Apply the Universal Reset to BOTH tanks for the Guest
             setTimeout(() => {
-                players.forEach(p => { p.hp = p.maxHp; p.isDead = false; p.poisons = []; p.stunTimer = 0; });
-                if (players[0]) { players[0].x = spawnPoints[0].x; players[0].y = spawnPoints[0].y; players[0].angle = 0; }
-                if (players[1]) { players[1].x = spawnPoints[3].x; players[1].y = spawnPoints[3].y; players[1].angle = Math.PI; }
+                players.forEach((tank, index) => {
+                    let spawn = spawnPoints[index === 0 ? 0 : 3];
+                    tank.x = spawn.x; tank.y = spawn.y; tank.angle = index === 0 ? 0 : Math.PI;
+                    tank.hp = tank.maxHp; tank.isDead = false; tank.poisons = []; tank.stunTimer = 0;
+                    tank.hookState = 'ready'; tank.dashState = 0; tank.burstsLeft = 0; tank.flameTimer = 0;
+                    tank.mgAmmo = tank.mgMaxAmmo; tank.mgReloading = false; tank.invulnTimer = 90; 
+                    tank.kbX = 0; tank.kbY = 0; tank.kbTimer = 0; tank.electrocutedTimer = 0;
+                    tank.energy = 0; tank.zReady = false; tank.zFiring = false; tank.zChargeTimer = 0; tank.cShots = 0;
+                    
+                    tank.destroAiming = false; tank.destroLocked = false; tank.destroAimDist = 100;
+                    tank.afterStunSlow = 0; tank.destroSlowTimer = 0; tank.kbType = null;
+                    tank.fireShieldActive = false; tank.isGhosting = false; tank.fireTrailTicks = 0;
+                    tank.phantomEvasiveTimer = 0; tank.isGhost = false; tank.ghostToggleTimer = 0;
+                    tank.phantomMarks = 0; tank.phantomMarkTimer = 0; tank.phantomShockTimer = 0;
+                    tank.abyssSlowStacks = 0; tank.abyssSlowTimer = 0;
+                    
+                    tank.tempestStacks = 0; tank.tempestSpeedStacks = 0; tank.tempestSpeedTimer = 0;
+                    tank.tempestCSpdStacks = 0; tank.tempestCSpdTimer = 0; tank.tempestSlowTimer = 0;
+                    tank.tempestShieldHp = 0; tank.tempestShieldTimer = 0;
+                    tank.tempestOrbitalAngle = 0; tank.tempestOrbitalCooldowns = [0, 0, 0];
+                    tank.typhoonMarks = 0; tank.inTornado = false; 
+                    
+                    tank.zHeight = 0; tank.zRotation = 0;
+                    tank.portalA = null; tank.portalB = null; tank.portalTimer = 0;
+    
+                    tank.blackoutAnchor = null; tank.blackoutLasers = [];
+                    tank.xHoldTimer = 0; tank.xHeldLastFrame = false; tank.blackoutLaserTimer = 0;
+                    
+                    tank.cooldowns = { c: 0, x: 0, z: 0 };
+                });
+                projectiles = []; hazards = []; flashes = []; particles = []; floatingTexts = [];
                 if (typeof updateHUD === 'function') updateHUD();
             }, 1500);
         }
@@ -209,7 +263,6 @@ if (typeof Projectile !== 'undefined') {
     Projectile = class extends OriginalProjectile {
         constructor(owner, x, y, angle, speed, radius, damage, color, type, bounces, castId = null, fromNetwork = false) {
             super(owner, x, y, angle, speed, radius, damage, color, type, bounces, castId);
-            // Catch if you fired a bullet locally, send it across the internet
             if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !fromNetwork) {
                 let myOwnerId = isHost ? 1 : 2;
                 if (owner === myOwnerId) {
