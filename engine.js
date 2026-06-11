@@ -105,63 +105,45 @@ function startGame() {
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
         mapW = 3000;
         mapH = 2000;
-        
-        // Spawn Player 1
         let p1 = new Tank(1, tanksData[p1Selection], 200, mapH / 2, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
-        p1.team = 0; // CRITICAL: Assign player to the USF Allied Team!
+        p1.team = 0;
         players = [p1];
-        
-        // Trigger the RaidManager to spawn allies and enemies
-        if (typeof raidManager !== 'undefined') {
-            raidManager.init();
-        }
+        if (typeof raidManager !== 'undefined') raidManager.init();
     } else {
-        // Standard 1v1 Screen Mode
         mapW = canvas.width;
         mapH = canvas.height;
         currentMap = mapsData[selectedMapIndex];
         
-        // --- MULTIPLAYER MODE CONFIGURATION ---
         if (typeof isOnlineGame !== 'undefined' && isOnlineGame) {
             if (isHost) {
-                // Host handles Tank 1 with standard WASD keys
                 let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
                 p1.team = 1;
-                // Tank 2 belongs to the remote caller, intercept keys so they don't map locally
                 let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'net_up', down:'net_down', left:'net_left', right:'net_right', c:'net_c', x:'net_x', z:'net_z'}, false);
                 p2.team = 2;
                 players = [p1, p2];
             } else {
-                // Guest handles Tank 1 remotely
                 let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'net_up', down:'net_down', left:'net_left', right:'net_right', c:'net_c', x:'net_x', z:'net_z'}, false);
                 p1.team = 1;
-                // Guest handles Tank 2 locally using WASD keys
                 let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
                 p2.team = 2;
                 players = [p1, p2];
             }
         } else {
-            // Explicitly declare teams to separate Player 1 and Player 2/CPU
             let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
             p1.team = 1;
-            
             let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL');
             p2.team = 2;
-            
             players = [p1, p2];
         }
     }
     
-    // Intercept tactical items pushed to arrays to sync environmental drops
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !hazards._isPatched) {
         const originalPush = hazards.push;
         hazards.push = function(...items) {
             items.forEach(item => {
                 if (!item.fromNetwork && typeof socket !== 'undefined') {
                     let myOwnerId = isHost ? 1 : 2;
-                    if (item.owner === myOwnerId) {
-                        socket.emit('playerHazard', { roomId: myRoomCode, hazard: item });
-                    }
+                    if (item.owner === myOwnerId) socket.emit('playerHazard', { roomId: myRoomCode, hazard: item });
                 }
             });
             return originalPush.apply(this, items);
@@ -175,42 +157,28 @@ function startGame() {
 function handleDeath(loserOwnerId) {
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
         if (loserOwnerId === 1) {
-            // --- Player Revive Logic ---
             if (playerLives > 0) {
                 playerLives--;
                 let p1 = players.find(p => p.owner === 1);
                 if (p1) {
-                    p1.isDead = false;
-                    p1.hp = p1.maxHp;
-                    p1.x = 200; // Reset to original Raid spawn X
-                    p1.y = mapH / 2; // Reset to original Raid spawn Y
-                    p1.invulnTimer = 180; // 3 seconds of invulnerability
-                    
-                    // Clear all debuffs and active abilities
+                    p1.isDead = false; p1.hp = p1.maxHp; p1.x = 200; p1.y = mapH / 2; p1.invulnTimer = 180; 
                     p1.poisons = []; p1.stunTimer = 0; p1.kbTimer = 0; p1.kbX = 0; p1.kbY = 0;
                     p1.hookState = 'ready'; p1.dashState = 0; p1.burstsLeft = 0; p1.flameTimer = 0;
                     p1.mgAmmo = p1.mgMaxAmmo; p1.mgReloading = false; 
                     p1.energy = 0; p1.zReady = false; p1.zFiring = false; p1.zChargeTimer = 0;
                     p1.zHeight = 0; p1.zRotation = 0; p1.electrocutedTimer = 0;
-                    
                     floatingTexts.push({x: p1.x, y: p1.y - 40, text: `SYSTEM REBOOT! (${playerLives} REVIVES LEFT)`, life: 90, color: '#00ff66', fontSize: '20px'});
                 }
                 updateHUD();
             } else {
-                // Out of lives -> Raid Failed
                 gameState = 'OVER';
                 document.getElementById('victory-title').innerText = `RAID FAILED`;
                 document.getElementById('victory-title').style.color = '#ff3333';
                 setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
             }
         } else {
-            // An AI Died -> Send them to the respawn queue (Turrets ignore this internally)
             let deadTank = players.find(p => p.owner === loserOwnerId);
-            if (typeof raidManager !== 'undefined' && deadTank) {
-                raidManager.queueRespawn(deadTank);
-            }
-
-            // Win Condition: All Heavy Turrets destroyed
+            if (typeof raidManager !== 'undefined' && deadTank) raidManager.queueRespawn(deadTank);
             let turretsAlive = players.filter(p => p.config.id === 'facility_turret' && !p.isDead).length;
             if (turretsAlive === 0) {
                 gameState = 'OVER';
@@ -222,13 +190,14 @@ function handleDeath(loserOwnerId) {
         return;
     }
 
-    // --- STANDARD 1v1 Logic ---
+    // --- CRITICAL ONLINE FIX: Only Host processes the death result and scoreboard ---
+    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) return;
+
     let winnerOwnerId = loserOwnerId === 1 ? 2 : 1;
     if (winnerOwnerId === 1) p1Score++; else p2Score++;
     
     document.getElementById('score-p1').innerText = p1Score; document.getElementById('score-p2').innerText = p2Score;
     
-    // --- NEW: Broadcast victory calculations if hosted online ---
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && isHost && typeof socket !== 'undefined') {
         socket.emit('matchDeath', { roomId: myRoomCode, loserOwnerId, p1Score, p2Score });
     }
@@ -260,41 +229,41 @@ function handleDeath(loserOwnerId) {
 
         setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
     } else {
+        // --- FIXED: Universal Reset for BOTH tanks ---
         setTimeout(() => {
-            let loser = players.find(p => p.owner === loserOwnerId);
-            let winner = players.find(p => p.owner === winnerOwnerId);
-            
-            if(!loser || !winner) return;
+            players.forEach((tank, index) => {
+                let spawn = spawnPoints[index === 0 ? 0 : 3];
+                tank.x = spawn.x; tank.y = spawn.y; tank.angle = index === 0 ? 0 : Math.PI;
+                tank.hp = tank.maxHp; tank.isDead = false; tank.poisons = []; tank.stunTimer = 0;
+                tank.hookState = 'ready'; tank.dashState = 0; tank.burstsLeft = 0; tank.flameTimer = 0;
+                tank.mgAmmo = tank.mgMaxAmmo; tank.mgReloading = false; tank.invulnTimer = 90; 
+                tank.kbX = 0; tank.kbY = 0; tank.kbTimer = 0; tank.electrocutedTimer = 0;
+                tank.energy = 0; tank.zReady = false; tank.zFiring = false; tank.zChargeTimer = 0; tank.cShots = 0;
+                
+                tank.destroAiming = false; tank.destroLocked = false; tank.destroAimDist = 100;
+                tank.afterStunSlow = 0; tank.destroSlowTimer = 0; tank.kbType = null;
+                tank.fireShieldActive = false; tank.isGhosting = false; tank.fireTrailTicks = 0;
+                tank.phantomEvasiveTimer = 0; tank.isGhost = false; tank.ghostToggleTimer = 0;
+                tank.phantomMarks = 0; tank.phantomMarkTimer = 0; tank.phantomShockTimer = 0;
+                tank.abyssSlowStacks = 0; tank.abyssSlowTimer = 0;
+                
+                tank.tempestStacks = 0; tank.tempestSpeedStacks = 0; tank.tempestSpeedTimer = 0;
+                tank.tempestCSpdStacks = 0; tank.tempestCSpdTimer = 0; tank.tempestSlowTimer = 0;
+                tank.tempestShieldHp = 0; tank.tempestShieldTimer = 0;
+                tank.tempestOrbitalAngle = 0; tank.tempestOrbitalCooldowns = [0, 0, 0];
+                tank.typhoonMarks = 0; tank.inTornado = false; 
+                
+                tank.zHeight = 0; tank.zRotation = 0;
+                tank.portalA = null; tank.portalB = null; tank.portalTimer = 0;
 
-            let bestSpawn = spawnPoints[0]; let maxDist = -1;
-            for(let sp of spawnPoints) { let dist = Math.hypot(sp.x - winner.x, sp.y - winner.y); if (dist > maxDist) { maxDist = dist; bestSpawn = sp; } }
-            
-            loser.x = bestSpawn.x; loser.y = bestSpawn.y;
-            loser.hp = loser.maxHp; loser.isDead = false; loser.poisons = []; loser.stunTimer = 0;
-            loser.hookState = 'ready'; loser.dashState = 0; loser.burstsLeft = 0; loser.flameTimer = 0;
-            loser.mgAmmo = loser.mgMaxAmmo; loser.mgReloading = false; loser.invulnTimer = 90; 
-            loser.kbX = 0; loser.kbY = 0; loser.kbTimer = 0; loser.electrocutedTimer = 0;
-            loser.energy = 0; loser.zReady = false; loser.zFiring = false; loser.zChargeTimer = 0; loser.cShots = 0;
-            
-            loser.destroAiming = false; loser.destroLocked = false; loser.destroAimDist = 100;
-            loser.afterStunSlow = 0; loser.destroSlowTimer = 0; loser.kbType = null;
-            loser.fireShieldActive = false; loser.isGhosting = false; loser.fireTrailTicks = 0;
-            loser.phantomEvasiveTimer = 0; loser.isGhost = false; loser.ghostToggleTimer = 0;
-            loser.phantomMarks = 0; loser.phantomMarkTimer = 0; loser.phantomShockTimer = 0;
-            loser.abyssSlowStacks = 0; loser.abyssSlowTimer = 0;
-            
-            loser.tempestStacks = 0; loser.tempestSpeedStacks = 0; loser.tempestSpeedTimer = 0;
-            loser.tempestCSpdStacks = 0; loser.tempestCSpdTimer = 0; loser.tempestSlowTimer = 0;
-            loser.tempestShieldHp = 0; loser.tempestShieldTimer = 0;
-            loser.tempestOrbitalAngle = 0; loser.tempestOrbitalCooldowns = [0, 0, 0];
-            loser.typhoonMarks = 0; loser.inTornado = false; 
-            
-            loser.zHeight = 0; loser.zRotation = 0;
-            loser.portalA = null; loser.portalB = null; loser.portalTimer = 0;
-
-            loser.blackoutAnchor = null; loser.blackoutLasers = [];
-            loser.xHoldTimer = 0; loser.xHeldLastFrame = false; loser.blackoutLaserTimer = 0;
-            
+                tank.blackoutAnchor = null; tank.blackoutLasers = [];
+                tank.xHoldTimer = 0; tank.xHeldLastFrame = false; tank.blackoutLaserTimer = 0;
+                
+                // Clear all cooldowns
+                tank.cooldowns = { c: 0, x: 0, z: 0 };
+            });
+            // Clear entire board
+            projectiles = []; hazards = []; flashes = []; particles = []; floatingTexts = [];
             updateHUD();
         }, 1500); 
     }
@@ -306,33 +275,43 @@ function update() {
     frameCount++; players.forEach(p => p.update());
     players.forEach(p => p.inFireTrail = false); 
     
-    // --- NEW: FRAME-BY-FRAME POSITION SYNC BROADCAST ---
+    // --- FIXED: HOST-AUTHORITATIVE HP SYNC ---
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && typeof socket !== 'undefined') {
-        let myTank = isHost ? players[0] : players[1];
-        if (myTank && !myTank.isDead) {
-            socket.emit('playerUpdate', {
-                roomId: myRoomCode,
-                isHost: isHost,
-                x: myTank.x,
-                y: myTank.y,
-                angle: myTank.angle,
-                hp: myTank.hp
-            });
+        if (isHost) {
+            // The Host beams the official HP of BOTH tanks to the Guest
+            if (players[0] && !players[0].isDead) {
+                socket.emit('playerUpdate', {
+                    roomId: myRoomCode,
+                    isHost: true,
+                    x: players[0].x,
+                    y: players[0].y,
+                    angle: players[0].angle,
+                    p1Hp: players[0].hp,
+                    p2Hp: players[1] ? players[1].hp : 100
+                });
+            }
+        } else {
+            // The Guest ONLY sends their steering coordinates, never their HP
+            if (players[1] && !players[1].isDead) {
+                socket.emit('playerUpdate', {
+                    roomId: myRoomCode,
+                    isHost: false,
+                    x: players[1].x,
+                    y: players[1].y,
+                    angle: players[1].angle
+                });
+            }
         }
     }
     // ----------------------------------------------------
 
-    // Allow RaidManager to process respawns and ally release logic
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
         raidManager.update();
-        
-        // Global Vanguard Wake-Up on Damage
         if (!raidManager.alliesReleased) {
             let vanguardHit = players.some(p => p.team === 0 && p.hp < p.maxHp);
             if (vanguardHit) {
                 raidManager.alliesReleased = true;
                 players.forEach(p => { if (p.team === 0) p.isHolding = false; });
-                
                 let p1 = players.find(p => p.owner === 1);
                 let cx = p1 ? p1.x : camera.x + canvas.width/2;
                 let cy = p1 ? p1.y - 100 : camera.y + 100;
@@ -341,7 +320,6 @@ function update() {
         }
     }
 
-    // --- FIXED: Immovable collision logic for Turrets ---
     for (let i = 0; i < players.length; i++) {
         for (let j = i + 1; j < players.length; j++) {
             let p1 = players[i]; let p2 = players[j];
@@ -383,7 +361,6 @@ function update() {
         
         if (h.type === 'whirlwind_trap') {
             if (h.targetTank && !h.targetTank.isDead) {
-                // --- FIXED: Do not lift immovable turrets ---
                 if (h.targetTank.config.speedMod === 0) {
                     if (h.life % 30 === 0) {
                         let progress = 1 - (h.life / h.maxLife); 
@@ -481,7 +458,6 @@ function update() {
                 if (tank.owner !== h.owner && !tank.isDead && tank.invulnTimer <= 0) {
                     let dx = h.x - tank.x; let dy = h.y - tank.y; let dist = Math.hypot(dx, dy);
                     if (dist < h.radius && dist > 0.1) { 
-                        // --- FIXED: Immovable turrets cannot be sucked by black holes ---
                         if (tank.config.speedMod !== 0) {
                             tank.x += (dx / dist) * 2; tank.y += (dy / dist) * 2; 
                         }
@@ -548,7 +524,6 @@ function update() {
                             if (Math.hypot(tank.x - h.x, tank.y - h.y) < tank.radius + h.radius + 30) {
                                 let startHp = tank.hp;
                                 tank.hp -= 20; 
-                                // --- FIXED: Turrets ignore explosion knockbacks ---
                                 if (tank.config.speedMod !== 0) {
                                     let angle = Math.atan2(tank.y - h.y, tank.x - h.x);
                                     tank.kbX = Math.cos(angle) * 15; tank.kbY = Math.sin(angle) * 15; tank.kbTimer = 15; 
@@ -781,7 +756,6 @@ function update() {
 
         players.forEach((tank, tIndex) => {
             let shooter = players.find(p => p.owner === pA.owner);
-            // FAILSAFE ADDED HERE:
             let isEnemy = !shooter || shooter.team === null || tank.team === null || shooter.team !== tank.team;
 
             if (pA.owner !== tank.owner && isEnemy && !pA.dead && !tank.isDead && tank.invulnTimer <= 0) {
@@ -800,7 +774,6 @@ function update() {
 
                         if (pA.type === 'firebolt') {
                             tank.hp -= pA.damage; 
-                            // --- FIXED: Immovable turrets cannot be knocked back ---
                             if (tank.config.speedMod !== 0) {
                                 let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
                                 tank.kbX = Math.cos(angle) * 12; tank.kbY = Math.sin(angle) * 12; tank.kbTimer = 15; 
@@ -810,19 +783,16 @@ function update() {
                         } else if (pA.type === 'arrow') {
                             tank.hp -= pA.damage; tank.addPoison(1.0, 300); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "HOOKED!", life: 50, color: '#00ff66'});
                             let ownerTank = players.find(p => p.owner === pA.owner);
-                            // --- FIXED: Scorpion arrows cannot pull immovable turrets ---
                             if (ownerTank && tank.config.speedMod !== 0) { ownerTank.hookState = 'pulling'; ownerTank.hookTarget = tank; ownerTank.hookTimer = 60; }
                         } else if (pA.type === 'seraph_spark') {
                             tank.hp -= pA.damage; if (Math.random() < 0.10) { tank.stunTimer = Math.max(tank.stunTimer, 30); floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ZAPPED!", life: 40, color: '#00ffff'}); }
                         } else if (pA.type === 'destro_missile') {
                             tank.hp -= pA.damage; 
-                            // --- FIXED: Immovable turrets cannot be knocked back ---
                             if (tank.config.speedMod !== 0) {
                                 tank.kbX = Math.cos(pA.angle) * 20; tank.kbY = Math.sin(pA.angle) * 20; tank.kbTimer = 15; tank.kbType = 'wall_slam';
                             }
                         } else if (pA.type === 'orion_z_lift') {
                             tank.hp -= pA.damage; 
-                            // --- FIXED: Immovable turrets cannot be lifted into the air ---
                             if (tank.config.speedMod !== 0) {
                                 tank.zHeightActive = true; tank.zFrameCounter = 0; tank.zMaxDuration = 150; 
                                 tank.zHeightBaseMax = 160; tank.chronoIntercepted = false; floatingTexts.push({x: tank.x, y: tank.y - 40, text: "ANTI-GRAV LIFT!", life: 50, color: '#ff33cc'});
@@ -835,7 +805,6 @@ function update() {
                             else { tank.isSlowed = true; tank.afterStunSlow = Math.max(tank.afterStunSlow || 0, 180); }
                         } else if (pA.type === 'abyss_rapid' || pA.type === 'abyss_rapid_empowered') {
                             tank.hp -= pA.damage; 
-                            // --- FIXED: Immovable turrets cannot be slightly knocked back ---
                             if (tank.config.speedMod !== 0) {
                                 let angle = Math.atan2(tank.y - pA.y, tank.x - pA.x);
                                 tank.kbX = Math.cos(angle) * 3.0; tank.kbY = Math.sin(angle) * 3.0; tank.kbTimer = 5;
@@ -858,7 +827,6 @@ function update() {
                                 shooter.matchStats.shieldGenerated += 10;
                             }
                             
-                            // --- FIXED: Tempest cannot lift immovable turrets ---
                             if (!tank.zHeightActive && tank.config.speedMod !== 0) {
                                 tank.zHeightActive = true;
                                 tank.zFrameCounter = 0;
@@ -885,7 +853,6 @@ function update() {
                             tank.hp -= pA.damage;
                             triggerScreenShake(10, 4);
                             
-                            // --- FIXED: Turrets ignore snipe knockback ---
                             if (tank.config.speedMod !== 0) {
                                 let kbAngle = pA.angle;
                                 tank.kbX = Math.cos(kbAngle) * 14; 
@@ -962,17 +929,14 @@ function draw() {
         let dx = (Math.random() - 0.5) * screenShakeIntensity; let dy = (Math.random() - 0.5) * screenShakeIntensity; ctx.translate(dx, dy);
     }
 
-    // --- NEW: Apply Camera Translation ---
     ctx.translate(-camera.x, -camera.y);
 
-    // --- NEW: Draw Background Over the Expanded Map Size ---
     if (images[currentMap.bgImg] && images[currentMap.bgImg].complete) {
         ctx.drawImage(images[currentMap.bgImg], 0, 0, mapW, mapH);
     } else {
         ctx.clearRect(camera.x, camera.y, canvas.width, canvas.height);
     }
 
-    // Call the Raid Manager to render the structural bunkers under the tanks
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
         raidManager.drawBunkers(ctx);
     }
@@ -1243,7 +1207,6 @@ function draw() {
 
     ctx.restore(); 
 
-    // --- NEW: HUD overlay for Player Lives ---
     if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && gameState === 'PLAYING') {
         ctx.fillStyle = '#00ff66';
         ctx.font = 'bold 22px sans-serif';
