@@ -2,12 +2,98 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 
+// --- NEW: Security and Authentication Imports ---
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
+// --- NEW: Middleware to parse JSON bodies from frontend login forms ---
+app.use(express.json());
+
 // Serve your game files to the browser
 app.use(express.static(__dirname));
+
+// --- NEW: Temporary In-Memory Database & Secret Key ---
+let users = []; 
+const JWT_SECRET = "super-secret-tank-key-123";
+
+// ==========================================
+// AUTHENTICATION API ROUTES
+// ==========================================
+
+// ROUTE A: Register a new account
+app.post('/api/register', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ message: "Username and password required" });
+        }
+
+        const userExists = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+        if (userExists) {
+            return res.status(400).json({ message: "Username already taken!" });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const newUser = {
+            id: Math.random().toString(36).substring(2, 9),
+            username: username,
+            password: hashedPassword,
+            stats: { wins: 0, losses: 0, xp: 0, level: 1 }
+        };
+
+        users.push(newUser);
+        console.log(`🆕 Account created for: ${username}`);
+        
+        res.status(201).json({ message: "Registration successful!" });
+    } catch (error) {
+        res.status(500).json({ message: "Server error during registration" });
+    }
+});
+
+// ROUTE B: Log into an existing account
+app.post('/api/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+        if (!user) {
+            return res.status(400).json({ message: "Invalid username or password" });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Invalid username or password" });
+        }
+
+        const token = jwt.sign(
+            { userId: user.id, username: user.username },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        console.log(`🔓 ${user.username} logged in successfully.`);
+
+        res.json({
+            token: token,
+            user: {
+                username: user.username,
+                stats: user.stats
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Server error during login" });
+    }
+});
+
+// ==========================================
+// MULTIPLAYER SOCKET.IO LOGIC
+// ==========================================
 
 let activeGames = {};
 
@@ -70,7 +156,7 @@ io.on('connection', (socket) => {
         socket.to(data.roomId).emit('matchDeath', data);
     });
 
-    // --- FIXED: Added the missing directHit channel ---
+    // --- FIXED: The missing directHit channel ---
     socket.on('directHit', (data) => {
         socket.to(data.roomId).emit('directHit', data);
     });
