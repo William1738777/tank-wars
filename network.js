@@ -44,7 +44,7 @@ socket.on('updateGamesList', (games) => {
         li.innerHTML = `
             <span>ROOM: <b>${game.id}</b></span>
             <span style="color: ${statusColor}; font-size: 18px;">${game.status}</span>
-            <button class="join-btn" data-id="${game.id}" style="padding: 10px 20px; background: #00ff66; cursor: pointer; border: none; font-weight: bold; ${game.status === 'IN PROGRESS' ? 'display:none;' : ''}">JOIN</button>
+            <button class="join-btn" data-id="${game.id}" style="background: #111; color: #00ff66; border: 2px solid #00ff66; padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer; ${game.status === 'IN PROGRESS' ? 'display:none;' : ''}">JOIN</button>
         `;
         gamesList.appendChild(li);
     }
@@ -91,6 +91,10 @@ socket.on('gameJoined', (gameId) => {
     if(p1Ready) p1Ready.style.display = 'none'; 
     if(mapSelect) mapSelect.style.display = 'none';
     if(toggleAi) toggleAi.style.display = 'none';
+    
+    // Force Player 2's UI to display the room code
+    const roomDisplay = document.getElementById('room-code-display');
+    if (roomDisplay) roomDisplay.innerText = gameId;
     
     socket.emit('requestSync', gameId);
 });
