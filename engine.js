@@ -220,8 +220,19 @@ function handleDeath(loserOwnerId) {
         return;
     }
 
-    // --- CRITICAL ONLINE FIX: Only Host processes the death result and scoreboard ---
-    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) return;
+    // --- CRITICAL ONLINE FIX: Host-Driven death processing & Ghost Death Bypass ---
+    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) {
+        // If the Guest triggered death locally, force the Host to acknowledge it!
+        if (typeof socket !== 'undefined') {
+            socket.emit('directHit', { 
+                roomId: myRoomCode, 
+                attackerId: loserOwnerId === 1 ? 2 : 1, // Award kill to the other guy
+                targetId: loserOwnerId, 
+                damage: 9999 // Overkill damage to force Host to trigger death
+            });
+        }
+        return; 
+    }
 
     let winnerOwnerId = loserOwnerId === 1 ? 2 : 1;
     if (winnerOwnerId === 1) p1Score++; else p2Score++;
@@ -321,7 +332,9 @@ function update() {
                     fireShieldActive: players[0].fireShieldActive,
                     isGhosting: players[0].isGhosting,
                     zHeight: players[0].zHeight,
-                    zHeightActive: players[0].zHeightActive
+                    zHeightActive: players[0].zHeightActive,
+                    knockupSource: players[0].knockupSource,
+                    chronoIntercepted: players[0].chronoIntercepted
                 });
             }
         } else {
@@ -336,7 +349,9 @@ function update() {
                     fireShieldActive: players[1].fireShieldActive,
                     isGhosting: players[1].isGhosting,
                     zHeight: players[1].zHeight,
-                    zHeightActive: players[1].zHeightActive
+                    zHeightActive: players[1].zHeightActive,
+                    knockupSource: players[1].knockupSource,
+                    chronoIntercepted: players[1].chronoIntercepted
                 });
             }
         }
