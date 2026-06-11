@@ -129,15 +129,18 @@ function playSound(audio) {
 const mapsData = [
     {
         id: 'dusk', name: 'DUSK', bgImg: 'bg1', width: 1000, height: 700,
-        walls: [ {x: 350, y: 150, w: 20, h: 150}, {x: 630, y: 150, w: 20, h: 150}, {x: 350, y: 400, w: 20, h: 150}, {x: 630, y: 400, w: 20, h: 150}, {x: 450, y: 340, w: 100, h: 20} ], rocks: []
+        // Shifted Left 60, Up 40 to match visual dirt paths
+        walls: [ {x: 290, y: 110, w: 20, h: 150}, {x: 570, y: 110, w: 20, h: 150}, {x: 290, y: 360, w: 20, h: 150}, {x: 570, y: 360, w: 20, h: 150}, {x: 390, y: 300, w: 100, h: 20} ], rocks: []
     },
     {
         id: 'plains', name: 'PLAINS', bgImg: 'bg2', width: 1000, height: 700,
-        walls: [ {x: 350, y: 50, w: 300, h: 20}, {x: 350, y: 630, w: 300, h: 20} ],
-        rocks: [ {x: 250, y: 200, r: 40}, {x: 750, y: 200, r: 40}, {x: 250, y: 500, r: 40}, {x: 750, y: 500, r: 40}, {x: 500, y: 350, r: 60} ]
+        // Shifted Left 60, Up 40 to snap to concrete and dirt
+        walls: [ {x: 290, y: 10, w: 300, h: 20}, {x: 290, y: 590, w: 300, h: 20} ],
+        rocks: [ {x: 190, y: 160, r: 40}, {x: 690, y: 160, r: 40}, {x: 190, y: 460, r: 40}, {x: 690, y: 460, r: 40}, {x: 440, y: 310, r: 60} ]
     },
     {
         id: 'raid_facility', name: 'RAID: ENEMY FACILITY', bgImg: 'RaidModeBG', width: 3000, height: 2000,
+        // Unchanged
         walls: [ 
             {x: 2300, y: 400, w: 700, h: 40},
             {x: 2300, y: 1560, w: 700, h: 40},
@@ -154,4 +157,5 @@ const mapsData = [
     }
 ];
 
-const spawnPoints = [ {x: 100, y: 350}, {x: 900, y: 350}, {x: 150, y: 150}, {x: 850, y: 550} ];
+// Spawn points shifted to match the new arena center
+const spawnPoints = [ {x: 50, y: 310}, {x: 840, y: 310}, {x: 90, y: 110}, {x: 790, y: 510} ];
