@@ -129,33 +129,33 @@ function playSound(audio) {
 const mapsData = [
     {
         id: 'dusk', name: 'DUSK', bgImg: 'bg1', width: 1000, height: 700,
-        // Shifted Left 60, Up 40 to match visual dirt paths
-        walls: [ {x: 290, y: 110, w: 20, h: 150}, {x: 570, y: 110, w: 20, h: 150}, {x: 290, y: 360, w: 20, h: 150}, {x: 570, y: 360, w: 20, h: 150}, {x: 390, y: 300, w: 100, h: 20} ], rocks: []
+        walls: [ {x: 350, y: 150, w: 20, h: 150}, {x: 630, y: 150, w: 20, h: 150}, {x: 350, y: 400, w: 20, h: 150}, {x: 630, y: 400, w: 20, h: 150}, {x: 450, y: 340, w: 100, h: 20} ], rocks: []
     },
     {
         id: 'plains', name: 'PLAINS', bgImg: 'bg2', width: 1000, height: 700,
-        // Shifted Left 60, Up 40 to snap to concrete and dirt
-        walls: [ {x: 290, y: 10, w: 300, h: 20}, {x: 290, y: 590, w: 300, h: 20} ],
-        rocks: [ {x: 190, y: 160, r: 40}, {x: 690, y: 160, r: 40}, {x: 190, y: 460, r: 40}, {x: 690, y: 460, r: 40}, {x: 440, y: 310, r: 60} ]
+        walls: [ {x: 350, y: 50, w: 300, h: 20}, {x: 350, y: 630, w: 300, h: 20} ],
+        rocks: [ {x: 250, y: 200, r: 40}, {x: 750, y: 200, r: 40}, {x: 250, y: 500, r: 40}, {x: 750, y: 500, r: 40}, {x: 500, y: 350, r: 60} ]
     },
     {
         id: 'raid_facility', name: 'RAID: ENEMY FACILITY', bgImg: 'RaidModeBG', width: 3000, height: 2000,
-        // Unchanged
         walls: [ 
+            // Top and Bottom enclosing walls for the facility on the right
             {x: 2300, y: 400, w: 700, h: 40},
             {x: 2300, y: 1560, w: 700, h: 40},
-            {x: 2300, y: 440, w: 40, h: 360},  
-            {x: 2300, y: 1000, w: 40, h: 200}, 
-            {x: 2300, y: 1400, w: 40, h: 160}, 
+            // Left-side facing wall of the facility with 2 entrance gaps
+            {x: 2300, y: 440, w: 40, h: 360},  // Top segment
+            {x: 2300, y: 1000, w: 40, h: 200}, // Middle segment between doors
+            {x: 2300, y: 1400, w: 40, h: 160}, // Bottom segment
+            // Inner defensive barricades
             {x: 2600, y: 750, w: 150, h: 40},
             {x: 2600, y: 1250, w: 150, h: 40}
         ],
         rocks: [ 
+            // Cover scattered approaching the facility
             {x: 1800, y: 800, r: 80}, {x: 1800, y: 1200, r: 80},
             {x: 1400, y: 1000, r: 120}, {x: 2100, y: 500, r: 60}, {x: 2100, y: 1500, r: 60}
         ]
     }
 ];
 
-// Spawn points shifted to match the new arena center
-const spawnPoints = [ {x: 50, y: 310}, {x: 840, y: 310}, {x: 90, y: 110}, {x: 790, y: 510} ];
+const spawnPoints = [ {x: 100, y: 350}, {x: 900, y: 350}, {x: 150, y: 150}, {x: 850, y: 550} ];
