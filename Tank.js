@@ -703,14 +703,23 @@ class Tank {
             }
         }
 
+        // --- DASH HIT NETWORK BYPASS PATCH ---
         if (this.dashState === 3 && this.stunTimer <= 0) {
             currentSpeed = 16; this.dashTimer--;
             if (frameCount % 3 === 0) { hazards.push({ owner: this.owner, type: 'fire_trail', x: this.x, y: this.y, radius: 30, life: 300, maxLife: 300 }); }
             players.forEach(enemy => {
                 if (enemy.owner !== this.owner && (this.team === null || enemy.team === null || enemy.team !== this.team) && !enemy.isDead && !this.ghostHitTanks.includes(enemy.owner)) {
                     if (Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.radius + enemy.radius) {
-                        enemy.hp -= 15; this.ghostHitTanks.push(enemy.owner);
-                        if (typeof recordDamage === 'function') recordDamage(this.owner, 15, false, true); 
+                        this.ghostHitTanks.push(enemy.owner);
+                        
+                        // CRITICAL FIX: Use the Hybrid Authority bypass for the Dash impact!
+                        if (typeof applyMeleeDamage !== 'undefined') {
+                            applyMeleeDamage(this.owner, enemy, 15);
+                        } else {
+                            enemy.hp -= 15;
+                            if (typeof recordDamage === 'function') recordDamage(this.owner, 15, false, true);
+                        }
+                        
                         createParticles(enemy.x, enemy.y, 10, '#ff4500', 2, 0.5);
                         floatingTexts.push({x: enemy.x, y: enemy.y - 40, text: "-15 BURN!", life: 40, color: '#ff3300'});
                         if (enemy.hp <= 0 && !enemy.isDead) { enemy.isDead = true; handleDeath(enemy.owner); }
