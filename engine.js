@@ -55,6 +55,31 @@ function recordDamage(attackerOwner, amount, isBounce = false, isXSkill = false)
     }
 }
 
+// --- NEW: HYBRID AUTHORITY BYPASS FOR MELEE & DASHES ---
+// Call this function whenever a tank does direct body/dash damage
+function applyMeleeDamage(attackerId, targetTank, damageAmount) {
+    if (targetTank.isDead || targetTank.invulnTimer > 0) return;
+
+    let myOwnerId = 1;
+    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) myOwnerId = 2;
+
+    // Apply the damage instantly to our own screen
+    targetTank.hp -= damageAmount;
+    recordDamage(attackerId, damageAmount, false, true);
+
+    // If I am the Guest (2) and I just hit the Host (1), force the Host to accept it over the internet!
+    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) {
+        if (attackerId === myOwnerId && targetTank.owner === 1) {
+            socket.emit('directHit', {
+                roomId: myRoomCode,
+                attackerId: attackerId,
+                targetId: targetTank.owner,
+                damage: damageAmount
+            });
+        }
+    }
+}
+
 // --- VISUAL EFFECTS HELPERS ---
 function createMuzzleFlash(x, y, angle, scale = 1.0) {
     flashes.push({ x: x, y: y, radius: 8 * scale, life: 1.0, color: '#ffddaa' });
@@ -280,10 +305,9 @@ function update() {
     frameCount++; players.forEach(p => p.update());
     players.forEach(p => p.inFireTrail = false); 
     
-    // --- FIXED: HOST-AUTHORITATIVE HP SYNC ---
+    // --- FIXED: HOST-AUTHORITATIVE HP & STATE SYNC ---
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && typeof socket !== 'undefined') {
         if (isHost) {
-            // The Host beams the official HP of BOTH tanks to the Guest
             if (players[0] && !players[0].isDead) {
                 socket.emit('playerUpdate', {
                     roomId: myRoomCode,
@@ -292,18 +316,27 @@ function update() {
                     y: players[0].y,
                     angle: players[0].angle,
                     p1Hp: players[0].hp,
-                    p2Hp: players[1] ? players[1].hp : 100
+                    p2Hp: players[1] ? players[1].hp : 100,
+                    dashState: players[0].dashState,
+                    fireShieldActive: players[0].fireShieldActive,
+                    isGhosting: players[0].isGhosting,
+                    zHeight: players[0].zHeight,
+                    zHeightActive: players[0].zHeightActive
                 });
             }
         } else {
-            // The Guest ONLY sends their steering coordinates, never their HP
             if (players[1] && !players[1].isDead) {
                 socket.emit('playerUpdate', {
                     roomId: myRoomCode,
                     isHost: false,
                     x: players[1].x,
                     y: players[1].y,
-                    angle: players[1].angle
+                    angle: players[1].angle,
+                    dashState: players[1].dashState,
+                    fireShieldActive: players[1].fireShieldActive,
+                    isGhosting: players[1].isGhosting,
+                    zHeight: players[1].zHeight,
+                    zHeightActive: players[1].zHeightActive
                 });
             }
         }
