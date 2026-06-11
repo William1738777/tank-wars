@@ -33,7 +33,7 @@ function startMode(mode) {
     // Restoring Player 2 elements to default
     const p2Panel = document.getElementById('p2-panel');
     if (p2Panel) {
-        p2Panel.style.display = 'block';
+        p2Panel.style.display = 'flex'; // Changed to flex for proper centering
         p2Panel.style.borderColor = '#333';
     }
     const mapSelectorUi = document.getElementById('map-selector-ui');
@@ -100,9 +100,14 @@ function startMode(mode) {
         }
     }
     
-    const mapNameDisplay = document.getElementById('map-name-display') || document.getElementById('map-name');
-    if (mapNameDisplay && typeof currentMap !== 'undefined') {
-        mapNameDisplay.innerText = (mapNameDisplay.id === 'map-name' ? 'MAP: ' : '') + currentMap.name;
+    // Set Map Name and Map Image on load
+    const mapNameDisplay = document.getElementById('map-name');
+    const minimapImage = document.getElementById('minimap-image');
+    if (typeof currentMap !== 'undefined') {
+        if (mapNameDisplay) mapNameDisplay.innerText = 'MAP: ' + currentMap.name;
+        if (minimapImage && typeof images !== 'undefined' && images[currentMap.bgImg]) {
+            minimapImage.src = images[currentMap.bgImg].src;
+        }
     }
     
     updateDisplays();
@@ -130,11 +135,11 @@ function checkAllReady() {
                 btnLaunch.style.color = '#aaa';
                 btnLaunch.style.cursor = 'not-allowed';
             } else {
-                btnLaunch.innerText = "START";
+                btnLaunch.innerText = "START GAME";
                 btnLaunch.disabled = false;
-                btnLaunch.style.background = '#ff4500';
-                btnLaunch.style.borderColor = '#ff4500';
-                btnLaunch.style.color = '#fff';
+                btnLaunch.style.background = '#00ff66';
+                btnLaunch.style.borderColor = '#00ff66';
+                btnLaunch.style.color = '#000';
                 btnLaunch.style.cursor = 'pointer';
             }
         } else {
@@ -142,7 +147,7 @@ function checkAllReady() {
             if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) {
                 btnLaunch.innerText = "WAITING FOR HOST...";
             } else {
-                btnLaunch.innerText = "START";
+                btnLaunch.innerText = "START GAME";
             }
             btnLaunch.disabled = true;
             btnLaunch.style.background = '#555';
@@ -193,10 +198,14 @@ function cycleMap(dir) {
     
     currentMap = mapsData[selectedMapIndex];
     
-    const mapNameDisplay = document.getElementById('map-name-display') || document.getElementById('map-name');
-    if (mapNameDisplay) {
-        mapNameDisplay.innerText = (mapNameDisplay.id === 'map-name' ? 'MAP: ' : '') + currentMap.name;
+    // Update text and the actual background image
+    const mapNameDisplay = document.getElementById('map-name');
+    const minimapImage = document.getElementById('minimap-image');
+    if (mapNameDisplay) mapNameDisplay.innerText = 'MAP: ' + currentMap.name;
+    if (minimapImage && typeof images !== 'undefined' && images[currentMap.bgImg]) {
+        minimapImage.src = images[currentMap.bgImg].src;
     }
+    
     drawMinimap();
 
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && typeof socket !== 'undefined') {
