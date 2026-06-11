@@ -1223,5 +1223,27 @@ function draw() {
     }
 }
 
-function loop() { update(); draw(); requestAnimationFrame(loop); }
+// --- FIXED 60 FPS GAME LOOP ---
+let lastFrameTime = 0;
+const targetFPS = 60;
+const frameInterval = 1000 / targetFPS;
+
+function loop(timestamp) {
+    // Keep asking for frames, but we might not process them all
+    requestAnimationFrame(loop);
+    
+    if (!lastFrameTime) lastFrameTime = timestamp;
+    let elapsed = timestamp - lastFrameTime;
+
+    // Only update and draw if 16.66ms (1/60th of a second) has passed
+    if (elapsed > frameInterval) {
+        // Adjust lastFrameTime to prevent drift
+        lastFrameTime = timestamp - (elapsed % frameInterval);
+        
+        update();
+        draw();
+    }
+}
+
+// Start the loop
 requestAnimationFrame(loop);
