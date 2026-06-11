@@ -140,10 +140,22 @@ socket.on('startGame', () => { if (typeof startGame === 'function') startGame();
 
 socket.on('playerUpdate', (data) => {
     if (typeof gameState === 'undefined' || gameState !== 'PLAYING' || !players || players.length < 2) return;
-    if (data.isHost && !isHost) { // Sync Host's tank coordinates onto Guest's machine
-        if (players[0]) { players[0].x = data.x; players[0].y = data.y; players[0].angle = data.angle; players[0].hp = data.hp; }
-    } else if (!data.isHost && isHost) { // Sync Guest's tank coordinates onto Host's machine
-        if (players[1]) { players[1].x = data.x; players[1].y = data.y; players[1].angle = data.angle; players[1].hp = data.hp; }
+    
+    if (data.isHost && !isHost) { 
+        // I am the Guest: Update the Host's position
+        if (players[0]) { 
+            players[0].x = data.x; players[0].y = data.y; players[0].angle = data.angle; 
+        }
+        // CRITICAL FIX: The Host dictates ALL HP on the screen
+        if (players[0] && data.p1Hp !== undefined) players[0].hp = data.p1Hp;
+        if (players[1] && data.p2Hp !== undefined) players[1].hp = data.p2Hp;
+        
+    } else if (!data.isHost && isHost) { 
+        // I am the Host: Update the Guest's position
+        if (players[1]) { 
+            players[1].x = data.x; players[1].y = data.y; players[1].angle = data.angle; 
+        }
+        // The Host completely ignores the Guest's local HP opinions to prevent rubber-banding!
     }
 });
 
