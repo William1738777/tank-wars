@@ -18,7 +18,7 @@ let isOnlineGame = false;
 let isHost = false;
 let myRoomCode = "";
 
-// --- NEW: Registry to track bullet IDs and stop echoes ---
+// --- Registry to track bullet IDs and stop echoes ---
 const seenCasts = new Set(); 
 
 // Lobby Interactions
@@ -153,6 +153,10 @@ socket.on('playerUpdate', (data) => {
             if (data.isGhosting !== undefined) players[0].isGhosting = data.isGhosting;
             if (data.zHeight !== undefined) players[0].zHeight = data.zHeight;
             if (data.zHeightActive !== undefined) players[0].zHeightActive = data.zHeightActive;
+            
+            // --- FIXED: Sync airborne properties to prevent crash landing bug ---
+            if (data.knockupSource !== undefined) players[0].knockupSource = data.knockupSource;
+            if (data.chronoIntercepted !== undefined) players[0].chronoIntercepted = data.chronoIntercepted;
         }
         // CRITICAL FIX: The Host dictates ALL HP on the screen
         if (players[0] && data.p1Hp !== undefined) players[0].hp = data.p1Hp;
@@ -169,13 +173,17 @@ socket.on('playerUpdate', (data) => {
             if (data.isGhosting !== undefined) players[1].isGhosting = data.isGhosting;
             if (data.zHeight !== undefined) players[1].zHeight = data.zHeight;
             if (data.zHeightActive !== undefined) players[1].zHeightActive = data.zHeightActive;
+            
+            // --- FIXED: Sync airborne properties to prevent crash landing bug ---
+            if (data.knockupSource !== undefined) players[1].knockupSource = data.knockupSource;
+            if (data.chronoIntercepted !== undefined) players[1].chronoIntercepted = data.chronoIntercepted;
         }
     }
 });
 
-// --- NEW: THE "FAVOR THE SHOOTER" BYPASS FOR DASHES/MELEE ---
+// --- THE "FAVOR THE SHOOTER" BYPASS FOR DASHES/MELEE ---
 socket.on('directHit', (data) => {
-    // If I am the Host referee, and the Guest claims they dashed into me, I must accept the damage
+    // If I am the Host referee, and the Guest claims they dashed into me or died locally, I must accept the damage
     if (isHost && typeof players !== 'undefined') {
         let target = players.find(p => p.owner === data.targetId);
         if (target && !target.isDead && target.invulnTimer <= 0) {
