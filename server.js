@@ -70,6 +70,11 @@ io.on('connection', (socket) => {
         socket.to(data.roomId).emit('matchDeath', data);
     });
 
+    // --- FIXED: Added the missing directHit channel ---
+    socket.on('directHit', (data) => {
+        socket.to(data.roomId).emit('directHit', data);
+    });
+
     socket.on('disconnect', () => {
         for (let gameId in activeGames) {
             if (activeGames[gameId].host === socket.id) {
