@@ -63,7 +63,26 @@
 </head>
 <body>
 
-    <div id="main-menu" class="screen">
+    <div id="auth-screen" class="screen" style="display: flex;">
+        <div style="background: rgba(15, 15, 15, 0.95); padding: 40px; border: 2px solid #00ff66; border-radius: 10px; text-align: center; width: 350px; box-shadow: 0 0 30px rgba(0, 255, 102, 0.2);">
+            <h1 style="color: #00ff66; margin-top: 0; font-size: 32px; text-shadow: 0 0 10px rgba(0, 255, 102, 0.5);">WARZONE</h1>
+            <p style="color: #aaa; margin-bottom: 25px; font-weight: bold; letter-spacing: 2px;">AUTHENTICATION</p>
+            
+            <input type="text" id="auth-username" placeholder="USERNAME" style="width: 85%; padding: 12px; margin: 10px 0; background: #111; color: #fff; border: 1px solid #333; outline: none; text-align: center; font-family: 'Segoe UI', sans-serif; font-weight: bold; text-transform: uppercase;">
+            <input type="password" id="auth-password" placeholder="PASSWORD" style="width: 85%; padding: 12px; margin: 10px 0; background: #111; color: #fff; border: 1px solid #333; outline: none; text-align: center; font-family: 'Segoe UI', sans-serif; font-weight: bold;">
+            
+            <div id="auth-message" style="color: #ff3333; margin: 10px 0; height: 20px; font-weight: bold; font-size: 14px;"></div>
+            
+            <button id="btn-login" style="width: 93%; background: #00ff66; color: #000; margin-top: 10px;">LOG IN</button>
+            <button id="btn-register" style="width: 93%; border-color: #00aaff; color: #00aaff; background: transparent;">REGISTER</button>
+            
+            <div style="margin-top: 20px; border-top: 1px solid #333; padding-top: 15px;">
+                <button id="btn-guest" style="width: 93%; border: none; color: #777; background: transparent; font-size: 14px;">PLAY AS GUEST</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="main-menu" class="screen" style="display: none;">
         <h1 style="font-size: 60px; color: #00ff66; text-shadow: 0 0 20px #00ff66; margin-bottom: 50px;">WARZONE TANKS</h1>
         <button id="btn-start" onclick="startMode('ARCADE')" disabled>Loading Assets...</button>
         <button id="btn-online" style="display: none;">Online Multiplayer</button>
