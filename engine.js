@@ -109,10 +109,15 @@ function startGame() {
         p1.team = 0;
         players = [p1];
         if (typeof raidManager !== 'undefined') raidManager.init();
-    } else {
-        mapW = canvas.width;
-        mapH = canvas.height;
+   } else {
+        // Standard 1v1 Screen Mode
         currentMap = mapsData[selectedMapIndex];
+        
+        // CRITICAL FIX: Snap canvas precisely to the map's native resolution
+        canvas.width = currentMap.width;
+        canvas.height = currentMap.height;
+        mapW = currentMap.width;
+        mapH = currentMap.height;
         
         if (typeof isOnlineGame !== 'undefined' && isOnlineGame) {
             if (isHost) {
