@@ -18,6 +18,9 @@ let isOnlineGame = false;
 let isHost = false;
 let myRoomCode = "";
 
+// --- NEW: Registry to track bullet IDs and stop echoes ---
+const seenCasts = new Set(); 
+
 // Lobby Interactions
 if (btnOnline) {
     btnOnline.addEventListener('click', () => {
@@ -137,30 +140,58 @@ socket.on('startGame', () => { if (typeof startGame === 'function') startGame();
 
 // --- IN-GAME REAL-TIME SOCKET LISTENERS ---
 
-// --- FIXED: HOST-AUTHORITATIVE HP RECEPTION ---
+// --- FIXED: HOST-AUTHORITATIVE HP & STATE RECEPTION ---
 socket.on('playerUpdate', (data) => {
     if (typeof gameState === 'undefined' || gameState !== 'PLAYING' || !players || players.length < 2) return;
     
     if (data.isHost && !isHost) { 
-        // I am the Guest: Update the Host's position
+        // I am the Guest: Update the Host's position and states
         if (players[0]) { 
             players[0].x = data.x; players[0].y = data.y; players[0].angle = data.angle; 
+            if (data.dashState !== undefined) players[0].dashState = data.dashState;
+            if (data.fireShieldActive !== undefined) players[0].fireShieldActive = data.fireShieldActive;
+            if (data.isGhosting !== undefined) players[0].isGhosting = data.isGhosting;
+            if (data.zHeight !== undefined) players[0].zHeight = data.zHeight;
+            if (data.zHeightActive !== undefined) players[0].zHeightActive = data.zHeightActive;
         }
         // CRITICAL FIX: The Host dictates ALL HP on the screen
         if (players[0] && data.p1Hp !== undefined) players[0].hp = data.p1Hp;
         if (players[1] && data.p2Hp !== undefined) players[1].hp = data.p2Hp;
         
     } else if (!data.isHost && isHost) { 
-        // I am the Host: Update the Guest's position
+        // I am the Host: Update the Guest's position and states
         if (players[1]) { 
             players[1].x = data.x; players[1].y = data.y; players[1].angle = data.angle; 
+            
+            // CRITICAL: Unpack the Guest's states so Host's Engine calculates physics/collisions!
+            if (data.dashState !== undefined) players[1].dashState = data.dashState;
+            if (data.fireShieldActive !== undefined) players[1].fireShieldActive = data.fireShieldActive;
+            if (data.isGhosting !== undefined) players[1].isGhosting = data.isGhosting;
+            if (data.zHeight !== undefined) players[1].zHeight = data.zHeight;
+            if (data.zHeightActive !== undefined) players[1].zHeightActive = data.zHeightActive;
         }
-        // The Host completely ignores the Guest's local HP opinions to prevent rubber-banding!
+    }
+});
+
+// --- NEW: THE "FAVOR THE SHOOTER" BYPASS FOR DASHES/MELEE ---
+socket.on('directHit', (data) => {
+    // If I am the Host referee, and the Guest claims they dashed into me, I must accept the damage
+    if (isHost && typeof players !== 'undefined') {
+        let target = players.find(p => p.owner === data.targetId);
+        if (target && !target.isDead && target.invulnTimer <= 0) {
+            target.hp -= data.damage;
+            if (typeof recordDamage === 'function') recordDamage(data.attackerId, data.damage, false, true);
+        }
     }
 });
 
 socket.on('playerShoot', (data) => {
     if (typeof gameState === 'undefined' || gameState !== 'PLAYING') return;
+    
+    // CRITICAL: If we already drew this bullet locally, throw the network duplicate in the trash!
+    if (seenCasts.has(data.castId)) return; 
+    seenCasts.add(data.castId);
+
     if (typeof Projectile !== 'undefined' && typeof projectiles !== 'undefined') {
         projectiles.push(new Projectile(data.owner, data.x, data.y, data.angle, data.speed, data.radius, data.damage, data.color, data.type, data.bounces, data.castId, true));
     }
@@ -173,11 +204,9 @@ socket.on('playerHazard', (data) => {
     hazards.push(h);
 });
 
-// --- FIXED: SCOREBOARD & UNIVERSAL GUEST RESET ---
 socket.on('matchDeath', (data) => {
     if (typeof gameState === 'undefined' || gameState !== 'PLAYING') return;
     
-    // Ensure the Guest receives the exact score the Host tallied
     p1Score = data.p1Score; p2Score = data.p2Score;
     if (document.getElementById('score-p1')) document.getElementById('score-p1').innerText = p1Score;
     if (document.getElementById('score-p2')) document.getElementById('score-p2').innerText = p2Score;
@@ -195,7 +224,6 @@ socket.on('matchDeath', (data) => {
             document.getElementById('victory-title').innerText = `${winnerText} WINS!`;
             document.getElementById('victory-title').style.color = p1Score >= 3 ? '#00aaff' : '#ff3333';
             
-            // Build the Guest's stat screen explicitly
             let p1Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
             let p2Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
             let p1Obj = players.find(p => p.owner === 1);
@@ -218,7 +246,6 @@ socket.on('matchDeath', (data) => {
 
             setTimeout(() => { document.getElementById('victory-screen').style.display = 'flex'; }, 1500);
         } else {
-            // Apply the Universal Reset to BOTH tanks for the Guest
             setTimeout(() => {
                 players.forEach((tank, index) => {
                     let spawn = spawnPoints[index === 0 ? 0 : 3];
@@ -263,10 +290,13 @@ if (typeof Projectile !== 'undefined') {
     Projectile = class extends OriginalProjectile {
         constructor(owner, x, y, angle, speed, radius, damage, color, type, bounces, castId = null, fromNetwork = false) {
             super(owner, x, y, angle, speed, radius, damage, color, type, bounces, castId);
+            
+            // The super() call natively generated this.castId inside Projectile.js, we just grab it!
             if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !fromNetwork) {
                 let myOwnerId = isHost ? 1 : 2;
                 if (owner === myOwnerId) {
-                    socket.emit('playerShoot', { roomId: myRoomCode, owner, x, y, angle, speed, radius, damage, color, type, bounces, castId });
+                    seenCasts.add(this.castId); // Register our own bullet so we don't echo it
+                    socket.emit('playerShoot', { roomId: myRoomCode, owner, x, y, angle, speed, radius, damage, color, type, bounces, castId: this.castId });
                 }
             }
         }
