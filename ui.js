@@ -470,41 +470,6 @@ window.addEventListener('DOMContentLoaded', () => {
     initPlayDropdown();
     updateMainMenuProfile();
 
-    // --- NEW: TAB SWAPPING LOGIC ---
-    const btnOpenProfile = document.getElementById('btn-open-profile');
-    const btnNavHome = document.getElementById('btn-nav-home');
-    const homeTabContent = document.getElementById('home-tab-content');
-    const profileTabContent = document.getElementById('profile-tab-content');
-
-    if (btnOpenProfile && profileTabContent) {
-        btnOpenProfile.addEventListener('click', () => {
-            // Hide Home, Show Profile
-            if (homeTabContent) homeTabContent.style.display = 'none';
-            profileTabContent.style.display = 'flex';
-            
-            // Pull data to fill the dossier
-            const savedName = localStorage.getItem('tank_username') || 'GUEST';
-            const savedEmail = localStorage.getItem('tank_email') || 'NOT LINKED';
-            
-            const userEl = document.getElementById('profile-display-username');
-            if(userEl) userEl.innerText = savedName;
-            
-            const emailEl = document.getElementById('profile-display-email');
-            if(emailEl) emailEl.innerText = 'ACCOUNT: ' + savedEmail;
-            
-            const creditsEl = document.getElementById('profile-display-credits');
-            if(creditsEl) creditsEl.innerText = '0';
-        });
-    }
-
-    if (btnNavHome && homeTabContent) {
-        btnNavHome.addEventListener('click', () => {
-            // Hide Profile, Show Home
-            if (profileTabContent) profileTabContent.style.display = 'none';
-            homeTabContent.style.display = 'block';
-        });
-    }
-
     const btnP1Next = document.getElementById('btn-p1-next');
     if (btnP1Next) btnP1Next.onclick = () => cycleTank(1, 1);
 
