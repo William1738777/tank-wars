@@ -33,7 +33,7 @@ function startMode(mode) {
     // Restoring Player 2 elements to default
     const p2Panel = document.getElementById('p2-panel');
     if (p2Panel) {
-        p2Panel.style.display = 'flex'; // Changed to flex for proper centering
+        p2Panel.style.display = 'flex'; 
         p2Panel.style.borderColor = '#333';
     }
     const mapSelectorUi = document.getElementById('map-selector-ui');
@@ -100,7 +100,6 @@ function startMode(mode) {
         }
     }
     
-    // Set Map Name and Map Image on load
     const mapNameDisplay = document.getElementById('map-name');
     const minimapImage = document.getElementById('minimap-image');
     if (typeof currentMap !== 'undefined') {
@@ -112,7 +111,7 @@ function startMode(mode) {
     
     updateDisplays();
     drawMinimap();
-    checkAllReady(); // Force check the button state on load
+    checkAllReady(); 
 }
 
 function checkAllReady() {
@@ -126,7 +125,6 @@ function checkAllReady() {
     const btnLaunch = document.getElementById('btn-launch-game');
     if (btnLaunch) {
         if (allReady) {
-            // Both are ready
             if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) {
                 btnLaunch.innerText = "WAITING FOR HOST...";
                 btnLaunch.disabled = true;
@@ -143,7 +141,6 @@ function checkAllReady() {
                 btnLaunch.style.cursor = 'pointer';
             }
         } else {
-            // Still waiting for someone to ready up
             if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) {
                 btnLaunch.innerText = "WAITING FOR HOST...";
             } else {
@@ -161,7 +158,6 @@ function checkAllReady() {
 function cycleTank(playerNum, dir) {
     if (typeof tanksData === 'undefined') return;
     
-    // Prevent players from changing each other's tanks online
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame) {
         if (isHost && playerNum === 2) return;
         if (!isHost && playerNum === 1) return;
@@ -179,7 +175,6 @@ function cycleTank(playerNum, dir) {
     }
     updateDisplays();
 
-    // Broadcast change to the other player via internet
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && typeof socket !== 'undefined') {
         socket.emit('syncSelection', { roomId: myRoomCode, p1Selection, p2Selection, selectedMapIndex, p1Ready, p2Ready });
     }
@@ -189,7 +184,6 @@ function cycleMap(dir) {
     if (gameMode === 'RAID') return; 
     if (typeof mapsData === 'undefined') return;
     
-    // Only Host can change map
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) return;
 
     do {
@@ -198,7 +192,6 @@ function cycleMap(dir) {
     
     currentMap = mapsData[selectedMapIndex];
     
-    // Update text and the actual background image
     const mapNameDisplay = document.getElementById('map-name');
     const minimapImage = document.getElementById('minimap-image');
     if (mapNameDisplay) mapNameDisplay.innerText = 'MAP: ' + currentMap.name;
@@ -271,7 +264,6 @@ function updateDisplays() {
 }
 
 function toggleReady(playerNum) {
-    // Prevent clicking the other person's ready button online
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame) {
         if (isHost && playerNum === 2) return;
         if (!isHost && playerNum === 1) return;
@@ -295,12 +287,10 @@ function toggleReady(playerNum) {
         if (p2Panel) p2Panel.style.borderColor = '#00ff00';
     }
     
-    // Broadcast ready state
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && typeof socket !== 'undefined') {
         socket.emit('syncSelection', { roomId: myRoomCode, p1Selection, p2Selection, selectedMapIndex, p1Ready, p2Ready });
     }
 
-    // See if the START button should unlock
     checkAllReady();
 }
 
@@ -314,7 +304,7 @@ function updateHUD() {
         if (p1Hp) {
             let percent = Math.min(100, Math.max(0, (players[0].hp / players[0].maxHp) * 100)) + '%'; 
             p1Hp.style.width = percent;
-            if(p1Trail) p1Trail.style.width = percent; // Trail follows naturally due to CSS transition delay
+            if(p1Trail) p1Trail.style.width = percent; 
             p1Hp.style.background = (players[0].hp / players[0].maxHp) > 0.3 ? '#00ff00' : '#ff0000';
         }
     } else if (players[0]) {
@@ -423,8 +413,63 @@ function hexToRgb(hex) {
     return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '255,255,255';
 }
 
+
+// --- NEW: CINEMATIC MENU LOGIC ---
+function initSlideshow() {
+    const slides = document.querySelectorAll('.bg-slide');
+    if(slides.length === 0) return;
+    let currentSlide = 0;
+    
+    // Cycle backgrounds every 8 seconds
+    setInterval(() => {
+        slides[currentSlide].classList.remove('active');
+        currentSlide = (currentSlide + 1) % slides.length;
+        slides[currentSlide].classList.add('active');
+    }, 8000); 
+}
+
+function initPlayDropdown() {
+    const btnPlay = document.getElementById('btn-master-play');
+    const dropdown = document.getElementById('play-dropdown');
+    
+    if(btnPlay && dropdown) {
+        btnPlay.addEventListener('click', (e) => {
+            e.stopPropagation(); // Stop click from immediately closing the box
+            if (dropdown.style.display === 'none' || dropdown.style.display === '') {
+                dropdown.style.display = 'flex';
+            } else {
+                dropdown.style.display = 'none';
+            }
+        });
+        
+        // Clicking anywhere else on the screen closes the dropdown
+        document.addEventListener('click', (e) => {
+            if(!btnPlay.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+    }
+}
+
+function updateMainMenuProfile() {
+    const usernameDisplay = document.getElementById('menu-username');
+    if (usernameDisplay) {
+        const savedName = localStorage.getItem('tank_username');
+        if (savedName) {
+            usernameDisplay.innerText = savedName;
+        }
+    }
+}
+
+
 // --- AUTOMATIC COMPATIBILITY BINDINGS ---
 window.addEventListener('DOMContentLoaded', () => {
+    
+    // Initialize the new cinematic menu features
+    initSlideshow();
+    initPlayDropdown();
+    updateMainMenuProfile();
+
     const btnP1Next = document.getElementById('btn-p1-next');
     if (btnP1Next) btnP1Next.onclick = () => cycleTank(1, 1);
 
