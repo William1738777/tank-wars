@@ -63,7 +63,6 @@ document.getElementById('btn-login').addEventListener('click', async () => {
             localStorage.setItem('tank_token', data.token);
             localStorage.setItem('tank_username', data.user.username);
             
-            // FIXED: Use classList instead of style.display
             authScreen.classList.add('hidden');
             mainMenu.classList.remove('hidden');
             
@@ -80,7 +79,6 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 
 // Handle Guest Button
 document.getElementById('btn-guest').addEventListener('click', () => {
-    // FIXED: Use classList instead of style.display
     authScreen.classList.add('hidden');
     mainMenu.classList.remove('hidden');
 });
@@ -94,21 +92,19 @@ let isOnlineGame = false;
 let isHost = false;
 let myRoomCode = "";
 let currentLobbyData = null; 
-let myOwnerId = 1; // Dynamically assigned (1-6) when game starts
+let myOwnerId = 1; 
 
 // Registry to track bullet IDs and stop echoes
 const seenCasts = new Set(); 
 
 if (btnOnline) {
     btnOnline.addEventListener('click', () => {
-        // FIXED
         mainMenu.classList.add('hidden');
         lobbyScreen.classList.remove('hidden');
     });
 }
 
 btnLobbyBack.addEventListener('click', () => {
-    // FIXED
     lobbyScreen.classList.add('hidden');
     mainMenu.classList.remove('hidden');
 });
@@ -150,7 +146,6 @@ btnLobbyCreate.addEventListener('click', () => {
 
 socket.on('gameCreated', (game) => {
     isOnlineGame = true; isHost = true; myRoomCode = game.id; currentLobbyData = game;
-    // FIXED
     lobbyScreen.classList.add('hidden'); 
     selectScreen.classList.remove('hidden');
     if (typeof updateLobbyUI === 'function') updateLobbyUI(game);
@@ -158,7 +153,6 @@ socket.on('gameCreated', (game) => {
 
 socket.on('gameJoined', (game) => {
     isOnlineGame = true; isHost = false; myRoomCode = game.id; currentLobbyData = game;
-    // FIXED
     lobbyScreen.classList.add('hidden'); 
     selectScreen.classList.remove('hidden');
     if (typeof updateLobbyUI === 'function') updateLobbyUI(game);
@@ -166,6 +160,28 @@ socket.on('gameJoined', (game) => {
 
 socket.on('lobbyUpdate', (game) => {
     currentLobbyData = game;
+    
+    // Auto-map switch logic based on mode toggle
+    if (game.mode === '2v2' || game.mode === '3v3') {
+        let wIdx = mapsData.findIndex(m => m.id === 'winter');
+        if (wIdx !== -1) selectedMapIndex = wIdx;
+    } else if (game.mode === '1v1') {
+        let dIdx = mapsData.findIndex(m => m.id === 'dusk');
+        if (dIdx !== -1) selectedMapIndex = dIdx;
+    }
+
+    // Immediately update the preview image in the UI to match
+    if (typeof selectedMapIndex !== 'undefined' && mapsData[selectedMapIndex]) {
+        const mapNameDisplay = document.getElementById('map-name');
+        const minimapImage = document.getElementById('minimap-image');
+        if (mapNameDisplay) {
+            mapNameDisplay.innerText = 'MAP: ' + mapsData[selectedMapIndex].name;
+        }
+        if (minimapImage && images[mapsData[selectedMapIndex].bgImg]) {
+            minimapImage.src = images[mapsData[selectedMapIndex].bgImg].src;
+        }
+    }
+
     if (typeof updateLobbyUI === 'function') updateLobbyUI(game);
 });
 
