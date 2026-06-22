@@ -159,12 +159,10 @@ function uiChangeMode(mode) {
 let localMapIndex = 0;
 function cycleMap() {
     if (!isHost) return;
-    do {
-        localMapIndex = (localMapIndex + 1) % mapsData.length;
-    } while (selectedMapIndex === 2); // Skip raid maps
     
-    // In a full implementation, emit the map index to the server to sync to clients.
-    // For now, this drives the local preview.
+    // Fixed the infinite loop bug
+    localMapIndex = (localMapIndex + 1) % mapsData.length;
+    
     const mapNameDisplay = document.getElementById('map-name');
     const minimapImage = document.getElementById('minimap-image');
     if (mapNameDisplay) mapNameDisplay.innerText = 'MAP: ' + mapsData[localMapIndex].name;
@@ -177,13 +175,11 @@ function cycleMap() {
 function updateHUD() {
     if (typeof players === 'undefined' || !currentLobbyData) return;
     
-    // 1. Update Team Scores (Assuming engine tracks team1Score and team2Score globally)
     const scoreT1 = document.getElementById('score-t1');
     const scoreT2 = document.getElementById('score-t2');
     if (scoreT1 && typeof team1Score !== 'undefined') scoreT1.innerText = team1Score;
     if (scoreT2 && typeof team2Score !== 'undefined') scoreT2.innerText = team2Score;
 
-    // 2. Update Local Player HUD
     let localTank = players.find(p => p.owner === myOwnerId);
     
     if (localTank && !localTank.isDead) {
@@ -213,7 +209,6 @@ function updateCooldownUI() {
 
     const skills = ['c', 'x', 'z'];
     
-    // Ammo Text X
     let ammoTextXEl = document.getElementById(`local-ammo-x`);
     if (ammoTextXEl) {
         if (localTank.config.id === 'dreadnaught') {
@@ -229,7 +224,6 @@ function updateCooldownUI() {
         }
     }
 
-    // Ammo Text C
     let ammoTextCEl = document.getElementById(`local-ammo-c`);
     if (ammoTextCEl) {
         if (localTank.config.id === 'abyss') {
@@ -241,7 +235,6 @@ function updateCooldownUI() {
         }
     }
 
-    // Cooldown Fills
     skills.forEach(skill => {
         let percent = 1;
         
