@@ -5,7 +5,7 @@ let frameCount = 0;
 
 let gameState = 'MENU'; 
 let p1Selection = 0, p2Selection = 5; 
-let selectedMapIndex = 2; // Defaulting to the big 3000x2000 map for Team Skirmish
+let selectedMapIndex = 0; 
 let currentMap = mapsData[selectedMapIndex];
 let players = []; 
 
@@ -111,14 +111,13 @@ function createKaboom(x, y, scale = 1.0) {
 // GAME CORE INITIALIZATION (TEAMS)
 // ==========================================
 function startGame() {
-    document.getElementById('select-screen').style.display = 'none';
-    document.getElementById('hud').style.display = 'block'; // Or flex depending on UI
+    document.getElementById('select-screen').classList.add('hidden');
+    document.getElementById('hud').classList.remove('hidden'); 
     
     team1Score = 0; team2Score = 0; frameCount = 0; deathCounts = {};
     projectiles = []; particles = []; flashes = []; hazards = []; floatingTexts = [];
     currentZoom = 1.0; targetZoom = 1.0;
     
-    // Force the large team fight map
     currentMap = mapsData[selectedMapIndex] || mapsData[0];
     
     canvas.width = 1200; 
@@ -193,14 +192,15 @@ function handleDeath(loserOwnerId) {
 
     if (typeof updateHUD === 'function') updateHUD();
 
-    // Check Win Condition (e.g., First to 15 kills wins)
-    const SCORE_LIMIT = 15;
+    // Check Win Condition: First team to 10 kills wins!
+    const SCORE_LIMIT = 10;
     if (team1Score >= SCORE_LIMIT || team2Score >= SCORE_LIMIT) {
         gameState = 'OVER'; 
         const winnerText = team1Score >= SCORE_LIMIT ? "TEAM 1 WINS!" : "TEAM 2 WINS!";
         document.getElementById('victory-title').innerText = winnerText;
         document.getElementById('victory-title').style.color = team1Score >= SCORE_LIMIT ? '#00aaff' : '#ff3333';
-        setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
+        
+        setTimeout(() => document.getElementById('victory-screen').classList.remove('hidden'), 1500);
         return;
     }
 
@@ -273,7 +273,6 @@ function handleDeath(loserOwnerId) {
     }, respawnDelay);
 }
 
-// Hook called by network.js when server broadcasts a death
 function handleNetworkDeath(data) {
     team1Score = data.team1Score;
     team2Score = data.team2Score;
@@ -314,7 +313,6 @@ function updateCamera() {
         }
     });
 
-    // Add padding to bounding box
     minX -= 300; maxX += 300;
     minY -= 300; maxY += 300;
 
@@ -328,11 +326,9 @@ function updateCamera() {
         let zoomX = canvas.width / boxWidth;
         let zoomY = canvas.height / boxHeight;
         
-        // Pick the smallest zoom required to fit the box, cap at MIN_ZOOM
         targetZoom = Math.min(zoomX, zoomY);
         targetZoom = Math.max(MIN_ZOOM, Math.min(1.0, targetZoom)); 
 
-        // Shift center weight towards the middle of the fight, but prioritize local tank
         let midX = (minX + maxX) / 2;
         let midY = (minY + maxY) / 2;
         targetCenterX = (localTank.x * 1.5 + midX) / 2.5; 
@@ -341,14 +337,11 @@ function updateCamera() {
         targetZoom = 1.0;
     }
 
-    // Smooth Lerping
     currentZoom += (targetZoom - currentZoom) * 0.05;
 
-    // Apply Zoom offset logic for standard top-left camera tracking
     camera.x = targetCenterX - (canvas.width / 2) / currentZoom;
     camera.y = targetCenterY - (canvas.height / 2) / currentZoom;
 
-    // Constrain camera to map boundaries, accounting for scaled viewport
     let viewportW = canvas.width / currentZoom;
     let viewportH = canvas.height / currentZoom;
 
@@ -1245,7 +1238,71 @@ function draw() {
     flashes.forEach(f => { ctx.globalAlpha = Math.max(0, f.life); ctx.fillStyle = f.color || '#fff'; ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI*2); ctx.fill(); });
     ctx.globalAlpha = 1.0;
 
-    projectiles.forEach(p => p.draw()); players.forEach(p => p.draw());
+    projectiles.forEach(p => p.draw()); 
+    players.forEach(p => p.draw());
+
+    // ====================================================
+    // --- NEW: ON-TANK HP BARS, RINGS, AND LOCAL SKILLS ---
+    // ====================================================
+    let localTank = players.find(p => p.owner === myOwnerId);
+
+    players.forEach(p => {
+        if (p.isDead) return;
+        
+        let isMe = (p.owner === myOwnerId);
+        let isAlly = localTank && p.team === localTank.team;
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+
+        // 1. Transparent Indicator Rings (Below Tank logic simulated by drawing here)
+        ctx.beginPath();
+        ctx.arc(0, 0, p.radius + 15, 0, Math.PI * 2);
+        ctx.lineWidth = 4;
+        if (isMe) {
+            ctx.strokeStyle = 'rgba(0, 170, 255, 0.6)'; // Blue highlight for Self
+            ctx.fillStyle = 'rgba(0, 170, 255, 0.15)';
+        } else if (isAlly) {
+            ctx.strokeStyle = 'rgba(0, 255, 100, 0.6)'; // Green for Ally
+            ctx.fillStyle = 'rgba(0, 255, 100, 0.15)';
+        } else {
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';   // Red for Enemy
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.15)';
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        // 2. On-Tank HP Bar
+        let hpY = -p.radius - 22;
+        let barW = 60;
+        let barH = 8;
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(-barW/2 - 2, hpY - 2, barW + 4, barH + 4);
+        
+        // Color code HP bars based on relationship
+        ctx.fillStyle = isMe ? '#00aaff' : (isAlly ? '#00ff66' : '#ff3333');
+        ctx.fillRect(-barW/2, hpY, barW * Math.max(0, p.hp / p.maxHp), barH);
+
+        // 3. Local Player Skills UI (Drawn directly above their HP bar)
+        if (isMe) {
+            const now = Date.now();
+            let cReady = now >= p.cooldowns.c ? "C" : Math.ceil((p.cooldowns.c - now)/1000);
+            let xReady = now >= p.cooldowns.x ? "X" : Math.ceil((p.cooldowns.x - now)/1000);
+            let zReady = now >= p.cooldowns.z ? "Z" : Math.ceil((p.cooldowns.z - now)/1000);
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = '#000';
+            ctx.fillText(`[ ${cReady} | ${xReady} | ${zReady} ]`, 0, hpY - 10);
+            ctx.shadowBlur = 0;
+        }
+
+        ctx.restore();
+    });
+    // ====================================================
 
     players.forEach(tank => {
         if (tank.typhoonMarks > 0 && !tank.isDead) {
