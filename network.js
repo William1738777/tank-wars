@@ -9,7 +9,6 @@ const mainMenu = document.getElementById('main-menu');
 const gamesList = document.getElementById('games-list');
 const btnLobbyBack = document.getElementById('btn-lobby-back');
 const btnLobbyCreate = document.getElementById('btn-lobby-create');
-const waitingOverlay = document.getElementById('waiting-overlay');
 const roomCodeDisplay = document.getElementById('room-code-display');
 
 // ==========================================
@@ -61,15 +60,12 @@ document.getElementById('btn-login').addEventListener('click', async () => {
         const data = await response.json();
         
         if (response.ok) {
-            // Save the secure token to the browser!
             localStorage.setItem('tank_token', data.token);
             localStorage.setItem('tank_username', data.user.username);
             
-            // Advance to the main menu
             authScreen.style.display = 'none';
             mainMenu.style.display = 'flex';
             
-            // Tell Socket.io who we are using the token (for future database ties)
             socket.auth = { token: data.token };
             socket.disconnect().connect();
         } else {
@@ -88,18 +84,19 @@ document.getElementById('btn-guest').addEventListener('click', () => {
 });
 
 // ==========================================
-// MULTIPLAYER LOBBY LOGIC
+// MULTIPLAYER LOBBY LOGIC (TEAM BASED)
 // ==========================================
 
 // Global Network State
 let isOnlineGame = false;
 let isHost = false;
 let myRoomCode = "";
+let currentLobbyData = null; 
+let myOwnerId = 1; // Dynamically assigned (1-6) when game starts
 
 // Registry to track bullet IDs and stop echoes
 const seenCasts = new Set(); 
 
-// Lobby Interactions
 if (btnOnline) {
     btnOnline.addEventListener('click', () => {
         mainMenu.style.display = 'none';
@@ -121,11 +118,14 @@ socket.on('updateGamesList', (games) => {
         const li = document.createElement('li');
         li.style.padding = "10px"; li.style.borderBottom = "1px solid #333";
         li.style.display = "flex"; li.style.justifyContent = "space-between"; li.style.alignItems = "center";
-        let statusColor = game.status === 'IN PROGRESS' ? '#ff3333' : '#00ff66';
+        
+        let statusColor = game.status === 'IN PROGRESS' ? '#ff3333' : (game.status === 'FULL' ? '#ffaa00' : '#00ff66');
+        let joinDisabled = (game.status === 'IN PROGRESS' || game.status === 'FULL') ? 'display:none;' : '';
+        
         li.innerHTML = `
-            <span>ROOM: <b>${game.id}</b></span>
-            <span style="color: ${statusColor}; font-size: 18px;">${game.status}</span>
-            <button class="join-btn" data-id="${game.id}" style="padding: 10px 20px; background: #00ff66; cursor: pointer; border: none; font-weight: bold; ${game.status === 'IN PROGRESS' ? 'display:none;' : ''}">JOIN</button>
+            <span>ROOM: <b>${game.id}</b> <span style="font-size:14px; color:#aaa;">(${game.mode})</span></span>
+            <span><span style="color: ${statusColor}; font-size: 18px; margin-right: 15px;">${game.status}</span> <span style="font-size: 14px; color: #888;">${game.players.length}/${game.maxPlayers}</span></span>
+            <button class="join-btn" data-id="${game.id}" style="padding: 10px 20px; background: #00ff66; cursor: pointer; border: none; font-weight: bold; ${joinDisabled}">JOIN</button>
         `;
         gamesList.appendChild(li);
     }
@@ -141,119 +141,70 @@ socket.on('updateGamesList', (games) => {
 });
 
 btnLobbyCreate.addEventListener('click', () => {
-    socket.emit('createGame');
+    // Default to 2v2
+    socket.emit('createGame', '2v2');
 });
 
-socket.on('gameCreated', (gameId) => {
-    isOnlineGame = true; isHost = true; myRoomCode = gameId;
+socket.on('gameCreated', (game) => {
+    isOnlineGame = true; isHost = true; myRoomCode = game.id; currentLobbyData = game;
     lobbyScreen.style.display = 'none'; selectScreen.style.display = 'flex';
-    waitingOverlay.style.display = 'flex'; roomCodeDisplay.innerText = `ROOM: ${gameId}`;
-    
-    // Lock CPU elements for online
-    const p2Next = document.getElementById('btn-p2-next');
-    const p2Ready = document.getElementById('btn-p2-ready');
-    const toggleAi = document.getElementById('btn-toggle-ai');
-    if(p2Next) p2Next.style.display = 'none';
-    if(p2Ready) p2Ready.style.display = 'none';
-    if(toggleAi) toggleAi.style.display = 'none';
+    if (typeof updateLobbyUI === 'function') updateLobbyUI(game);
 });
 
-socket.on('gameJoined', (gameId) => {
-    isOnlineGame = true; isHost = false; myRoomCode = gameId;
-    lobbyScreen.style.display = 'none'; selectScreen.style.display = 'flex'; waitingOverlay.style.display = 'none';
-    
-    // Lock P1 elements for Joiner
-    const p1Next = document.getElementById('btn-p1-next');
-    const p1Ready = document.getElementById('btn-p1-ready');
-    const mapSelect = document.getElementById('btn-map-select');
-    const toggleAi = document.getElementById('btn-toggle-ai');
-    
-    if(p1Next) p1Next.style.display = 'none';
-    if(p1Ready) p1Ready.style.display = 'none'; 
-    if(mapSelect) mapSelect.style.display = 'none';
-    if(toggleAi) toggleAi.style.display = 'none';
-    
-    const roomDisplay = document.getElementById('room-code-display');
-    if (roomDisplay) roomDisplay.innerText = gameId;
-    
-    socket.emit('requestSync', gameId);
+socket.on('gameJoined', (game) => {
+    isOnlineGame = true; isHost = false; myRoomCode = game.id; currentLobbyData = game;
+    lobbyScreen.style.display = 'none'; selectScreen.style.display = 'flex';
+    if (typeof updateLobbyUI === 'function') updateLobbyUI(game);
 });
 
-socket.on('playerJoined', (playerId) => { waitingOverlay.style.display = 'none'; });
-socket.on('forceSync', () => { socket.emit('syncSelection', { roomId: myRoomCode, p1Selection, p2Selection, selectedMapIndex, p1Ready, p2Ready }); });
-
-socket.on('updateSelection', (data) => {
-    p1Selection = data.p1Selection; p2Selection = data.p2Selection; selectedMapIndex = data.selectedMapIndex;
-    if (data.p1Ready !== undefined) p1Ready = data.p1Ready;
-    if (data.p2Ready !== undefined) p2Ready = data.p2Ready;
-
-    const p1ReadyBtn = document.getElementById('btn-p1-ready');
-    const p1ReadyText = document.getElementById('p1-ready-text');
-    const p1Panel = document.getElementById('p1-panel');
-    if (p1Ready) {
-        if(p1ReadyBtn) p1ReadyBtn.style.display = 'none';
-        if(p1ReadyText) p1ReadyText.style.display = 'block';
-        if(p1Panel) p1Panel.style.borderColor = '#00ff00';
-    }
-
-    const p2ReadyBtn = document.getElementById('btn-p2-ready');
-    const p2ReadyText = document.getElementById('p2-ready-text');
-    const p2Panel = document.getElementById('p2-panel');
-    if (p2Ready) {
-        if(p2ReadyBtn) p2ReadyBtn.style.display = 'none';
-        if(p2ReadyText) p2ReadyText.style.display = 'block';
-        if(p2Panel) p2Panel.style.borderColor = '#00ff00';
-    }
-
-    currentMap = mapsData[selectedMapIndex];
-    const mapNameDisplay = document.getElementById('map-name-display') || document.getElementById('map-name');
-    if (mapNameDisplay) mapNameDisplay.innerText = (mapNameDisplay.id === 'map-name' ? 'MAP: ' : '') + currentMap.name;
-
-    if (typeof updateDisplays === 'function') updateDisplays();
-    if (typeof drawMinimap === 'function') drawMinimap();
-    if (typeof checkAllReady === 'function') checkAllReady();
+socket.on('lobbyUpdate', (game) => {
+    currentLobbyData = game;
+    if (typeof updateLobbyUI === 'function') updateLobbyUI(game);
 });
 
-socket.on('startGame', () => { if (typeof startGame === 'function') startGame(); });
+socket.on('hostLeft', () => {
+    alert("The Host disconnected. Returning to Main Menu.");
+    location.reload();
+});
+
+socket.on('startGame', (game) => {
+    currentLobbyData = game;
+    
+    // Assign my unique local owner ID based on array position (1 to 6)
+    const myPlayerIndex = game.players.findIndex(p => p.id === socket.id);
+    myOwnerId = myPlayerIndex !== -1 ? myPlayerIndex + 1 : 1; 
+
+    if (typeof startGame === 'function') startGame(); 
+});
 
 // ==========================================
 // IN-GAME REAL-TIME SOCKET LISTENERS
 // ==========================================
 
 socket.on('playerUpdate', (data) => {
-    if (typeof gameState === 'undefined' || gameState !== 'PLAYING' || !players || players.length < 2) return;
+    if (typeof gameState === 'undefined' || gameState !== 'PLAYING' || !players) return;
     
-    if (data.isHost && !isHost) { 
-        if (players[0]) { 
-            players[0].x = data.x; players[0].y = data.y; players[0].angle = data.angle; 
-            if (data.dashState !== undefined) players[0].dashState = data.dashState;
-            if (data.fireShieldActive !== undefined) players[0].fireShieldActive = data.fireShieldActive;
-            if (data.isGhosting !== undefined) players[0].isGhosting = data.isGhosting;
-            if (data.zHeight !== undefined) players[0].zHeight = data.zHeight;
-            if (data.zHeightActive !== undefined) players[0].zHeightActive = data.zHeightActive;
-            
-            if (data.knockupSource !== undefined) players[0].knockupSource = data.knockupSource;
-            if (data.chronoIntercepted !== undefined) players[0].chronoIntercepted = data.chronoIntercepted;
-        }
-        if (players[0] && data.p1Hp !== undefined) players[0].hp = data.p1Hp;
-        if (players[1] && data.p2Hp !== undefined) players[1].hp = data.p2Hp;
+    // Update the specific tank matching the incoming owner ID
+    let p = players.find(tank => tank.owner === data.owner);
+    
+    if (p && p.owner !== myOwnerId) { 
+        p.x = data.x; 
+        p.y = data.y; 
+        p.angle = data.angle; 
         
-    } else if (!data.isHost && isHost) { 
-        if (players[1]) { 
-            players[1].x = data.x; players[1].y = data.y; players[1].angle = data.angle; 
-            
-            if (data.dashState !== undefined) players[1].dashState = data.dashState;
-            if (data.fireShieldActive !== undefined) players[1].fireShieldActive = data.fireShieldActive;
-            if (data.isGhosting !== undefined) players[1].isGhosting = data.isGhosting;
-            if (data.zHeight !== undefined) players[1].zHeight = data.zHeight;
-            if (data.zHeightActive !== undefined) players[1].zHeightActive = data.zHeightActive;
-            
-            if (data.knockupSource !== undefined) players[1].knockupSource = data.knockupSource;
-            if (data.chronoIntercepted !== undefined) players[1].chronoIntercepted = data.chronoIntercepted;
-        }
+        if (data.hp !== undefined) p.hp = data.hp;
+        if (data.dashState !== undefined) p.dashState = data.dashState;
+        if (data.fireShieldActive !== undefined) p.fireShieldActive = data.fireShieldActive;
+        if (data.isGhosting !== undefined) p.isGhosting = data.isGhosting;
+        if (data.zHeight !== undefined) p.zHeight = data.zHeight;
+        if (data.zHeightActive !== undefined) p.zHeightActive = data.zHeightActive;
+        
+        if (data.knockupSource !== undefined) p.knockupSource = data.knockupSource;
+        if (data.chronoIntercepted !== undefined) p.chronoIntercepted = data.chronoIntercepted;
     }
 });
 
+// Host is the authority on applying direct hit damage
 socket.on('directHit', (data) => {
     if (isHost && typeof players !== 'undefined') {
         let target = players.find(p => p.owner === data.targetId);
@@ -283,82 +234,8 @@ socket.on('playerHazard', (data) => {
 });
 
 socket.on('matchDeath', (data) => {
-    if (typeof gameState === 'undefined' || gameState !== 'PLAYING') return;
-    
-    p1Score = data.p1Score; p2Score = data.p2Score;
-    if (document.getElementById('score-p1')) document.getElementById('score-p1').innerText = p1Score;
-    if (document.getElementById('score-p2')) document.getElementById('score-p2').innerText = p2Score;
-    
-    if (!isHost) { 
-        let loser = players.find(p => p.owner === data.loserOwnerId);
-        if (loser && !loser.isDead) {
-            loser.isDead = true;
-            if (typeof createKaboom === 'function') createKaboom(loser.x, loser.y, 2.0 * (loser.scaleMod || 1));
-        }
-        
-        if (p1Score >= 3 || p2Score >= 3) {
-            gameState = 'OVER';
-            const winnerText = p1Score >= 3 ? "PLAYER 1" : "PLAYER 2";
-            document.getElementById('victory-title').innerText = `${winnerText} WINS!`;
-            document.getElementById('victory-title').style.color = p1Score >= 3 ? '#00aaff' : '#ff3333';
-            
-            let p1Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
-            let p2Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
-            let p1Obj = players.find(p => p.owner === 1);
-            let p2Obj = players.find(p => p.owner === 2);
-            if(p1Obj) p1Stats = p1Obj.matchStats;
-            if(p2Obj) p2Stats = p2Obj.matchStats;
-            
-            document.getElementById('stats-p1').innerHTML = `
-                Damage Dealt: <b>${Math.round(p1Stats.totalDamage)}</b><br>
-                Bounced Dmg: <b>${Math.round(p1Stats.bouncedDamage)}</b><br>
-                X-Skill Dmg: <b>${Math.round(p1Stats.xSkillDamage)}</b><br>
-                Shield Gen: <b>${Math.round(p1Stats.shieldGenerated)}</b>
-            `;
-            document.getElementById('stats-p2').innerHTML = `
-                Damage Dealt: <b>${Math.round(p2Stats.totalDamage)}</b><br>
-                Bounced Dmg: <b>${Math.round(p2Stats.bouncedDamage)}</b><br>
-                X-Skill Dmg: <b>${Math.round(p2Stats.xSkillDamage)}</b><br>
-                Shield Gen: <b>${Math.round(p2Stats.shieldGenerated)}</b>
-            `;
-
-            setTimeout(() => { document.getElementById('victory-screen').style.display = 'flex'; }, 1500);
-        } else {
-            setTimeout(() => {
-                players.forEach((tank, index) => {
-                    let spawn = spawnPoints[index === 0 ? 0 : 3];
-                    tank.x = spawn.x; tank.y = spawn.y; tank.angle = index === 0 ? 0 : Math.PI;
-                    tank.hp = tank.maxHp; tank.isDead = false; tank.poisons = []; tank.stunTimer = 0;
-                    tank.hookState = 'ready'; tank.dashState = 0; tank.burstsLeft = 0; tank.flameTimer = 0;
-                    tank.mgAmmo = tank.mgMaxAmmo; tank.mgReloading = false; tank.invulnTimer = 90; 
-                    tank.kbX = 0; tank.kbY = 0; tank.kbTimer = 0; tank.electrocutedTimer = 0;
-                    tank.energy = 0; tank.zReady = false; tank.zFiring = false; tank.zChargeTimer = 0; tank.cShots = 0;
-                    
-                    tank.destroAiming = false; tank.destroLocked = false; tank.destroAimDist = 100;
-                    tank.afterStunSlow = 0; tank.destroSlowTimer = 0; tank.kbType = null;
-                    tank.fireShieldActive = false; tank.isGhosting = false; tank.fireTrailTicks = 0;
-                    tank.phantomEvasiveTimer = 0; tank.isGhost = false; tank.ghostToggleTimer = 0;
-                    tank.phantomMarks = 0; tank.phantomMarkTimer = 0; tank.phantomShockTimer = 0;
-                    tank.abyssSlowStacks = 0; tank.abyssSlowTimer = 0;
-                    
-                    tank.tempestStacks = 0; tank.tempestSpeedStacks = 0; tank.tempestSpeedTimer = 0;
-                    tank.tempestCSpdStacks = 0; tank.tempestCSpdTimer = 0; tank.tempestSlowTimer = 0;
-                    tank.tempestShieldHp = 0; tank.tempestShieldTimer = 0;
-                    tank.tempestOrbitalAngle = 0; tank.tempestOrbitalCooldowns = [0, 0, 0];
-                    tank.typhoonMarks = 0; tank.inTornado = false; 
-                    
-                    tank.zHeight = 0; tank.zRotation = 0;
-                    tank.portalA = null; tank.portalB = null; tank.portalTimer = 0;
-    
-                    tank.blackoutAnchor = null; tank.blackoutLasers = [];
-                    tank.xHoldTimer = 0; tank.xHeldLastFrame = false; tank.blackoutLaserTimer = 0;
-                    
-                    tank.cooldowns = { c: 0, x: 0, z: 0 };
-                });
-                projectiles = []; hazards = []; flashes = []; particles = []; floatingTexts = [];
-                if (typeof updateHUD === 'function') updateHUD();
-            }, 1500);
-        }
+    if (typeof handleNetworkDeath === 'function') {
+        handleNetworkDeath(data);
     }
 });
 
@@ -372,7 +249,7 @@ if (typeof Projectile !== 'undefined') {
             super(owner, x, y, angle, speed, radius, damage, color, type, bounces, castId);
             
             if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !fromNetwork) {
-                let myOwnerId = isHost ? 1 : 2;
+                // Only broadcast if WE own the tank firing this projectile
                 if (owner === myOwnerId) {
                     seenCasts.add(this.castId); 
                     socket.emit('playerShoot', { roomId: myRoomCode, owner, x, y, angle, speed, radius, damage, color, type, bounces, castId: this.castId });
