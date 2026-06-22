@@ -63,8 +63,9 @@ document.getElementById('btn-login').addEventListener('click', async () => {
             localStorage.setItem('tank_token', data.token);
             localStorage.setItem('tank_username', data.user.username);
             
-            authScreen.style.display = 'none';
-            mainMenu.style.display = 'flex';
+            // FIXED: Use classList instead of style.display
+            authScreen.classList.add('hidden');
+            mainMenu.classList.remove('hidden');
             
             socket.auth = { token: data.token };
             socket.disconnect().connect();
@@ -79,8 +80,9 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 
 // Handle Guest Button
 document.getElementById('btn-guest').addEventListener('click', () => {
-    authScreen.style.display = 'none';
-    mainMenu.style.display = 'flex';
+    // FIXED: Use classList instead of style.display
+    authScreen.classList.add('hidden');
+    mainMenu.classList.remove('hidden');
 });
 
 // ==========================================
@@ -99,14 +101,16 @@ const seenCasts = new Set();
 
 if (btnOnline) {
     btnOnline.addEventListener('click', () => {
-        mainMenu.style.display = 'none';
-        lobbyScreen.style.display = 'flex';
+        // FIXED
+        mainMenu.classList.add('hidden');
+        lobbyScreen.classList.remove('hidden');
     });
 }
 
 btnLobbyBack.addEventListener('click', () => {
-    lobbyScreen.style.display = 'none';
-    mainMenu.style.display = 'flex';
+    // FIXED
+    lobbyScreen.classList.add('hidden');
+    mainMenu.classList.remove('hidden');
 });
 
 socket.on('updateGamesList', (games) => {
@@ -141,19 +145,22 @@ socket.on('updateGamesList', (games) => {
 });
 
 btnLobbyCreate.addEventListener('click', () => {
-    // Default to 2v2
     socket.emit('createGame', '2v2');
 });
 
 socket.on('gameCreated', (game) => {
     isOnlineGame = true; isHost = true; myRoomCode = game.id; currentLobbyData = game;
-    lobbyScreen.style.display = 'none'; selectScreen.style.display = 'flex';
+    // FIXED
+    lobbyScreen.classList.add('hidden'); 
+    selectScreen.classList.remove('hidden');
     if (typeof updateLobbyUI === 'function') updateLobbyUI(game);
 });
 
 socket.on('gameJoined', (game) => {
     isOnlineGame = true; isHost = false; myRoomCode = game.id; currentLobbyData = game;
-    lobbyScreen.style.display = 'none'; selectScreen.style.display = 'flex';
+    // FIXED
+    lobbyScreen.classList.add('hidden'); 
+    selectScreen.classList.remove('hidden');
     if (typeof updateLobbyUI === 'function') updateLobbyUI(game);
 });
 
@@ -170,7 +177,6 @@ socket.on('hostLeft', () => {
 socket.on('startGame', (game) => {
     currentLobbyData = game;
     
-    // Assign my unique local owner ID based on array position (1 to 6)
     const myPlayerIndex = game.players.findIndex(p => p.id === socket.id);
     myOwnerId = myPlayerIndex !== -1 ? myPlayerIndex + 1 : 1; 
 
@@ -184,7 +190,6 @@ socket.on('startGame', (game) => {
 socket.on('playerUpdate', (data) => {
     if (typeof gameState === 'undefined' || gameState !== 'PLAYING' || !players) return;
     
-    // Update the specific tank matching the incoming owner ID
     let p = players.find(tank => tank.owner === data.owner);
     
     if (p && p.owner !== myOwnerId) { 
@@ -204,7 +209,6 @@ socket.on('playerUpdate', (data) => {
     }
 });
 
-// Host is the authority on applying direct hit damage
 socket.on('directHit', (data) => {
     if (isHost && typeof players !== 'undefined') {
         let target = players.find(p => p.owner === data.targetId);
@@ -239,9 +243,6 @@ socket.on('matchDeath', (data) => {
     }
 });
 
-// ==========================================
-// MONKEYPATCH ATTACK ATTRIBUTES 
-// ==========================================
 if (typeof Projectile !== 'undefined') {
     const OriginalProjectile = Projectile;
     Projectile = class extends OriginalProjectile {
@@ -249,7 +250,6 @@ if (typeof Projectile !== 'undefined') {
             super(owner, x, y, angle, speed, radius, damage, color, type, bounces, castId);
             
             if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !fromNetwork) {
-                // Only broadcast if WE own the tank firing this projectile
                 if (owner === myOwnerId) {
                     seenCasts.add(this.castId); 
                     socket.emit('playerShoot', { roomId: myRoomCode, owner, x, y, angle, speed, radius, damage, color, type, bounces, castId: this.castId });
