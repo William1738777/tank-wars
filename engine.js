@@ -5,23 +5,26 @@ let frameCount = 0;
 
 let gameState = 'MENU'; 
 let p1Selection = 0, p2Selection = 5; 
-let p1Ready = false, p2Ready = false;
-let selectedMapIndex = 0; let currentMap = mapsData[selectedMapIndex];
-let players = []; let p1Score = 0; let p2Score = 0;
-let projectiles = []; let particles = []; let flashes = []; let hazards = []; let floatingTexts = []; 
+let selectedMapIndex = 2; // Defaulting to the big 3000x2000 map for Team Skirmish
+let currentMap = mapsData[selectedMapIndex];
+let players = []; 
 
-// --- NEW: Player Lives Tracker ---
-let playerLives = 3;
+// --- TEAM MULTIPLAYER STATE ---
+let team1Score = 0; 
+let team2Score = 0;
+let deathCounts = {}; // Tracks deaths per owner ID for scaling respawn timers
 
 // Global visual modifiers
 let screenShakeTimer = 0;
 let screenShakeIntensity = 0;
 
-// Global Tracker for AI Difficulty
-let aiDifficulty = 'NORMAL';
-
-// --- NEW: Camera and Map Dimension Variables ---
+// --- DYNAMIC CAMERA VARIABLES ---
 let camera = { x: 0, y: 0 };
+let currentZoom = 1.0; 
+let targetZoom = 1.0;
+const MIN_ZOOM = 0.65; // The maximum amount the camera is allowed to zoom out
+const INTEREST_RADIUS = 900; // How close enemies need to be to trigger zoom out
+
 var mapW = canvas.width; 
 var mapH = canvas.height; 
 
@@ -55,21 +58,15 @@ function recordDamage(attackerOwner, amount, isBounce = false, isXSkill = false)
     }
 }
 
-// --- NEW: HYBRID AUTHORITY BYPASS FOR MELEE & DASHES ---
-// Call this function whenever a tank does direct body/dash damage
+// --- HYBRID AUTHORITY BYPASS FOR MELEE & DASHES ---
 function applyMeleeDamage(attackerId, targetTank, damageAmount) {
     if (targetTank.isDead || targetTank.invulnTimer > 0) return;
 
-    let myOwnerId = 1;
-    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) myOwnerId = 2;
-
-    // Apply the damage instantly to our own screen
     targetTank.hp -= damageAmount;
     recordDamage(attackerId, damageAmount, false, true);
 
-    // If I am the Guest (2) and I just hit the Host (1), force the Host to accept it over the internet!
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) {
-        if (attackerId === myOwnerId && targetTank.owner === 1) {
+        if (attackerId === myOwnerId) {
             socket.emit('directHit', {
                 roomId: myRoomCode,
                 attackerId: attackerId,
@@ -87,12 +84,8 @@ function createMuzzleFlash(x, y, angle, scale = 1.0) {
         let speed = (Math.random() * 4 + 2) * scale;
         let pAngle = angle + (Math.random() - 0.5) * 0.6;
         particles.push({
-            x: x, y: y,
-            vx: Math.cos(pAngle) * speed,
-            vy: Math.sin(pAngle) * speed,
-            life: Math.random() * 0.5 + 0.5,
-            size: (Math.random() * 3 + 1) * scale,
-            color: '#ffaa00'
+            x: x, y: y, vx: Math.cos(pAngle) * speed, vy: Math.sin(pAngle) * speed,
+            life: Math.random() * 0.5 + 0.5, size: (Math.random() * 3 + 1) * scale, color: '#ffaa00'
         });
     }
 }
@@ -102,12 +95,8 @@ function createParticles(x, y, count, color, speedMultiplier = 1, sizeMultiplier
         let angle = Math.random() * Math.PI * 2;
         let speed = Math.random() * 4 * speedMultiplier;
         particles.push({
-            x: x, y: y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: Math.random() * 0.6 + 0.4,
-            size: (Math.random() * 3 + 1) * sizeMultiplier,
-            color: color
+            x: x, y: y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+            life: Math.random() * 0.6 + 0.4, size: (Math.random() * 3 + 1) * sizeMultiplier, color: color
         });
     }
 }
@@ -118,62 +107,64 @@ function createKaboom(x, y, scale = 1.0) {
     createParticles(x, y, Math.floor(10 * scale), '#ffffff', 2.5 * scale, 1.0 * scale);
 }
 
-// --- ENGINE LOGIC ---
+// ==========================================
+// GAME CORE INITIALIZATION (TEAMS)
+// ==========================================
 function startGame() {
     document.getElementById('select-screen').style.display = 'none';
-    document.getElementById('hud').style.display = 'flex';
-    document.getElementById('p1-skills').style.display = 'flex'; document.getElementById('p2-skills').style.display = 'flex';
+    document.getElementById('hud').style.display = 'block'; // Or flex depending on UI
     
-    p1Score = 0; p2Score = 0; frameCount = 0; playerLives = 3; 
+    team1Score = 0; team2Score = 0; frameCount = 0; deathCounts = {};
     projectiles = []; particles = []; flashes = []; hazards = []; floatingTexts = [];
+    currentZoom = 1.0; targetZoom = 1.0;
     
-    if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
-        mapW = 3000;
-        mapH = 2000;
-        let p1 = new Tank(1, tanksData[p1Selection], 200, mapH / 2, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
-        p1.team = 0;
-        players = [p1];
-        if (typeof raidManager !== 'undefined') raidManager.init();
-   } else {
-        // Standard 1v1 Screen Mode
-        currentMap = mapsData[selectedMapIndex];
-        
-        // CRITICAL FIX: Snap canvas precisely to the map's native resolution
-        canvas.width = currentMap.width;
-        canvas.height = currentMap.height;
-        mapW = currentMap.width;
-        mapH = currentMap.height;
-        
-        if (typeof isOnlineGame !== 'undefined' && isOnlineGame) {
-            if (isHost) {
-                let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
-                p1.team = 1;
-                let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'net_up', down:'net_down', left:'net_left', right:'net_right', c:'net_c', x:'net_x', z:'net_z'}, false);
-                p2.team = 2;
-                players = [p1, p2];
-            } else {
-                let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'net_up', down:'net_down', left:'net_left', right:'net_right', c:'net_c', x:'net_x', z:'net_z'}, false);
-                p1.team = 1;
-                let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
-                p2.team = 2;
-                players = [p1, p2];
-            }
-        } else {
-            let p1 = new Tank(1, tanksData[p1Selection], spawnPoints[0].x, spawnPoints[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
-            p1.team = 1;
-            let p2 = new Tank(2, tanksData[p2Selection], spawnPoints[3].x, spawnPoints[3].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, gameMode === 'ARCADE', gameMode === 'ARCADE' ? aiDifficulty : 'NORMAL');
-            p2.team = 2;
-            players = [p1, p2];
-        }
+    // Force the large team fight map
+    currentMap = mapsData[selectedMapIndex] || mapsData[0];
+    
+    canvas.width = 1200; 
+    canvas.height = 800;
+    mapW = currentMap.width;
+    mapH = currentMap.height;
+    
+    players = [];
+    
+    // Define Team Spawn Zones (Left Side vs Right Side)
+    let t1Spawns = [ {x: 300, y: 500}, {x: 300, y: 1000}, {x: 300, y: 1500} ]; 
+    let t2Spawns = [ {x: mapW - 300, y: 500}, {x: mapW - 300, y: 1000}, {x: mapW - 300, y: 1500} ]; 
+    let t1Index = 0; let t2Index = 0;
+
+    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && currentLobbyData) {
+        // ONLINE TEAM GENERATION
+        currentLobbyData.players.forEach((pData, index) => {
+            let ownerId = index + 1; // 1 to 6
+            let spawnPt = pData.team === 1 ? t1Spawns[t1Index++] : t2Spawns[t2Index++];
+            let startAngle = pData.team === 1 ? 0 : Math.PI;
+            
+            // Assign local keyboard controls ONLY to our specific tank
+            let controls = (ownerId === myOwnerId) ? 
+                {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'} : 
+                {up:'net_up', down:'net_down', left:'net_left', right:'net_right', c:'net_c', x:'net_x', z:'net_z'};
+            
+            let tank = new Tank(ownerId, tanksData[pData.selection], spawnPt.x, spawnPt.y, startAngle, controls, false);
+            tank.team = pData.team;
+            players.push(tank);
+        });
+    } else {
+        // OFFLINE FALLBACK (1v1 Test Mode)
+        myOwnerId = 1;
+        let p1 = new Tank(1, tanksData[p1Selection], t1Spawns[0].x, t1Spawns[0].y, 0, {up:'w', down:'s', left:'a', right:'d', c:'c', x:'x', z:'z'}, false);
+        p1.team = 1;
+        let p2 = new Tank(2, tanksData[p2Selection], t2Spawns[0].x, t2Spawns[0].y, Math.PI, {up:'arrowup', down:'arrowdown', left:'arrowleft', right:'arrowright', c:'\'', x:';', z:'l'}, false);
+        p2.team = 2;
+        players = [p1, p2];
     }
     
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !hazards._isPatched) {
         const originalPush = hazards.push;
         hazards.push = function(...items) {
             items.forEach(item => {
-                if (!item.fromNetwork && typeof socket !== 'undefined') {
-                    let myOwnerId = isHost ? 1 : 2;
-                    if (item.owner === myOwnerId) socket.emit('playerHazard', { roomId: myRoomCode, hazard: item });
+                if (!item.fromNetwork && typeof socket !== 'undefined' && item.owner === myOwnerId) {
+                    socket.emit('playerHazard', { roomId: myRoomCode, hazard: item });
                 }
             });
             return originalPush.apply(this, items);
@@ -181,198 +172,222 @@ function startGame() {
         hazards._isPatched = true;
     }
 
-    gameState = 'PLAYING'; updateHUD();
+    gameState = 'PLAYING'; 
+    if(typeof updateHUD === 'function') updateHUD();
 }
 
+// ==========================================
+// SCALING RESPAWN & DEATH LOGIC
+// ==========================================
 function handleDeath(loserOwnerId) {
-    if (typeof gameMode !== 'undefined' && gameMode === 'RAID') {
-        if (loserOwnerId === 1) {
-            if (playerLives > 0) {
-                playerLives--;
-                let p1 = players.find(p => p.owner === 1);
-                if (p1) {
-                    p1.isDead = false; p1.hp = p1.maxHp; p1.x = 200; p1.y = mapH / 2; p1.invulnTimer = 180; 
-                    p1.poisons = []; p1.stunTimer = 0; p1.kbTimer = 0; p1.kbX = 0; p1.kbY = 0;
-                    p1.hookState = 'ready'; p1.dashState = 0; p1.burstsLeft = 0; p1.flameTimer = 0;
-                    p1.mgAmmo = p1.mgMaxAmmo; p1.mgReloading = false; 
-                    p1.energy = 0; p1.zReady = false; p1.zFiring = false; p1.zChargeTimer = 0;
-                    p1.zHeight = 0; p1.zRotation = 0; p1.electrocutedTimer = 0;
-                    floatingTexts.push({x: p1.x, y: p1.y - 40, text: `SYSTEM REBOOT! (${playerLives} REVIVES LEFT)`, life: 90, color: '#00ff66', fontSize: '20px'});
-                }
-                updateHUD();
-            } else {
-                gameState = 'OVER';
-                document.getElementById('victory-title').innerText = `RAID FAILED`;
-                document.getElementById('victory-title').style.color = '#ff3333';
-                setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
-            }
-        } else {
-            let deadTank = players.find(p => p.owner === loserOwnerId);
-            if (typeof raidManager !== 'undefined' && deadTank) raidManager.queueRespawn(deadTank);
-            let turretsAlive = players.filter(p => p.config.id === 'facility_turret' && !p.isDead).length;
-            if (turretsAlive === 0) {
-                gameState = 'OVER';
-                document.getElementById('victory-title').innerText = `FACILITY BREACHED!`;
-                document.getElementById('victory-title').style.color = '#00ff66';
-                setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
-            }
-        }
+    let deadTank = players.find(p => p.owner === loserOwnerId);
+    if (!deadTank) return;
+
+    // Award Kill Score
+    if (deadTank.team === 1) team2Score++;
+    else if (deadTank.team === 2) team1Score++;
+
+    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && isHost && typeof socket !== 'undefined') {
+        socket.emit('matchDeath', { roomId: myRoomCode, loserOwnerId, team1Score, team2Score });
+    }
+
+    if (typeof updateHUD === 'function') updateHUD();
+
+    // Check Win Condition (e.g., First to 15 kills wins)
+    const SCORE_LIMIT = 15;
+    if (team1Score >= SCORE_LIMIT || team2Score >= SCORE_LIMIT) {
+        gameState = 'OVER'; 
+        const winnerText = team1Score >= SCORE_LIMIT ? "TEAM 1 WINS!" : "TEAM 2 WINS!";
+        document.getElementById('victory-title').innerText = winnerText;
+        document.getElementById('victory-title').style.color = team1Score >= SCORE_LIMIT ? '#00aaff' : '#ff3333';
+        setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
         return;
     }
 
-    // --- CRITICAL ONLINE FIX: Host-Driven death processing & Ghost Death Bypass ---
-    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && !isHost) {
-        // If the Guest triggered death locally, force the Host to acknowledge it!
-        if (typeof socket !== 'undefined') {
-            socket.emit('directHit', { 
-                roomId: myRoomCode, 
-                attackerId: loserOwnerId === 1 ? 2 : 1, // Award kill to the other guy
-                targetId: loserOwnerId, 
-                damage: 9999 // Overkill damage to force Host to trigger death
-            });
+    // --- SCALING RESPAWN TIMERS ---
+    deathCounts[loserOwnerId] = (deathCounts[loserOwnerId] || 0) + 1;
+    let dCount = deathCounts[loserOwnerId];
+
+    let respawnDelay = 7000;
+    if (dCount === 2) respawnDelay = 10000;
+    else if (dCount === 3) respawnDelay = 18000;
+    else if (dCount >= 4) respawnDelay = 20000;
+
+    floatingTexts.push({
+        x: deadTank.x, y: deadTank.y - 40, 
+        text: `RESPAWNING IN ${respawnDelay/1000}s`, 
+        life: 120, color: '#ff3333'
+    });
+
+    // Handle the actual respawn logic after delay
+    setTimeout(() => {
+        let spawnList = deadTank.team === 1 ? [ {x: 300, y: 500}, {x: 300, y: 1000}, {x: 300, y: 1500} ] : [ {x: mapW - 300, y: 500}, {x: mapW - 300, y: 1000}, {x: mapW - 300, y: 1500} ];
+        let spawnPt = spawnList[Math.floor(Math.random() * spawnList.length)];
+
+        deadTank.x = spawnPt.x; 
+        deadTank.y = spawnPt.y; 
+        deadTank.angle = deadTank.team === 1 ? 0 : Math.PI;
+        deadTank.hp = deadTank.maxHp; 
+        deadTank.isDead = false; 
+        deadTank.poisons = []; 
+        deadTank.stunTimer = 0;
+        deadTank.hookState = 'ready'; 
+        deadTank.dashState = 0; 
+        deadTank.burstsLeft = 0; 
+        deadTank.flameTimer = 0;
+        deadTank.mgAmmo = deadTank.mgMaxAmmo; 
+        deadTank.mgReloading = false; 
+        deadTank.invulnTimer = 180; // 3 seconds spawn protection
+        deadTank.kbX = 0; deadTank.kbY = 0; deadTank.kbTimer = 0; 
+        deadTank.electrocutedTimer = 0;
+        deadTank.energy = 0; deadTank.zReady = false; deadTank.zFiring = false; deadTank.zChargeTimer = 0; 
+        deadTank.cShots = 0;
+        
+        deadTank.destroAiming = false; deadTank.destroLocked = false; deadTank.destroAimDist = 100;
+        deadTank.afterStunSlow = 0; deadTank.destroSlowTimer = 0; deadTank.kbType = null;
+        deadTank.fireShieldActive = false; deadTank.isGhosting = false; deadTank.fireTrailTicks = 0;
+        deadTank.phantomEvasiveTimer = 0; deadTank.isGhost = false; deadTank.ghostToggleTimer = 0;
+        deadTank.phantomMarks = 0; deadTank.phantomMarkTimer = 0; deadTank.phantomShockTimer = 0;
+        deadTank.abyssSlowStacks = 0; deadTank.abyssSlowTimer = 0;
+        
+        deadTank.tempestStacks = 0; deadTank.tempestSpeedStacks = 0; deadTank.tempestSpeedTimer = 0;
+        deadTank.tempestCSpdStacks = 0; deadTank.tempestCSpdTimer = 0; deadTank.tempestSlowTimer = 0;
+        deadTank.tempestShieldHp = 0; deadTank.tempestShieldTimer = 0;
+        deadTank.tempestOrbitalAngle = 0; deadTank.tempestOrbitalCooldowns = [0, 0, 0];
+        deadTank.typhoonMarks = 0; deadTank.inTornado = false; 
+        
+        deadTank.zHeight = 0; deadTank.zRotation = 0;
+        deadTank.portalA = null; deadTank.portalB = null; deadTank.portalTimer = 0;
+
+        deadTank.blackoutAnchor = null; deadTank.blackoutLasers = [];
+        deadTank.xHoldTimer = 0; deadTank.xHeldLastFrame = false; deadTank.blackoutLaserTimer = 0;
+        
+        deadTank.cooldowns = { c: 0, x: 0, z: 0 };
+
+        if(typeof updateHUD === 'function') updateHUD();
+        
+        // Spawn Effect
+        createParticles(deadTank.x, deadTank.y, 30, deadTank.config.color, 3, 1);
+        flashes.push({ x: deadTank.x, y: deadTank.y, radius: 60, life: 1.0, color: '#ffffff' });
+
+    }, respawnDelay);
+}
+
+// Hook called by network.js when server broadcasts a death
+function handleNetworkDeath(data) {
+    team1Score = data.team1Score;
+    team2Score = data.team2Score;
+    if(typeof updateHUD === 'function') updateHUD();
+
+    if (!isHost) {
+        let loser = players.find(p => p.owner === data.loserOwnerId);
+        if (loser && !loser.isDead) {
+            loser.isDead = true;
+            createKaboom(loser.x, loser.y, 2.0 * (loser.scaleMod || 1));
+            handleDeath(data.loserOwnerId); // Trigger the local respawn timer logic for UI continuity
         }
-        return; 
-    }
-
-    let winnerOwnerId = loserOwnerId === 1 ? 2 : 1;
-    if (winnerOwnerId === 1) p1Score++; else p2Score++;
-    
-    document.getElementById('score-p1').innerText = p1Score; document.getElementById('score-p2').innerText = p2Score;
-    
-    if (typeof isOnlineGame !== 'undefined' && isOnlineGame && isHost && typeof socket !== 'undefined') {
-        socket.emit('matchDeath', { roomId: myRoomCode, loserOwnerId, p1Score, p2Score });
-    }
-
-    if (p1Score >= 3 || p2Score >= 3) {
-        gameState = 'OVER'; const winnerText = p1Score >= 3 ? "PLAYER 1" : "PLAYER 2";
-        document.getElementById('victory-title').innerText = `${winnerText} WINS!`;
-        document.getElementById('victory-title').style.color = p1Score >= 3 ? '#00aaff' : '#ff3333';
-        
-        let p1Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
-        let p2Stats = {totalDamage:0, bouncedDamage:0, xSkillDamage:0, shieldGenerated:0};
-        let p1Obj = players.find(p => p.owner === 1);
-        let p2Obj = players.find(p => p.owner === 2);
-        if(p1Obj) p1Stats = p1Obj.matchStats;
-        if(p2Obj) p2Stats = p2Obj.matchStats;
-        
-        document.getElementById('stats-p1').innerHTML = `
-            Damage Dealt: <b>${Math.round(p1Stats.totalDamage)}</b><br>
-            Bounced Dmg: <b>${Math.round(p1Stats.bouncedDamage)}</b><br>
-            X-Skill Dmg: <b>${Math.round(p1Stats.xSkillDamage)}</b><br>
-            Shield Gen: <b>${Math.round(p1Stats.shieldGenerated)}</b>
-        `;
-        document.getElementById('stats-p2').innerHTML = `
-            Damage Dealt: <b>${Math.round(p2Stats.totalDamage)}</b><br>
-            Bounced Dmg: <b>${Math.round(p2Stats.bouncedDamage)}</b><br>
-            X-Skill Dmg: <b>${Math.round(p2Stats.xSkillDamage)}</b><br>
-            Shield Gen: <b>${Math.round(p2Stats.shieldGenerated)}</b>
-        `;
-
-        setTimeout(() => document.getElementById('victory-screen').style.display = 'flex', 1500);
-    } else {
-        // --- FIXED: Universal Reset for BOTH tanks ---
-        setTimeout(() => {
-            players.forEach((tank, index) => {
-                let spawn = spawnPoints[index === 0 ? 0 : 3];
-                tank.x = spawn.x; tank.y = spawn.y; tank.angle = index === 0 ? 0 : Math.PI;
-                tank.hp = tank.maxHp; tank.isDead = false; tank.poisons = []; tank.stunTimer = 0;
-                tank.hookState = 'ready'; tank.dashState = 0; tank.burstsLeft = 0; tank.flameTimer = 0;
-                tank.mgAmmo = tank.mgMaxAmmo; tank.mgReloading = false; tank.invulnTimer = 90; 
-                tank.kbX = 0; tank.kbY = 0; tank.kbTimer = 0; tank.electrocutedTimer = 0;
-                tank.energy = 0; tank.zReady = false; tank.zFiring = false; tank.zChargeTimer = 0; tank.cShots = 0;
-                
-                tank.destroAiming = false; tank.destroLocked = false; tank.destroAimDist = 100;
-                tank.afterStunSlow = 0; tank.destroSlowTimer = 0; tank.kbType = null;
-                tank.fireShieldActive = false; tank.isGhosting = false; tank.fireTrailTicks = 0;
-                tank.phantomEvasiveTimer = 0; tank.isGhost = false; tank.ghostToggleTimer = 0;
-                tank.phantomMarks = 0; tank.phantomMarkTimer = 0; tank.phantomShockTimer = 0;
-                tank.abyssSlowStacks = 0; tank.abyssSlowTimer = 0;
-                
-                tank.tempestStacks = 0; tank.tempestSpeedStacks = 0; tank.tempestSpeedTimer = 0;
-                tank.tempestCSpdStacks = 0; tank.tempestCSpdTimer = 0; tank.tempestSlowTimer = 0;
-                tank.tempestShieldHp = 0; tank.tempestShieldTimer = 0;
-                tank.tempestOrbitalAngle = 0; tank.tempestOrbitalCooldowns = [0, 0, 0];
-                tank.typhoonMarks = 0; tank.inTornado = false; 
-                
-                tank.zHeight = 0; tank.zRotation = 0;
-                tank.portalA = null; tank.portalB = null; tank.portalTimer = 0;
-
-                tank.blackoutAnchor = null; tank.blackoutLasers = [];
-                tank.xHoldTimer = 0; tank.xHeldLastFrame = false; tank.blackoutLaserTimer = 0;
-                
-                // Clear all cooldowns
-                tank.cooldowns = { c: 0, x: 0, z: 0 };
-            });
-            // Clear entire board
-            projectiles = []; hazards = []; flashes = []; particles = []; floatingTexts = [];
-            updateHUD();
-        }, 1500); 
     }
 }
 
+// ==========================================
+// SMART CAPPED ZOOM CAMERA LOGIC
+// ==========================================
+function updateCamera() {
+    let localTank = players.find(p => p.owner === myOwnerId);
+    if (!localTank || localTank.isDead) return;
+
+    let minX = localTank.x; let maxX = localTank.x;
+    let minY = localTank.y; let maxY = localTank.y;
+    let enemiesInRadius = false;
+
+    // Build bounding box around local tank + nearby alive enemies
+    players.forEach(p => {
+        if (p.team !== localTank.team && !p.isDead) {
+            let d = Math.hypot(p.x - localTank.x, p.y - localTank.y);
+            if (d < INTEREST_RADIUS) {
+                enemiesInRadius = true;
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            }
+        }
+    });
+
+    // Add padding to bounding box
+    minX -= 300; maxX += 300;
+    minY -= 300; maxY += 300;
+
+    let boxWidth = maxX - minX;
+    let boxHeight = maxY - minY;
+
+    let targetCenterX = localTank.x;
+    let targetCenterY = localTank.y;
+
+    if (enemiesInRadius) {
+        let zoomX = canvas.width / boxWidth;
+        let zoomY = canvas.height / boxHeight;
+        
+        // Pick the smallest zoom required to fit the box, cap at MIN_ZOOM
+        targetZoom = Math.min(zoomX, zoomY);
+        targetZoom = Math.max(MIN_ZOOM, Math.min(1.0, targetZoom)); 
+
+        // Shift center weight towards the middle of the fight, but prioritize local tank
+        let midX = (minX + maxX) / 2;
+        let midY = (minY + maxY) / 2;
+        targetCenterX = (localTank.x * 1.5 + midX) / 2.5; 
+        targetCenterY = (localTank.y * 1.5 + midY) / 2.5;
+    } else {
+        targetZoom = 1.0;
+    }
+
+    // Smooth Lerping
+    currentZoom += (targetZoom - currentZoom) * 0.05;
+
+    // Apply Zoom offset logic for standard top-left camera tracking
+    camera.x = targetCenterX - (canvas.width / 2) / currentZoom;
+    camera.y = targetCenterY - (canvas.height / 2) / currentZoom;
+
+    // Constrain camera to map boundaries, accounting for scaled viewport
+    let viewportW = canvas.width / currentZoom;
+    let viewportH = canvas.height / currentZoom;
+
+    camera.x = Math.max(0, Math.min(camera.x, mapW - viewportW));
+    camera.y = Math.max(0, Math.min(camera.y, mapH - viewportH));
+}
+
+// ==========================================
+// CORE UPDATE LOOP
+// ==========================================
 function update() {
     if (gameState !== 'PLAYING') return;
 
     frameCount++; players.forEach(p => p.update());
     players.forEach(p => p.inFireTrail = false); 
     
-    // --- FIXED: HOST-AUTHORITATIVE HP & STATE SYNC ---
+    // --- NETWORK DATA EMITTER ---
     if (typeof isOnlineGame !== 'undefined' && isOnlineGame && typeof socket !== 'undefined') {
-        if (isHost) {
-            if (players[0] && !players[0].isDead) {
-                socket.emit('playerUpdate', {
-                    roomId: myRoomCode,
-                    isHost: true,
-                    x: players[0].x,
-                    y: players[0].y,
-                    angle: players[0].angle,
-                    p1Hp: players[0].hp,
-                    p2Hp: players[1] ? players[1].hp : 100,
-                    dashState: players[0].dashState,
-                    fireShieldActive: players[0].fireShieldActive,
-                    isGhosting: players[0].isGhosting,
-                    zHeight: players[0].zHeight,
-                    zHeightActive: players[0].zHeightActive,
-                    knockupSource: players[0].knockupSource,
-                    chronoIntercepted: players[0].chronoIntercepted
-                });
-            }
-        } else {
-            if (players[1] && !players[1].isDead) {
-                socket.emit('playerUpdate', {
-                    roomId: myRoomCode,
-                    isHost: false,
-                    x: players[1].x,
-                    y: players[1].y,
-                    angle: players[1].angle,
-                    dashState: players[1].dashState,
-                    fireShieldActive: players[1].fireShieldActive,
-                    isGhosting: players[1].isGhosting,
-                    zHeight: players[1].zHeight,
-                    zHeightActive: players[1].zHeightActive,
-                    knockupSource: players[1].knockupSource,
-                    chronoIntercepted: players[1].chronoIntercepted
-                });
-            }
-        }
-    }
-    // ----------------------------------------------------
-
-    if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
-        raidManager.update();
-        if (!raidManager.alliesReleased) {
-            let vanguardHit = players.some(p => p.team === 0 && p.hp < p.maxHp);
-            if (vanguardHit) {
-                raidManager.alliesReleased = true;
-                players.forEach(p => { if (p.team === 0) p.isHolding = false; });
-                let p1 = players.find(p => p.owner === 1);
-                let cx = p1 ? p1.x : camera.x + canvas.width/2;
-                let cy = p1 ? p1.y - 100 : camera.y + 100;
-                floatingTexts.push({x: cx, y: cy, text: "AMBUSH! VANGUARD ENGAGING!", life: 120, color: '#00ff66', fontSize: '24px'});
-            }
+        let localTank = players.find(p => p.owner === myOwnerId);
+        if (localTank && !localTank.isDead) {
+            socket.emit('playerUpdate', {
+                roomId: myRoomCode,
+                owner: myOwnerId,
+                x: localTank.x,
+                y: localTank.y,
+                angle: localTank.angle,
+                hp: localTank.hp,
+                dashState: localTank.dashState,
+                fireShieldActive: localTank.fireShieldActive,
+                isGhosting: localTank.isGhosting,
+                zHeight: localTank.zHeight,
+                zHeightActive: localTank.zHeightActive,
+                knockupSource: localTank.knockupSource,
+                chronoIntercepted: localTank.chronoIntercepted
+            });
         }
     }
 
+    // Physical Body Collisions (Prevents stacking)
     for (let i = 0; i < players.length; i++) {
         for (let j = i + 1; j < players.length; j++) {
             let p1 = players[i]; let p2 = players[j];
@@ -397,18 +412,13 @@ function update() {
         }
     }
 
-    if (players[0] && !players[0].isDead) {
-        camera.x = players[0].x - canvas.width / 2;
-        camera.y = players[0].y - canvas.height / 2;
-    }
-    
-    camera.x = Math.max(0, Math.min(camera.x, mapW - canvas.width));
-    camera.y = Math.max(0, Math.min(camera.y, mapH - canvas.height));
-
-    updateHUD(); updateCooldownUI();
+    updateCamera();
+    if(typeof updateHUD === 'function') updateHUD(); 
+    if(typeof updateCooldownUI === 'function') updateCooldownUI();
 
     if (screenShakeTimer > 0) screenShakeTimer--;
 
+    // Hazard Processing
     for (let i = hazards.length - 1; i >= 0; i--) {
         let h = hazards[i];
         
@@ -641,6 +651,7 @@ function update() {
         h.life--; if (h.life <= 0) hazards.splice(i, 1);
     }
 
+    // Z-Axis Handling
     players.forEach((tank, tIndex) => {
         if (tank.zHeightActive) {
             tank.zFrameCounter++;
@@ -741,6 +752,7 @@ function update() {
 
     let processedShotgunCasts = [];
 
+    // Projectile Processing
     for (let i = 0; i < projectiles.length; i++) {
         let pA = projectiles[i]; if (pA.dead) continue;
 
@@ -946,6 +958,8 @@ function update() {
 
                     if (tank.hp < startHp) { let ownerTank = players.find(p => p.owner === pA.owner); if (ownerTank && ownerTank.config.id === 'seraph' && !ownerTank.zReady) ownerTank.energy = Math.min(100, ownerTank.energy + 5); }
                     
+                    if (tank.hp <= 0 && !tank.isDead) { tank.isDead = true; createKaboom(tank.x, tank.y, 2.0 * tank.scaleMod); handleDeath(tank.owner); }
+
                     if (pA.type !== 'tempest_z') {
                         pA.triggerExplosion();
                     }
@@ -955,7 +969,6 @@ function update() {
 
         for (let j = i + 1; j < projectiles.length; j++) {
             let pB = projectiles[j]; if (pA.dead || pB.dead) continue;
-            
             if (pA.type === 'tempest_z' || pB.type === 'tempest_z') continue;
 
             if (pA.owner !== pB.owner) {
@@ -974,13 +987,24 @@ function update() {
     floatingTexts.forEach(t => { t.y -= 0.5; t.life--; }); floatingTexts = floatingTexts.filter(t => t.life > 0);
 }
 
+// ==========================================
+// RENDER LOOP (WITH ZOOM CAMERA)
+// ==========================================
 function draw() {
     if (gameState === 'MENU' || gameState === 'SELECT') return;
 
     ctx.save();
+    
     if (screenShakeTimer > 0) {
-        let dx = (Math.random() - 0.5) * screenShakeIntensity; let dy = (Math.random() - 0.5) * screenShakeIntensity; ctx.translate(dx, dy);
+        let dx = (Math.random() - 0.5) * screenShakeIntensity; 
+        let dy = (Math.random() - 0.5) * screenShakeIntensity; 
+        ctx.translate(dx, dy);
     }
+
+    // Apply the smart dynamic zoom centered around the canvas midpoint
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.scale(currentZoom, currentZoom);
+    ctx.translate(-canvas.width / 2, -canvas.height / 2);
 
     ctx.translate(-camera.x, -camera.y);
 
@@ -988,10 +1012,6 @@ function draw() {
         ctx.drawImage(images[currentMap.bgImg], 0, 0, mapW, mapH);
     } else {
         ctx.clearRect(camera.x, camera.y, canvas.width, canvas.height);
-    }
-
-    if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && typeof raidManager !== 'undefined') {
-        raidManager.drawBunkers(ctx);
     }
 
     hazards.forEach(h => {
@@ -1259,39 +1279,26 @@ function draw() {
     ctx.globalAlpha = 1.0;
 
     ctx.restore(); 
-
-    if (typeof gameMode !== 'undefined' && gameMode === 'RAID' && gameState === 'PLAYING') {
-        ctx.fillStyle = '#00ff66';
-        ctx.font = 'bold 22px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.shadowBlur = 4;
-        ctx.shadowColor = '#000000';
-        ctx.fillText(`REVIVES: ${playerLives}`, 20, 90);
-        ctx.shadowBlur = 0;
-    }
 }
 
-// --- FIXED 60 FPS GAME LOOP ---
+// ==========================================
+// 60 FPS STABILIZED ENGINE LOOP
+// ==========================================
 let lastFrameTime = 0;
 const targetFPS = 60;
 const frameInterval = 1000 / targetFPS;
 
 function loop(timestamp) {
-    // Keep asking for frames, but we might not process them all
     requestAnimationFrame(loop);
     
     if (!lastFrameTime) lastFrameTime = timestamp;
     let elapsed = timestamp - lastFrameTime;
 
-    // Only update and draw if 16.66ms (1/60th of a second) has passed
     if (elapsed > frameInterval) {
-        // Adjust lastFrameTime to prevent drift
         lastFrameTime = timestamp - (elapsed % frameInterval);
-        
         update();
         draw();
     }
 }
 
-// Start the loop
 requestAnimationFrame(loop);
