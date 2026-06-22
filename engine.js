@@ -986,6 +986,11 @@ function update() {
 function draw() {
     if (gameState === 'MENU' || gameState === 'SELECT') return;
 
+    // --- NEW: Paint the absolute base layer to fix the out-of-bounds glitch ---
+    ctx.fillStyle = '#050505'; 
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // ----------------------------------------------------------------------
+
     ctx.save();
     
     if (screenShakeTimer > 0) {
