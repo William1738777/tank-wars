@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Warzone Tanks Online</title>
+    <title>Warzone Tanks Online - Team Skirmish</title>
     <style>
         body, html { 
             margin: 0; padding: 0; background: #000; color: #fff; 
@@ -21,60 +21,64 @@
             background: #000; z-index: 10; 
         }
         
-        .hidden { display: none; }
+        .hidden { display: none !important; }
         
         button { 
-            padding: 15px 30px; margin: 10px; font-size: 20px; font-weight: bold; 
+            padding: 10px 20px; margin: 5px; font-size: 16px; font-weight: bold; 
             cursor: pointer; border: 2px solid #00ff66; background: #111; color: #00ff66; 
             border-radius: 5px; text-transform: uppercase; transition: 0.2s; 
         }
         button:hover:not(:disabled) { background: #00ff66; color: #000; }
         button:disabled { border-color: #555; color: #555; cursor: not-allowed; }
 
-        /* HUD AND SCOREBOARD */
+        /* --- NEW TEAM HUD --- */
         #hud { 
-            position: absolute; top: 0; left: 0; width: 100%; padding: 10px 20px; 
-            box-sizing: border-box; display: flex; justify-content: space-between; 
-            z-index: 5; pointer-events: none; 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 5;
         }
-        #score-board { display: flex; gap: 20px; font-size: 30px; font-weight: bold; }
 
-        /* HEALTH BARS & TRAIL EFFECT */
-        .hp-box { background: rgba(0,0,0,0.7); border: 2px solid #555; padding: 10px 20px; border-radius: 5px; }
-        .hp-bar-bg { width: 250px; height: 15px; background: #333; border-radius: 10px; overflow: hidden; margin-top: 5px; position: relative; }
+        #team-scoreboard {
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 30px; align-items: center;
+            background: rgba(0,0,0,0.8); border: 2px solid #555; border-radius: 10px; padding: 10px 40px;
+        }
+        .score-num { font-size: 36px; font-weight: 900; }
+        #score-t1 { color: #00aaff; }
+        #score-t2 { color: #ff3333; }
+
+        #local-hud {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.85); border: 2px solid #555; border-radius: 10px;
+            padding: 15px 30px; display: flex; flex-direction: column; align-items: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+
+        .hp-bar-bg { width: 350px; height: 20px; background: #333; border-radius: 10px; overflow: hidden; position: relative; margin-bottom: 15px; }
         .hp-bar-fill { height: 100%; width: 100%; background: #00ff00; position: absolute; top: 0; left: 0; z-index: 2; transition: width 0.1s linear, background-color 0.2s; }
         .hp-bar-trail { height: 100%; width: 100%; background: #fff; position: absolute; top: 0; left: 0; z-index: 1; transition: width 0.6s ease-out 0.15s; }
         
-        /* SKILL ICONS */
-        .skill-icon { width: 50px; height: 50px; border: 2px solid #555; background: #222; position: relative; overflow: hidden; border-radius: 5px; transition: border-color 0.2s, box-shadow 0.2s; }
+        .skill-icon { width: 60px; height: 60px; border: 2px solid #555; background: #222; position: relative; overflow: hidden; border-radius: 5px; transition: border-color 0.2s, box-shadow 0.2s; }
         .skill-fill { position: absolute; bottom: 0; left: 0; width: 100%; height: 0%; background: rgba(255,255,255,0.2); }
-        .skill-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; font-size: 1.2rem; text-shadow: 1px 1px 2px #000; z-index: 2; }
-        .ammo-text { position: absolute; top: 2px; right: 4px; color: gold; font-size: 0.9rem; font-weight: bold; z-index: 3; text-shadow: 1px 1px 1px #000; }
+        .skill-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; font-size: 1.5rem; text-shadow: 1px 1px 2px #000; z-index: 2; }
+        .ammo-text { position: absolute; top: 4px; right: 6px; color: gold; font-size: 1rem; font-weight: bold; z-index: 3; text-shadow: 1px 1px 1px #000; }
 
-        /* Spinning Loader */
-        .loader { 
-            border: 6px solid #111; border-top: 6px solid #00ff66; border-radius: 50%; 
-            width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 20px auto; 
-        }
+        .loader { border: 6px solid #111; border-top: 6px solid #00ff66; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 20px auto; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* --- NEW LEAGUE-STYLE MENU CSS --- */
-        .bg-slide {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background-size: cover; background-position: center;
-            opacity: 0; transition: opacity 2.5s ease-in-out;
-        }
+        /* --- LEAGUE MENU & LOBBY UI --- */
+        .bg-slide { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center; opacity: 0; transition: opacity 2.5s ease-in-out; }
         .bg-slide.active { opacity: 1; }
+        .glass-panel { background: rgba(15, 15, 15, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
         
-        #play-dropdown button { margin: 0; width: 100%; text-align: center; }
-        #play-dropdown button:hover { background: rgba(0, 255, 102, 0.15) !important; color: #00ff66 !important; }
+        .team-column { flex: 1; display: flex; flex-direction: column; gap: 15px; padding: 20px; border-radius: 10px; background: rgba(0,0,0,0.5); }
+        .t1-col { border-top: 4px solid #00aaff; }
+        .t2-col { border-top: 4px solid #ff3333; }
         
-        .glass-panel {
-            background: rgba(15, 15, 15, 0.6); backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-        }
+        .player-slot { display: flex; align-items: center; background: #1a1a1a; border: 1px solid #333; padding: 10px; border-radius: 8px; gap: 15px; position: relative;}
+        .player-slot.ready { border-color: #00ff00; box-shadow: 0 0 10px rgba(0,255,0,0.2); }
+        .player-slot img { width: 60px; height: 60px; object-fit: contain; }
+        .you-badge { background: #00ff66; color: #000; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; margin-left: 10px; }
     </style>
-    
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
@@ -83,23 +87,18 @@
         <div style="background: rgba(15, 15, 15, 0.95); padding: 40px; border: 2px solid #00ff66; border-radius: 10px; text-align: center; width: 350px; box-shadow: 0 0 30px rgba(0, 255, 102, 0.2);">
             <h1 style="color: #00ff66; margin-top: 0; font-size: 32px; text-shadow: 0 0 10px rgba(0, 255, 102, 0.5);">WARZONE</h1>
             <p style="color: #aaa; margin-bottom: 25px; font-weight: bold; letter-spacing: 2px;">AUTHENTICATION</p>
-            
-            <input type="text" id="auth-username" placeholder="USERNAME" style="width: 85%; padding: 12px; margin: 10px 0; background: #111; color: #fff; border: 1px solid #333; outline: none; text-align: center; font-family: 'Segoe UI', sans-serif; font-weight: bold; text-transform: uppercase;">
-            <input type="password" id="auth-password" placeholder="PASSWORD" style="width: 85%; padding: 12px; margin: 10px 0; background: #111; color: #fff; border: 1px solid #333; outline: none; text-align: center; font-family: 'Segoe UI', sans-serif; font-weight: bold;">
-            
+            <input type="text" id="auth-username" placeholder="USERNAME" style="width: 85%; padding: 12px; margin: 10px 0; background: #111; color: #fff; border: 1px solid #333; outline: none; text-align: center; font-weight: bold; text-transform: uppercase;">
+            <input type="password" id="auth-password" placeholder="PASSWORD" style="width: 85%; padding: 12px; margin: 10px 0; background: #111; color: #fff; border: 1px solid #333; outline: none; text-align: center; font-weight: bold;">
             <div id="auth-message" style="color: #ff3333; margin: 10px 0; height: 20px; font-weight: bold; font-size: 14px;"></div>
-            
             <button id="btn-login" style="width: 93%; background: #00ff66; color: #000; margin-top: 10px;">LOG IN</button>
             <button id="btn-register" style="width: 93%; border-color: #00aaff; color: #00aaff; background: transparent;">REGISTER</button>
-            
             <div style="margin-top: 20px; border-top: 1px solid #333; padding-top: 15px;">
                 <button id="btn-guest" style="width: 93%; border: none; color: #777; background: transparent; font-size: 14px;">PLAY AS GUEST</button>
             </div>
         </div>
     </div>
 
-    <div id="main-menu" class="screen" style="display: none; justify-content: flex-start; background: #050505;">
-        
+    <div id="main-menu" class="screen hidden" style="justify-content: flex-start; background: #050505;">
         <div id="bg-slideshow" style="position: absolute; top:0; left:0; width:100%; height:100%; z-index: -1; pointer-events: none;">
             <div class="bg-slide active" style="background-image: url('assets/WZBG1.png');"></div>
             <div class="bg-slide" style="background-image: url('assets/WZBG2.png');"></div>
@@ -107,192 +106,119 @@
             <div style="position: absolute; top:0; left:0; width:100%; height:100%; box-shadow: inset 0 0 150px rgba(0,0,0,0.9);"></div>
         </div>
         
-        <div class="glass-panel" style="width: 100%; height: 80px; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; box-sizing: border-box; border-bottom: 1px solid rgba(0, 255, 102, 0.3); z-index: 2; border-radius: 0;">
-            
+        <div class="glass-panel" style="width: 100%; height: 80px; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; box-sizing: border-box; border-bottom: 1px solid rgba(0, 255, 102, 0.3); z-index: 2;">
             <div style="display: flex; align-items: center; gap: 30px;">
-                <div style="font-size: 34px; font-weight: 900; color: #fff; letter-spacing: 4px; text-shadow: 0 0 10px rgba(255,255,255,0.3);">WZ<span style="color: #00ff66; text-shadow: 0 0 10px rgba(0,255,102,0.5);">TO</span></div>
-                <div style="display: flex; gap: 20px; font-size: 14px; font-weight: bold; color: #aaa; letter-spacing: 1px;">
-                    <span style="cursor: pointer; color: #fff;">HOME</span>
-                    <span style="cursor: pointer;">GARAGE</span>
-                    <span style="cursor: pointer;">STORE</span>
-                </div>
+                <div style="font-size: 34px; font-weight: 900; color: #fff; letter-spacing: 4px;">WZ<span style="color: #00ff66;">TO</span></div>
             </div>
             
             <div style="position: absolute; left: 50%; transform: translateX(-50%); top: 10px;">
-                <button id="btn-master-play" style="margin: 0; padding: 12px 50px; font-size: 26px; letter-spacing: 3px; border-radius: 5px; box-shadow: 0 0 20px rgba(0,255,102,0.3);">PLAY</button>
-                
-                <div id="play-dropdown" style="display: none; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 8px; background: rgba(10, 10, 10, 0.98); border: 1px solid #00ff66; border-radius: 5px; flex-direction: column; width: 280px; box-shadow: 0 10px 40px rgba(0,0,0,0.8);">
-                    <button onclick="startMode('ARCADE')" style="border: none; background: transparent; color: #fff; font-size: 16px; padding: 15px; border-bottom: 1px solid #333; border-radius: 0;">SINGLE PLAYER</button>
-                    <button id="btn-online" style="border: none; background: transparent; color: #00aaff; font-size: 16px; padding: 15px; border-radius: 0;">ONLINE MULTIPLAYER</button>
+                <button id="btn-master-play" style="margin: 0; padding: 12px 50px; font-size: 26px; letter-spacing: 3px; box-shadow: 0 0 20px rgba(0,255,102,0.3);">PLAY</button>
+                <div id="play-dropdown" style="display: none; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 8px; background: rgba(10, 10, 10, 0.98); border: 1px solid #00ff66; border-radius: 5px; flex-direction: column; width: 280px;">
+                    <button onclick="startMode('ARCADE')" style="border: none; background: transparent; color: #fff; font-size: 16px; padding: 15px; border-bottom: 1px solid #333;">SINGLE PLAYER</button>
+                    <button id="btn-online" style="border: none; background: transparent; color: #00aaff; font-size: 16px; padding: 15px;">ONLINE MULTIPLAYER</button>
                 </div>
             </div>
             
             <div style="display: flex; align-items: center; gap: 15px;">
                 <div style="text-align: right;">
-                    <div id="menu-username" style="font-weight: bold; font-size: 18px; color: #00ff66; text-transform: uppercase;">GUEST</div>
+                    <div id="menu-username" style="font-weight: bold; font-size: 18px; color: #00ff66;">GUEST</div>
                     <div style="font-size: 12px; color: #aaa;">Level 1 | 0 Credits</div>
                 </div>
-                <div style="width: 45px; height: 45px; background: #222; border: 2px solid #555; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 20px; color: #555;">?</div>
             </div>
         </div>
-        
-        <div class="glass-panel" style="position: absolute; bottom: 40px; left: 40px; width: 420px; border-radius: 12px; padding: 25px; z-index: 2;">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-                <div style="width: 12px; height: 12px; background: #00ff66; border-radius: 50%; box-shadow: 0 0 10px #00ff66;"></div>
-                <div style="color: #00ff66; font-size: 14px; font-weight: bold; letter-spacing: 2px;">DEVELOPMENT STAGE</div>
-            </div>
-            
-            <h2 style="margin: 0 0 20px 0; font-size: 32px; text-shadow: 0 2px 4px rgba(0,0,0,0.8); font-weight: 900;">WELCOME TO WZTO</h2>
-            
-            <div style="background: rgba(0,0,0,0.4); padding: 15px; border-left: 3px solid #00aaff; margin-bottom: 12px; border-radius: 0 5px 5px 0;">
-                <h4 style="margin: 0 0 5px 0; color: #00aaff; font-size: 16px;">Patch 1.01 Deployed</h4>
-                <p style="margin: 0; font-size: 14px; color: #bbb; line-height: 1.4;">Authentication systems and authoritative matchmaking active. Favor-the-shooter netcode enabled for zero-latency hits.</p>
-            </div>
-            
-            <div style="background: rgba(0,0,0,0.4); padding: 15px; border-left: 3px solid #ff3333; border-radius: 0 5px 5px 0;">
-                <h4 style="margin: 0 0 5px 0; color: #ff3333; font-size: 16px;">New Hero Intel: Abyss</h4>
-                <p style="margin: 0; font-size: 14px; color: #bbb; line-height: 1.4;">Harness the void. Test the new teleportation portals and black-hole gravity wells in Arcade Mode now.</p>
-            </div>
-        </div>
-        
     </div>
 
     <div id="lobby-screen" class="screen hidden" style="background:#111; padding: 40px; box-sizing: border-box;">
         <h1 style="text-align: center; text-shadow: 0 0 10px #00ff66; font-size: 40px;">ONLINE LOBBY</h1>
-        
         <div id="games-list-container" style="flex-grow: 1; width: 80%; max-width: 800px; border: 2px solid #00ff66; background: #000; margin: 20px 0; overflow-y: auto; border-radius: 5px;">
             <ul id="games-list" style="list-style: none; padding: 0; margin: 0; font-size: 24px;">
                 <li style="padding: 20px; color: #777; text-align: center;">Connecting to server...</li>
             </ul>
         </div>
-        
         <div style="display: flex; justify-content: space-between; width: 80%; max-width: 800px;">
             <button id="btn-lobby-back" style="background: #333; color: #fff; border-color: #fff;">BACK TO MENU</button>
             <button id="btn-lobby-create" style="background: #00ff66; color: #000;">CREATE GAME</button>
         </div>
     </div>
 
-    <div id="select-screen" class="screen hidden" style="flex-direction: row; background: #111;">
+    <div id="select-screen" class="screen hidden" style="background: #0a0a0a; padding: 20px; box-sizing: border-box; flex-direction: row; gap: 20px; align-items: stretch;">
         
-        <div style="flex: 1; display: flex; flex-direction: column; height: 100%; border-right: 2px solid #333; background: #0a0a0a;">
-            
-            <div id="p1-panel" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-bottom: 2px solid #333; position: relative;">
-                <h2 style="color: #00aaff; margin-bottom: 5px; font-size: 28px; letter-spacing: 2px;">PLAYER 1</h2>
-                <div id="p1-preview" style="width: 180px; height: 180px; background: #000; margin: 15px; border: 2px solid #00aaff; border-radius: 10px;"></div>
-                <h3 id="p1-name" style="margin: 0; padding-bottom: 15px; font-size: 24px;">GRIZZLY</h3>
-                <div style="display: flex; gap: 15px;">
-                    <button id="btn-p1-next" style="font-size: 16px; padding: 12px 20px;">Next Tank</button>
-                    <button id="btn-p1-ready" style="background: #00aaff; color: #000; border-color: #00aaff; font-size: 16px; padding: 12px 25px;">READY</button>
-                </div>
-                <h2 id="p1-ready-text" style="color: #00ff00; display: none; margin-top: 15px; font-size: 28px; text-shadow: 0 0 10px #00ff00;">READY!</h2>
-            </div>
-            
-            <div id="p2-panel" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;">
-                <h2 id="p2-title" style="color: #ff3333; margin-bottom: 5px; font-size: 28px; letter-spacing: 2px;">PLAYER 2 / CPU</h2>
-                <div id="p2-preview" style="width: 180px; height: 180px; background: #000; margin: 15px; border: 2px solid #ff3333; border-radius: 10px;"></div>
-                <h3 id="p2-name" style="margin: 0; padding-bottom: 15px; font-size: 24px;">DESTROYER</h3>
-                <div style="display: flex; gap: 15px;">
-                    <button id="btn-p2-next" style="font-size: 16px; padding: 12px 20px;">Next Tank</button>
-                    <button id="btn-p2-ready" style="background: #ff3333; color: #000; border-color: #ff3333; font-size: 16px; padding: 12px 25px;">READY</button>
-                </div>
-                <h2 id="p2-ready-text" style="color: #00ff00; display: none; margin-top: 15px; font-size: 28px; text-shadow: 0 0 10px #00ff00;">READY!</h2>
-                <button id="btn-toggle-ai" style="position: absolute; bottom: 20px; right: 20px; font-size: 12px; padding: 8px 15px; border-color: #555; background: #222; color: #fff;">Toggle AI: OFF</button>
-
-                <div id="waiting-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10,10,10,0.95); color: #00ff66; z-index: 100; justify-content: center; align-items: center; text-align: center; flex-direction: column;">
-                    <h1 style="margin-bottom: 25px; font-size: 28px; letter-spacing: 2px;">WAITING FOR PLAYER...</h1>
-                    <div class="loader"></div>
-                </div>
-            </div>
-
+        <div class="team-column t1-col" id="team1-container">
+            <h2 style="color: #00aaff; text-align: center; margin-top: 0;">TEAM 1 (BLUE)</h2>
+            <div id="t1-slots"></div>
         </div>
 
-        <div id="map-selector-ui" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; box-sizing: border-box; position: relative;">
-            
-            <div style="width: 80%; max-width: 600px; height: 350px; background: #1a1a1a; border: 3px solid #00ff66; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 40px; box-shadow: 0 0 20px rgba(0,255,102,0.1); position: relative; overflow: hidden;">
-                <img id="minimap-image" src="assets/BGbattle.png" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.5; z-index: 1;" alt="Map Preview">
-
-                <div style="font-size: 24px; color: #fff; font-weight: bold; letter-spacing: 4px; z-index: 2; text-shadow: 0px 0px 10px #000;">MINIMAP PREVIEW</div>
-                <span id="map-name" style="position: absolute; bottom: 20px; font-size: 28px; color: #fff; font-weight: bold; letter-spacing: 2px; text-shadow: 2px 2px 4px #000; z-index: 5;">MAP: DUSK</span>
-            </div>
-
-            <div style="display: flex; gap: 20px; width: 80%; max-width: 600px; justify-content: space-between; margin-bottom: 50px;">
+        <div style="flex: 1.2; display: flex; flex-direction: column; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.6); padding: 20px; border-radius: 10px; border: 1px solid #333;">
+            <div style="text-align: center; width: 100%;">
+                <h2 style="color: #00ff66; margin: 0 0 10px 0;">ROOM: <span id="room-code-display">----</span></h2>
                 
-                <div style="flex: 1; background: #111; border: 2px dashed #00ff66; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px;">
-                    <span style="font-size: 14px; color: #888; font-weight: bold; margin-bottom: 5px;">SERVER CODE</span>
-                    <span id="room-code-display" style="font-size: 26px; color: #00ff66; font-weight: bold; letter-spacing: 3px;">----</span>
+                <div id="host-controls" style="display: none; gap: 10px; justify-content: center; margin-bottom: 20px;">
+                    <button onclick="uiChangeMode('1v1')" style="padding: 5px 15px; font-size: 14px;">1v1</button>
+                    <button onclick="uiChangeMode('2v2')" style="padding: 5px 15px; font-size: 14px;">2v2</button>
+                    <button onclick="uiChangeMode('3v3')" style="padding: 5px 15px; font-size: 14px;">3v3</button>
                 </div>
-
-                <button id="btn-map-select" style="flex: 1; font-size: 18px; padding: 15px; margin: 0;">Change Map</button>
-
-                <div style="flex: 1; background: #111; border: 2px solid #555; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px;">
-                    <span style="font-size: 14px; color: #888; font-weight: bold; margin-bottom: 5px;">MODE</span>
-                    <span style="font-size: 26px; color: #fff; font-weight: bold; letter-spacing: 2px;">1v1</span>
-                </div>
-
             </div>
 
-            <button id="btn-launch-game" disabled style="width: 80%; max-width: 600px; padding: 30px; font-size: 36px; letter-spacing: 5px; border-radius: 12px; transition: all 0.3s ease;">START GAME</button>
+            <div style="width: 100%; height: 250px; background: #1a1a1a; border: 2px solid #555; border-radius: 8px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                <img id="minimap-image" src="assets/BGbattle.png" style="position: absolute; width: 100%; height: 100%; object-fit: cover; opacity: 0.4;">
+                <h3 id="map-name" style="z-index: 2; font-size: 24px; text-shadow: 0 0 10px #000;">MAP: DUSK</h3>
+            </div>
             
+            <button id="btn-map-select" style="margin-top: 10px; display: none;">Change Map</button>
+
+            <div id="my-controls" style="width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 20px; background: #111; padding: 15px; border-radius: 8px; border: 1px dashed #555;">
+                <div style="display: flex; justify-content: space-between;">
+                    <button onclick="uiCycleTank(-1)" style="flex: 1; border-color: #aaa; color: #aaa;">◄ PREV TANK</button>
+                    <button onclick="uiCycleTank(1)" style="flex: 1; border-color: #aaa; color: #aaa;">NEXT TANK ►</button>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <button onclick="uiSwitchTeam()" style="flex: 1; background: #333; color: #fff; border-color: #555;">SWITCH TEAM</button>
+                    <button id="btn-local-ready" onclick="uiToggleReady()" style="flex: 1; background: #ffaa00; color: #000; border-color: #ffaa00;">READY UP</button>
+                </div>
+            </div>
+
+            <button id="btn-launch-game" disabled style="width: 100%; padding: 20px; font-size: 24px; margin-top: 20px;">START GAME</button>
         </div>
+
+        <div class="team-column t2-col" id="team2-container">
+            <h2 style="color: #ff3333; text-align: center; margin-top: 0;">TEAM 2 (RED)</h2>
+            <div id="t2-slots"></div>
+        </div>
+
     </div>
 
     <div id="game-container" style="position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center;">
         <canvas id="gameCanvas" width="1200" height="800"></canvas>
         
         <div id="hud" class="hidden">
-            <div class="hp-box">
-                <h3 id="hud-p1-name" style="margin:0; color:#00aaff;">PLAYER 1</h3>
+            <div id="team-scoreboard">
+                <span id="score-t1" class="score-num">0</span>
+                <span style="color: #777; font-size: 24px;">VS</span>
+                <span id="score-t2" class="score-num">0</span>
+            </div>
+
+            <div id="local-hud">
                 <div class="hp-bar-bg">
-                    <div id="p1-hp-trail" class="hp-bar-trail"></div>
-                    <div id="p1-hp" class="hp-bar-fill"></div>
+                    <div id="local-hp-trail" class="hp-bar-trail"></div>
+                    <div id="local-hp" class="hp-bar-fill"></div>
                 </div>
-                <div id="p1-skills" style="display: flex; gap: 10px; margin-top: 10px;">
-                    <div class="skill-icon" id="p1-cd-c"><div id="p1-fill-c" class="skill-fill"></div><span class="skill-text">C</span><span id="p1-ammo-c" class="ammo-text"></span></div>
-                    <div class="skill-icon" id="p1-cd-x"><div id="p1-fill-x" class="skill-fill"></div><span class="skill-text">X</span><span id="p1-ammo-x" class="ammo-text"></span></div>
-                    <div class="skill-icon" id="p1-cd-z"><div id="p1-fill-z" class="skill-fill"></div><span class="skill-text">Z</span></div>
-                </div>
-            </div>
-            
-            <div id="score-board">
-                <span id="score-p1" style="color: #00aaff;">0</span>
-                <span style="color: #fff;">-</span>
-                <span id="score-p2" style="color: #ff3333;">0</span>
-            </div>
-            
-            <div class="hp-box" id="hud-p2-box" style="text-align: right;">
-                <h3 id="hud-p2-name" style="margin:0; color:#ff3333;">PLAYER 2</h3>
-                <div class="hp-bar-bg" style="margin-left: auto;">
-                    <div id="p2-hp-trail" class="hp-bar-trail"></div>
-                    <div id="p2-hp" class="hp-bar-fill"></div>
-                </div>
-                <div id="p2-skills" style="display: flex; gap: 10px; margin-top: 10px; justify-content: flex-end;">
-                    <div class="skill-icon" id="p2-cd-c"><div id="p2-fill-c" class="skill-fill"></div><span class="skill-text">'</span><span id="p2-ammo-c" class="ammo-text"></span></div>
-                    <div class="skill-icon" id="p2-cd-x"><div id="p2-fill-x" class="skill-fill"></div><span class="skill-text">;</span><span id="p2-ammo-x" class="ammo-text"></span></div>
-                    <div class="skill-icon" id="p2-cd-z"><div id="p2-fill-z" class="skill-fill"></div><span class="skill-text">L</span></div>
+                <div id="local-skills" style="display: flex; gap: 15px;">
+                    <div class="skill-icon" id="local-cd-c"><div id="local-fill-c" class="skill-fill"></div><span class="skill-text">C</span><span id="local-ammo-c" class="ammo-text"></span></div>
+                    <div class="skill-icon" id="local-cd-x"><div id="local-fill-x" class="skill-fill"></div><span class="skill-text">X</span><span id="local-ammo-x" class="ammo-text"></span></div>
+                    <div class="skill-icon" id="local-cd-z"><div id="local-fill-z" class="skill-fill"></div><span class="skill-text">Z</span></div>
                 </div>
             </div>
         </div>
     </div>
 
     <div id="victory-screen" class="screen hidden" style="background: rgba(0,0,0,0.9);">
-        <h1 id="victory-title" style="font-size: 60px; margin-bottom: 20px;">GAME OVER</h1>
-        <div style="display: flex; gap: 50px; margin-bottom: 40px;">
-            <div style="background: #111; padding: 20px; border: 2px solid #00aaff; border-radius: 10px; min-width: 250px;">
-                <h3 style="color: #00aaff; margin-top:0;">PLAYER 1 STATS</h3>
-                <div id="stats-p1" style="font-size: 18px; line-height: 1.5;"></div>
-            </div>
-            <div style="background: #111; padding: 20px; border: 2px solid #ff3333; border-radius: 10px; min-width: 250px;">
-                <h3 style="color: #ff3333; margin-top:0;">PLAYER 2 STATS</h3>
-                <div id="stats-p2" style="font-size: 18px; line-height: 1.5;"></div>
-            </div>
-        </div>
-        <button id="btn-restart" onclick="location.reload()">RETURN TO MENU</button>
+        <h1 id="victory-title" style="font-size: 60px; margin-bottom: 20px;">TEAM WINS!</h1>
+        <button id="btn-restart" onclick="location.reload()" style="padding: 15px 40px; font-size: 24px;">RETURN TO LOBBY</button>
     </div>
 
     <script src="config.js"></script>
     <script src="Projectile.js"></script>
     <script src="Tank.js"></script>
-    <script src="raid.js"></script>
     <script src="network.js"></script>
     <script src="ui.js"></script>
     <script src="engine.js"></script>
